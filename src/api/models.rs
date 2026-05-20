@@ -136,6 +136,7 @@ pub struct Notification {
 impl From<Notification> for app::Notification {
     fn from(n: Notification) -> Self {
         Self {
+            id: n.id,
             repo_name: n.repository.full_name,
             subject_title: n.subject.title,
             subject_type: n.subject.subject_type,
@@ -162,6 +163,7 @@ pub struct WorkflowRun {
 impl From<WorkflowRun> for app::WorkflowRun {
     fn from(w: WorkflowRun) -> Self {
         Self {
+            id: w.id,
             name: w.name,
             status: w.status,
             conclusion: w.conclusion,
@@ -179,6 +181,7 @@ pub struct WorkflowRunsResponse {
     pub workflow_runs: Vec<WorkflowRun>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowJob {
     pub id: u64,
@@ -188,6 +191,7 @@ pub struct WorkflowJob {
     pub steps: Vec<WorkflowStep>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowStep {
     pub name: String,
@@ -196,6 +200,7 @@ pub struct WorkflowStep {
     pub number: u64,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowJobsResponse {
     pub total_count: u64,

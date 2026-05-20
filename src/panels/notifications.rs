@@ -34,10 +34,6 @@ impl Default for NotificationsPanel {
 }
 
 impl NotificationsPanel {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     pub fn navigate_up(&mut self) {
         let i = self.list_state.selected().unwrap_or(0);
         if i > 0 {
@@ -58,6 +54,13 @@ impl NotificationsPanel {
         self.list_state
             .selected()
             .and_then(|i| self.notifications.get(i))
+    }
+
+    pub fn set_notifications(&mut self, notifs: Vec<Notification>) {
+        self.notifications = notifs;
+        self.loading = false;
+        self.list_state.select(if self.notifications.is_empty() { None } else { Some(0) });
+        self.detail_pane.reset_scroll();
     }
 
     pub fn view(
@@ -102,14 +105,6 @@ impl NotificationsPanel {
             .split(area);
 
         // Left: notification list
-        let list_block = Block::bordered()
-            .title(" List ")
-            .border_style(if focused {
-                theme.active_border
-            } else {
-                theme.inactive_border
-            });
-
         let items: Vec<ListItem> = state
             .notifications
             .iter()

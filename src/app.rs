@@ -1,9 +1,11 @@
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::Arc;
 
 use ratatui::prelude::*;
 use ratatui::widgets::*;
 
+use crate::api::client::GitHubClient;
 use crate::cmd::Cmd;
 use crate::config::Config;
 use crate::panels::{ActionsPanel, IssuesPanel, NotificationsPanel, PullsPanel, ReposPanel};
@@ -52,13 +54,23 @@ pub enum PanelState {
 }
 
 impl PanelState {
-    pub fn loading_mut(&mut self) -> &mut bool {
+    pub fn scroll_detail_up(&mut self) {
         match self {
-            PanelState::Repos(p) => &mut p.loading,
-            PanelState::Pulls(p) => &mut p.loading,
-            PanelState::Issues(p) => &mut p.loading,
-            PanelState::Notifications(p) => &mut p.loading,
-            PanelState::Actions(p) => &mut p.loading,
+            PanelState::Repos(p) => p.detail_pane.scroll_up(),
+            PanelState::Pulls(p) => p.detail_pane.scroll_up(),
+            PanelState::Issues(p) => p.detail_pane.scroll_up(),
+            PanelState::Notifications(p) => p.detail_pane.scroll_up(),
+            PanelState::Actions(p) => p.detail_pane.scroll_up(),
+        }
+    }
+
+    pub fn scroll_detail_down(&mut self) {
+        match self {
+            PanelState::Repos(p) => p.detail_pane.scroll_down(),
+            PanelState::Pulls(p) => p.detail_pane.scroll_down(),
+            PanelState::Issues(p) => p.detail_pane.scroll_down(),
+            PanelState::Notifications(p) => p.detail_pane.scroll_down(),
+            PanelState::Actions(p) => p.detail_pane.scroll_down(),
         }
     }
 }
@@ -66,6 +78,7 @@ impl PanelState {
 #[derive(Debug, Default)]
 pub struct Repo {
     pub name: String,
+    #[allow(dead_code)]
     pub owner: String,
     pub description: Option<String>,
     pub language: Option<String>,
@@ -103,6 +116,7 @@ pub struct Issue {
 
 #[derive(Debug, Clone, Default)]
 pub struct Notification {
+    pub id: String,
     pub repo_name: String,
     pub subject_title: String,
     pub subject_type: String,
@@ -113,6 +127,7 @@ pub struct Notification {
 
 #[derive(Debug, Default)]
 pub struct WorkflowRun {
+    pub id: u64,
     pub name: String,
     pub status: String,
     pub conclusion: Option<String>,
@@ -132,17 +147,17 @@ pub struct SearchState {
 pub enum Message {
     NextTab,
     PrevTab,
-    FocusPanel(PanelKind),
     Refresh,
     SearchActivate,
     SearchInput(char),
     SearchBackspace,
     SearchSubmit,
     SearchClear,
-    ShowError(String),
     DismissError,
     ToggleHelp,
     PanelKeyInput(char),
+    DetailScrollUp,
+    DetailScrollDown,
     Quit,
     Noop,
 }
@@ -159,27 +174,26 @@ pub struct App {
     pub tick: u64,
     pub rate_remaining: Option<u32>,
     pub rate_reset_secs: Option<u64>,
+    pub client: Arc<GitHubClient>,
 }
 
 impl App {
-    pub fn new(config: Config) -> Self {
+    pub fn new(config: Config, client: Arc<GitHubClient>) -> Self {
+        let theme = Theme::from_config(&config.theme);
+
+        // Apply config defaults
         let mut panels = HashMap::new();
         panels.insert(PanelKind::Repos, PanelState::Repos(ReposPanel::default()));
-        panels.insert(PanelKind::Pulls, PanelState::Pulls(PullsPanel::default()));
-        panels.insert(
-            PanelKind::Issues,
-            PanelState::Issues(IssuesPanel::default()),
-        );
-        panels.insert(
-            PanelKind::Notifications,
-            PanelState::Notifications(NotificationsPanel::default()),
-        );
-        panels.insert(
-            PanelKind::Actions,
-            PanelState::Actions(ActionsPanel::default()),
-        );
-
-        let theme = Theme::from_config(&config.theme);
+        let mut pulls = PullsPanel::default();
+        pulls.state_filter = config.defaults.pulls_state.clone();
+        panels.insert(PanelKind::Pulls, PanelState::Pulls(pulls));
+        let mut issues = IssuesPanel::default();
+        issues.state_filter = config.defaults.issues_state.clone();
+        panels.insert(PanelKind::Issues, PanelState::Issues(issues));
+        let mut notifs = NotificationsPanel::default();
+        notifs.show_all = config.defaults.notifications_show_all;
+        panels.insert(PanelKind::Notifications, PanelState::Notifications(notifs));
+        panels.insert(PanelKind::Actions, PanelState::Actions(ActionsPanel::default()));
 
         Self {
             active_panel: PanelKind::Repos,
@@ -193,6 +207,7 @@ impl App {
             tick: 0,
             rate_remaining: None,
             rate_reset_secs: None,
+            client,
         }
     }
 
@@ -213,23 +228,67 @@ impl App {
     }
 }
 
+fn fetch_for_active_panel(app: &App) -> Cmd {
+    match app.active_panel {
+        PanelKind::Repos => Cmd::FetchRepos,
+        PanelKind::Pulls => {
+            if let Some(PanelState::Pulls(ref p)) = app.panels.get(&PanelKind::Pulls) {
+                match (&p.owner, &p.repo) {
+                    (Some(owner), Some(repo)) => Cmd::FetchPulls {
+                        owner: owner.clone(),
+                        repo: repo.clone(),
+                    },
+                    _ => Cmd::None,
+                }
+            } else {
+                Cmd::None
+            }
+        }
+        PanelKind::Issues => {
+            if let Some(PanelState::Issues(ref i)) = app.panels.get(&PanelKind::Issues) {
+                match (&i.owner, &i.repo) {
+                    (Some(owner), Some(repo)) => Cmd::FetchIssues {
+                        owner: owner.clone(),
+                        repo: repo.clone(),
+                    },
+                    _ => Cmd::None,
+                }
+            } else {
+                Cmd::None
+            }
+        }
+        PanelKind::Notifications => {
+            let show_all = if let Some(PanelState::Notifications(ref n)) = app.panels.get(&PanelKind::Notifications) {
+                n.show_all
+            } else {
+                false
+            };
+            Cmd::FetchNotifications { all: show_all }
+        }
+        PanelKind::Actions => {
+            if let Some(PanelState::Actions(ref a)) = app.panels.get(&PanelKind::Actions) {
+                if let (Some(owner), Some(repo)) = (&a.owner, &a.repo) {
+                    return Cmd::FetchActions { owner: owner.clone(), repo: repo.clone() };
+                }
+            }
+            Cmd::None
+        }
+    }
+}
+
 pub fn update(app: &mut App, msg: Message) -> Cmd {
     match msg {
         Message::NextTab => {
             app.search.active = false;
             app.next_tab();
-            Cmd::None
+            fetch_for_active_panel(app)
         }
         Message::PrevTab => {
             app.search.active = false;
             app.prev_tab();
-            Cmd::None
+            fetch_for_active_panel(app)
         }
-        Message::FocusPanel(panel) => {
-            app.active_panel = panel;
-            Cmd::None
-        }
-        Message::Refresh => Cmd::FetchRepos,
+        Message::Refresh => fetch_for_active_panel(app),
         Message::SearchActivate => {
             app.search.active = true;
             app.search.query.clear();
@@ -245,16 +304,11 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
         }
         Message::SearchSubmit => {
             app.search.active = false;
-            // Filter stays active, query preserved
             Cmd::None
         }
         Message::SearchClear => {
             app.search.active = false;
             app.search.query.clear();
-            Cmd::None
-        }
-        Message::ShowError(msg) => {
-            app.error_toast = Some(msg);
             Cmd::None
         }
         Message::DismissError => {
@@ -263,6 +317,18 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
         }
         Message::ToggleHelp => {
             app.show_help = !app.show_help;
+            Cmd::None
+        }
+        Message::DetailScrollUp => {
+            if let Some(panel) = app.panels.get_mut(&app.active_panel) {
+                panel.scroll_detail_up();
+            }
+            Cmd::None
+        }
+        Message::DetailScrollDown => {
+            if let Some(panel) = app.panels.get_mut(&app.active_panel) {
+                panel.scroll_detail_down();
+            }
             Cmd::None
         }
         Message::PanelKeyInput(c) => {
@@ -286,6 +352,10 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
                                     if let Some(PanelState::Pulls(ref mut pulls)) = app.panels.get_mut(&PanelKind::Pulls) {
                                         pulls.set_repo(owner.clone(), repo.clone());
                                     }
+                                    if let Some(PanelState::Actions(ref mut actions)) = app.panels.get_mut(&PanelKind::Actions) {
+                                        actions.owner = Some(owner.clone());
+                                        actions.repo = Some(repo.clone());
+                                    }
                                     app.active_panel = PanelKind::Pulls;
                                     return Cmd::FetchPulls { owner, repo };
                                 }
@@ -301,30 +371,43 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
                             'k' => pulls.navigate_up(),
                             '1' => {
                                 pulls.state_filter = "open".to_string();
-                                return Cmd::FetchPulls {
-                                    owner: pulls.owner.clone().unwrap_or_default(),
-                                    repo: pulls.repo.clone().unwrap_or_default(),
-                                };
+                                if let (Some(owner), Some(repo)) = (&pulls.owner, &pulls.repo) {
+                                    return Cmd::FetchPulls { owner: owner.clone(), repo: repo.clone() };
+                                }
                             }
                             '2' => {
                                 pulls.state_filter = "closed".to_string();
-                                return Cmd::FetchPulls {
-                                    owner: pulls.owner.clone().unwrap_or_default(),
-                                    repo: pulls.repo.clone().unwrap_or_default(),
-                                };
+                                if let (Some(owner), Some(repo)) = (&pulls.owner, &pulls.repo) {
+                                    return Cmd::FetchPulls { owner: owner.clone(), repo: repo.clone() };
+                                }
                             }
                             '3' => {
                                 pulls.state_filter = "all".to_string();
-                                return Cmd::FetchPulls {
-                                    owner: pulls.owner.clone().unwrap_or_default(),
-                                    repo: pulls.repo.clone().unwrap_or_default(),
-                                };
+                                if let (Some(owner), Some(repo)) = (&pulls.owner, &pulls.repo) {
+                                    return Cmd::FetchPulls { owner: owner.clone(), repo: repo.clone() };
+                                }
                             }
                             'o' => {
                                 if let Some(pr) = pulls.selected_pr() {
                                     let _ = std::process::Command::new("gh")
                                         .args(["browse", &format!("{}", pr.number)])
                                         .spawn();
+                                }
+                            }
+                            'a' => {
+                                if let Some(pr) = pulls.selected_pr() {
+                                    if let (Some(owner), Some(repo)) = (&pulls.owner, &pulls.repo) {
+                                        let pr_number = pr.number as u64;
+                                        return Cmd::ApprovePr { owner: owner.clone(), repo: repo.clone(), pr_number };
+                                    }
+                                }
+                            }
+                            'm' => {
+                                if let Some(pr) = pulls.selected_pr() {
+                                    if let (Some(owner), Some(repo)) = (&pulls.owner, &pulls.repo) {
+                                        let pr_number = pr.number as u64;
+                                        return Cmd::MergePr { owner: owner.clone(), repo: repo.clone(), pr_number };
+                                    }
                                 }
                             }
                             _ => {}
@@ -338,26 +421,32 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
                             'k' => issues.navigate_up(),
                             '1' => {
                                 issues.state_filter = "open".to_string();
-                                return Cmd::FetchIssues {
-                                    owner: issues.owner.clone().unwrap_or_default(),
-                                    repo: issues.repo.clone().unwrap_or_default(),
-                                };
+                                if let (Some(owner), Some(repo)) = (&issues.owner, &issues.repo) {
+                                    return Cmd::FetchIssues { owner: owner.clone(), repo: repo.clone() };
+                                }
                             }
                             '2' => {
                                 issues.state_filter = "closed".to_string();
-                                return Cmd::FetchIssues {
-                                    owner: issues.owner.clone().unwrap_or_default(),
-                                    repo: issues.repo.clone().unwrap_or_default(),
-                                };
+                                if let (Some(owner), Some(repo)) = (&issues.owner, &issues.repo) {
+                                    return Cmd::FetchIssues { owner: owner.clone(), repo: repo.clone() };
+                                }
                             }
                             '3' => {
                                 issues.state_filter = "all".to_string();
-                                return Cmd::FetchIssues {
-                                    owner: issues.owner.clone().unwrap_or_default(),
-                                    repo: issues.repo.clone().unwrap_or_default(),
-                                };
+                                if let (Some(owner), Some(repo)) = (&issues.owner, &issues.repo) {
+                                    return Cmd::FetchIssues { owner: owner.clone(), repo: repo.clone() };
+                                }
                             }
                             'o' => {
+                                if let Some(issue) = issues.selected_item() {
+                                    let _ = std::process::Command::new("gh")
+                                        .args(["browse", &format!("{}", issue.number)])
+                                        .spawn();
+                                }
+                            }
+                            'c' => {
+                                // TODO: open comment input mode
+                                // For now, open in browser to comment
                                 if let Some(issue) = issues.selected_item() {
                                     let _ = std::process::Command::new("gh")
                                         .args(["browse", &format!("{}", issue.number)])
@@ -369,29 +458,62 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
                     }
                 }
                 PanelKind::Notifications => {
+                    let mut cmd = Cmd::None;
                     if let Some(PanelState::Notifications(ref mut notifs)) = app.panels.get_mut(&PanelKind::Notifications) {
                         match c {
                             'j' => notifs.navigate_down(),
                             'k' => notifs.navigate_up(),
-                            'x' => { /* TODO: mark single notification as read */ }
-                            'X' => { /* TODO: mark all as read */ }
-                            '1' => { notifs.show_all = false; }
-                            '2' => { notifs.show_all = true; }
+                            'x' => {
+                                if let Some(notif) = notifs.selected_item() {
+                                    let id = notif.id.clone();
+                                    if !id.is_empty() {
+                                        cmd = Cmd::MarkNotificationRead { id };
+                                    }
+                                }
+                            }
+                            'X' => {
+                                cmd = Cmd::MarkAllNotificationsRead;
+                            }
+                            '1' => {
+                                notifs.show_all = false;
+                                cmd = Cmd::FetchNotifications { all: false };
+                            }
+                            '2' => {
+                                notifs.show_all = true;
+                                cmd = Cmd::FetchNotifications { all: true };
+                            }
                             _ => {}
                         }
                     }
+                    return cmd;
                 }
                 PanelKind::Actions => {
+                    let mut cmd = Cmd::None;
                     if let Some(PanelState::Actions(ref mut actions)) = app.panels.get_mut(&PanelKind::Actions) {
                         match c {
                             'j' => actions.navigate_down(),
                             'k' => actions.navigate_up(),
                             '\n' => { actions.toggle_expand(); }
-                            'r' => { /* TODO: re-run workflow */ }
-                            'c' => { /* TODO: cancel workflow */ }
+                            'r' => {
+                                if let Some(run) = actions.selected_item() {
+                                    if let (Some(owner), Some(repo)) = (&actions.owner, &actions.repo) {
+                                        let run_id = run.id;
+                                        cmd = Cmd::RerunWorkflow { owner: owner.clone(), repo: repo.clone(), run_id };
+                                    }
+                                }
+                            }
+                            'c' => {
+                                if let Some(run) = actions.selected_item() {
+                                    if let (Some(owner), Some(repo)) = (&actions.owner, &actions.repo) {
+                                        let run_id = run.id;
+                                        cmd = Cmd::CancelWorkflow { owner: owner.clone(), repo: repo.clone(), run_id };
+                                    }
+                                }
+                            }
                             _ => {}
                         }
                     }
+                    return cmd;
                 }
             }
             Cmd::None

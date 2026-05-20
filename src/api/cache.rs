@@ -5,8 +5,8 @@ use std::time::{Duration, Instant};
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
 pub enum CacheKey {
     UserRepos,
-    Pulls { owner: String, repo: String },
-    Issues { owner: String, repo: String },
+    Pulls { owner: String, repo: String, state: String },
+    Issues { owner: String, repo: String, state: String },
     Notifications,
     Actions { owner: String, repo: String },
 }

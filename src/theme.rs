@@ -10,7 +10,6 @@ pub struct Theme {
     pub muted: Style,
     pub success: Style,
     pub error: Style,
-    pub warning: Style,
     pub tab_active: Style,
     pub tab_inactive: Style,
     pub status_bar: Style,
@@ -25,7 +24,6 @@ impl Default for Theme {
             muted: Style::default().fg(Color::Gray),
             success: Style::default().fg(Color::Green),
             error: Style::default().fg(Color::Red),
-            warning: Style::default().fg(Color::Yellow),
             tab_active: Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
@@ -46,7 +44,6 @@ impl Theme {
             muted: Style::default().fg(parse_color(&config.muted_color)),
             success: Style::default().fg(parse_color(&config.success_color)),
             error: Style::default().fg(parse_color(&config.error_color)),
-            warning: Style::default().fg(parse_color(&config.warning_color)),
             tab_active: Style::default()
                 .fg(parse_color(&config.active_border_color))
                 .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),

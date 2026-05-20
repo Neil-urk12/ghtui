@@ -1,19 +1,6 @@
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 
-pub fn render_confirm(frame: &mut Frame, area: Rect, message: &str) {
-    let popup_area = centered_rect(60, 20, area);
-    frame.render_widget(Clear, popup_area);
-    let block = Block::default()
-        .title("Confirm")
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Yellow));
-    let text = Paragraph::new(format!("{}\n\n  [y]es  /  [n]o", message))
-        .block(block)
-        .wrap(Wrap { trim: true });
-    frame.render_widget(text, popup_area);
-}
-
 pub fn render_error_toast(frame: &mut Frame, area: Rect, message: &str) {
     let toast_area = centered_rect(50, 10, area);
     frame.render_widget(Clear, toast_area);

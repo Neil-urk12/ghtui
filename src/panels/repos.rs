@@ -3,7 +3,7 @@ use ratatui::widgets::{Block, Borders, Cell, Row, StatefulWidget, Table};
 
 use crate::app::Repo;
 use crate::theme::Theme;
-use crate::util::{format, fuzzy};
+use crate::util::format;
 use crate::widgets::{detail_pane::DetailPane, empty_state::EmptyStateWidget, loading::LoadingWidget};
 
 #[derive(Debug, Default)]
@@ -20,8 +20,10 @@ pub struct ReposPanel {
     pub filtered_indices: Vec<usize>,
     pub list_state: ratatui::widgets::TableState,
     pub loading: bool,
+    #[allow(dead_code)]
     pub error: Option<String>,
     pub detail_pane: DetailPane,
+    #[allow(dead_code)]
     pub filter: Option<String>,
     pub sort: RepoSort,
 }
@@ -46,19 +48,10 @@ impl Default for ReposPanel {
 impl ReposPanel {
     pub fn set_repos(&mut self, repos: Vec<Repo>) {
         self.repos = repos;
-        self.apply_filter();
-        self.list_state.select(Some(0));
-        self.detail_pane.reset_scroll();
-    }
-
-    pub fn apply_filter(&mut self) {
-        if let Some(query) = &self.filter {
-            let scored = fuzzy::fuzzy_filter(&self.repos, query, |r| r.name.clone());
-            self.filtered_indices = scored.into_iter().map(|(i, _)| i).collect();
-        } else {
-            self.filtered_indices = (0..self.repos.len()).collect();
-        }
+        self.filtered_indices = (0..self.repos.len()).collect();
         self.sort_indices();
+        self.list_state.select(if self.filtered_indices.is_empty() { None } else { Some(0) });
+        self.detail_pane.reset_scroll();
     }
 
     fn sort_indices(&mut self) {
@@ -168,7 +161,7 @@ impl ReposPanel {
             let table = Table::new(rows, widths)
                 .header(header)
                 .block(block)
-                .highlight_style(theme.highlight);
+                .row_highlight_style(theme.highlight);
             StatefulWidget::render(table, list_area, frame.buffer_mut(), &mut state.list_state.clone());
         }
 

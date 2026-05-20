@@ -3,6 +3,7 @@ use ratatui::widgets::*;
 
 use crate::app::Issue;
 use crate::theme::Theme;
+use crate::util::format;
 use crate::util::format::relative_time;
 use crate::util::fuzzy;
 use crate::util::markdown::render_markdown;
@@ -44,10 +45,6 @@ impl Default for IssuesPanel {
 }
 
 impl IssuesPanel {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     pub fn apply_filter(&mut self) {
         if let Some(query) = &self.filter {
             let scored = fuzzy::fuzzy_filter(&self.issues, query, |i| i.title.clone());
@@ -119,10 +116,6 @@ impl IssuesPanel {
             .split(area);
 
         // Left: issue list
-        let list_block = Block::bordered()
-            .title(" List ")
-            .border_style(if focused { theme.active_border } else { theme.inactive_border });
-
         let items: Vec<ListItem> = state
             .filtered_indices
             .iter()
@@ -178,6 +171,10 @@ impl IssuesPanel {
             content.push(Line::from(vec![
                 Span::styled("Author: ", theme.muted),
                 Span::raw(&issue.author),
+            ]));
+            content.push(Line::from(vec![
+                Span::styled("Opened: ", theme.muted),
+                Span::raw(format::relative_time(&issue.created_at)),
             ]));
             content.push(Line::from(vec![
                 Span::styled("State: ", theme.muted),

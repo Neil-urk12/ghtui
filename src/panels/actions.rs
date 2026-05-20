@@ -38,10 +38,6 @@ impl Default for ActionsPanel {
 }
 
 impl ActionsPanel {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     pub fn navigate_up(&mut self) {
         let i = self.list_state.selected().unwrap_or(0);
         if i > 0 {
@@ -62,6 +58,7 @@ impl ActionsPanel {
         self.list_state.selected().and_then(|i| self.runs.get(i))
     }
 
+    #[allow(dead_code)]
     pub fn selected_run_id(&self) -> Option<u32> {
         self.selected_item().map(|r| r.run_number)
     }
@@ -151,14 +148,6 @@ impl ActionsPanel {
             .split(area);
 
         // Left: run list
-        let list_block = Block::bordered()
-            .title(" Runs ")
-            .border_style(if focused {
-                theme.active_border
-            } else {
-                theme.inactive_border
-            });
-
         let items: Vec<ListItem> = state
             .runs
             .iter()

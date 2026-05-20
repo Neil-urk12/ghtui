@@ -30,6 +30,12 @@ impl GitHubClient {
         }
     }
 
+    pub fn invalidate_cache(&self, key: &CacheKey) {
+        if let Ok(mut cache) = self.cache.lock() {
+            cache.invalidate(key);
+        }
+    }
+
     fn track_rate_limits(&self, headers: &reqwest::header::HeaderMap) {
         if let Some(remaining) = headers.get("x-ratelimit-remaining") {
             if let Ok(val) = remaining.to_str() {
@@ -54,12 +60,26 @@ impl GitHubClient {
         }
     }
 
-    async fn get<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T> {
+    async fn get<T: serde::de::DeserializeOwned + Clone + Send + Sync + 'static>(
+        &self,
+        path: &str,
+        cache_key: Option<CacheKey>,
+        cache_ttl: Duration,
+    ) -> Result<T> {
+        // Check cache first
+        if let Some(ref key) = cache_key {
+            if let Ok(cache) = self.cache.lock() {
+                if let Some(cached) = cache.get::<T>(key) {
+                    return Ok(cached.clone());
+                }
+            }
+        }
+
         let url = format!("{BASE_URL}{path}");
         let resp = self
             .http
             .get(&url)
-            .header("Authorization", format!("Bearer {}", self.token))
+            .bearer_auth(&self.token)
             .header("Accept", "application/vnd.github+json")
             .header("User-Agent", USER_AGENT)
             .send()
@@ -78,6 +98,14 @@ impl GitHubClient {
         }
 
         let data = resp.json::<T>().await?;
+
+        // Store in cache
+        if let Some(key) = cache_key {
+            if let Ok(mut cache) = self.cache.lock() {
+                cache.insert(key, data.clone(), cache_ttl);
+            }
+        }
+
         Ok(data)
     }
 
@@ -159,10 +187,10 @@ impl GitHubClient {
     }
 
     pub async fn get_repos(&self) -> Result<Vec<app::Repo>> {
-        let repos: Vec<Repo> = self
-            .get("/user/repos?sort=updated&per_page=100")
+        let models: Vec<Repo> = self
+            .get("/user/repos?sort=updated&per_page=100", Some(CacheKey::UserRepos), Duration::from_secs(60))
             .await?;
-        Ok(repos.into_iter().map(app::Repo::from).collect())
+        Ok(models.into_iter().map(app::Repo::from).collect())
     }
 
     pub async fn get_pulls(
@@ -171,12 +199,11 @@ impl GitHubClient {
         repo: &str,
         state: &str,
     ) -> Result<Vec<app::PullRequest>> {
-        let prs: Vec<PullRequest> = self
-            .get(&format!(
-                "/repos/{owner}/{repo}/pulls?state={state}&per_page=100"
-            ))
+        let path = format!("/repos/{owner}/{repo}/pulls?state={state}&per_page=100");
+        let models: Vec<PullRequest> = self
+            .get(&path, Some(CacheKey::Pulls { owner: owner.to_string(), repo: repo.to_string(), state: state.to_string() }), Duration::from_secs(30))
             .await?;
-        Ok(prs.into_iter().map(app::PullRequest::from).collect())
+        Ok(models.into_iter().map(app::PullRequest::from).collect())
     }
 
     pub async fn get_issues(
@@ -185,12 +212,12 @@ impl GitHubClient {
         repo: &str,
         state: &str,
     ) -> Result<Vec<app::Issue>> {
-        let issues: Vec<Issue> = self
-            .get(&format!(
-                "/repos/{owner}/{repo}/issues?state={state}&per_page=100"
-            ))
+        let path = format!("/repos/{owner}/{repo}/issues?state={state}&per_page=100");
+        let models: Vec<Issue> = self
+            .get(&path, Some(CacheKey::Issues { owner: owner.to_string(), repo: repo.to_string(), state: state.to_string() }), Duration::from_secs(30))
             .await?;
-        Ok(issues
+        // Filter out pull requests (GitHub returns them as issues too)
+        Ok(models
             .into_iter()
             .filter(|i| i.pull_request.is_none())
             .map(app::Issue::from)
@@ -198,27 +225,27 @@ impl GitHubClient {
     }
 
     pub async fn get_notifications(&self, all: bool) -> Result<Vec<app::Notification>> {
-        let param = if all { "all=true" } else { "" };
-        let path = if param.is_empty() {
-            "/notifications?per_page=100".to_string()
+        let path = if all {
+            "/notifications?per_page=100&all=true"
         } else {
-            format!("/notifications?{param}&per_page=100")
+            "/notifications?per_page=100"
         };
-        let notifs: Vec<Notification> = self.get(&path).await?;
-        Ok(notifs.into_iter().map(app::Notification::from).collect())
+        let models: Vec<Notification> = self
+            .get(path, Some(CacheKey::Notifications), Duration::from_secs(15))
+            .await?;
+        Ok(models.into_iter().map(app::Notification::from).collect())
     }
 
-    pub async fn get_actions(&self, owner: &str, repo: &str) -> Result<Vec<app::WorkflowRun>> {
+    pub async fn get_actions(
+        &self,
+        owner: &str,
+        repo: &str,
+    ) -> Result<Vec<app::WorkflowRun>> {
+        let path = format!("/repos/{owner}/{repo}/actions/runs?per_page=50");
         let resp: WorkflowRunsResponse = self
-            .get(&format!(
-                "/repos/{owner}/{repo}/actions/runs?per_page=50"
-            ))
+            .get(&path, Some(CacheKey::Actions { owner: owner.to_string(), repo: repo.to_string() }), Duration::from_secs(30))
             .await?;
-        Ok(resp
-            .workflow_runs
-            .into_iter()
-            .map(app::WorkflowRun::from)
-            .collect())
+        Ok(resp.workflow_runs.into_iter().map(app::WorkflowRun::from).collect())
     }
 
     pub async fn mark_notification_read(&self, id: &str) -> Result<()> {
@@ -244,6 +271,7 @@ impl GitHubClient {
             .await
     }
 
+    #[allow(dead_code)]
     pub async fn add_comment(
         &self,
         owner: &str,
