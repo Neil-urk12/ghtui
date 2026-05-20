@@ -451,9 +451,11 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
                             }
                             'o' => {
                                 if let Some(pr) = pulls.selected_pr() {
-                                    let _ = std::process::Command::new("gh")
-                                        .args(["browse", &format!("{}", pr.number)])
-                                        .spawn();
+                                    if let (Some(owner), Some(repo)) = (&pulls.owner, &pulls.repo) {
+                                        let _ = std::process::Command::new("gh")
+                                            .args(["browse", &format!("{}", pr.number), "--repo", &format!("{}/{}", owner, repo)])
+                                            .spawn();
+                                    }
                                 }
                             }
                             'a' => {
@@ -501,18 +503,22 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
                             }
                             'o' => {
                                 if let Some(issue) = issues.selected_item() {
-                                    let _ = std::process::Command::new("gh")
-                                        .args(["browse", &format!("{}", issue.number)])
-                                        .spawn();
+                                    if let (Some(owner), Some(repo)) = (&issues.owner, &issues.repo) {
+                                        let _ = std::process::Command::new("gh")
+                                            .args(["browse", &format!("{}", issue.number), "--repo", &format!("{}/{}", owner, repo)])
+                                            .spawn();
+                                    }
                                 }
                             }
                             'c' => {
                                 // TODO: open comment input mode
                                 // For now, open in browser to comment
                                 if let Some(issue) = issues.selected_item() {
-                                    let _ = std::process::Command::new("gh")
-                                        .args(["browse", &format!("{}", issue.number)])
-                                        .spawn();
+                                    if let (Some(owner), Some(repo)) = (&issues.owner, &issues.repo) {
+                                        let _ = std::process::Command::new("gh")
+                                            .args(["browse", &format!("{}", issue.number), "--repo", &format!("{}/{}", owner, repo)])
+                                            .spawn();
+                                    }
                                 }
                             }
                             _ => {}
