@@ -9,7 +9,6 @@ pub struct Config {
     pub theme: ThemeConfig,
     pub keybindings: KeybindingsConfig,
     pub defaults: DefaultsConfig,
-    pub api: ApiConfig,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -21,7 +20,6 @@ pub struct ThemeConfig {
     pub muted_color: String,
     pub success_color: String,
     pub error_color: String,
-    pub warning_color: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -33,10 +31,6 @@ pub struct KeybindingsConfig {
     pub prev_tab: String,
     pub search: String,
     pub help: String,
-    pub navigate_up: String,
-    pub navigate_down: String,
-    pub select: String,
-    pub back: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -45,24 +39,6 @@ pub struct DefaultsConfig {
     pub pulls_state: String,
     pub issues_state: String,
     pub notifications_show_all: bool,
-    pub refresh_interval_secs: u64,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-#[serde(default)]
-pub struct ApiConfig {
-    pub base_url: String,
-    pub cache_ttl_secs: CacheTtlConfig,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-#[serde(default)]
-pub struct CacheTtlConfig {
-    pub repos: u64,
-    pub pulls: u64,
-    pub issues: u64,
-    pub notifications: u64,
-    pub actions: u64,
 }
 
 impl Default for Config {
@@ -71,7 +47,6 @@ impl Default for Config {
             theme: ThemeConfig::default(),
             keybindings: KeybindingsConfig::default(),
             defaults: DefaultsConfig::default(),
-            api: ApiConfig::default(),
         }
     }
 }
@@ -85,7 +60,6 @@ impl Default for ThemeConfig {
             muted_color: "gray".to_string(),
             success_color: "green".to_string(),
             error_color: "red".to_string(),
-            warning_color: "yellow".to_string(),
         }
     }
 }
@@ -99,10 +73,6 @@ impl Default for KeybindingsConfig {
             prev_tab: "Shift-Tab".to_string(),
             search: "/".to_string(),
             help: "?".to_string(),
-            navigate_up: "k".to_string(),
-            navigate_down: "j".to_string(),
-            select: "Enter".to_string(),
-            back: "Esc".to_string(),
         }
     }
 }
@@ -113,28 +83,6 @@ impl Default for DefaultsConfig {
             pulls_state: "open".to_string(),
             issues_state: "open".to_string(),
             notifications_show_all: false,
-            refresh_interval_secs: 60,
-        }
-    }
-}
-
-impl Default for ApiConfig {
-    fn default() -> Self {
-        Self {
-            base_url: "https://api.github.com".to_string(),
-            cache_ttl_secs: CacheTtlConfig::default(),
-        }
-    }
-}
-
-impl Default for CacheTtlConfig {
-    fn default() -> Self {
-        Self {
-            repos: 300,
-            pulls: 30,
-            issues: 60,
-            notifications: 15,
-            actions: 10,
         }
     }
 }

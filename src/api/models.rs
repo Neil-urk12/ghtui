@@ -29,7 +29,6 @@ impl From<Repo> for app::Repo {
     fn from(r: Repo) -> Self {
         Self {
             name: r.full_name,
-            owner: r.owner.login,
             description: r.description,
             language: r.language,
             stars: r.stargazers_count as u32,
@@ -181,28 +180,3 @@ pub struct WorkflowRunsResponse {
     pub workflow_runs: Vec<WorkflowRun>,
 }
 
-#[allow(dead_code)]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkflowJob {
-    pub id: u64,
-    pub name: String,
-    pub status: String,
-    pub conclusion: Option<String>,
-    pub steps: Vec<WorkflowStep>,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkflowStep {
-    pub name: String,
-    pub status: String,
-    pub conclusion: Option<String>,
-    pub number: u64,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkflowJobsResponse {
-    pub total_count: u64,
-    pub jobs: Vec<WorkflowJob>,
-}

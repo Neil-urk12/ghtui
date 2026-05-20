@@ -271,22 +271,6 @@ impl GitHubClient {
             .await
     }
 
-    #[allow(dead_code)]
-    pub async fn add_comment(
-        &self,
-        owner: &str,
-        repo: &str,
-        issue_number: u64,
-        body: &str,
-    ) -> Result<()> {
-        let payload = serde_json::json!({ "body": body });
-        self.post_json(
-            &format!("/repos/{owner}/{repo}/issues/{issue_number}/comments"),
-            &payload,
-        )
-        .await
-    }
-
     pub async fn rerun_workflow(&self, owner: &str, repo: &str, run_id: u64) -> Result<()> {
         self.post_empty(&format!(
             "/repos/{owner}/{repo}/actions/runs/{run_id}/rerun"

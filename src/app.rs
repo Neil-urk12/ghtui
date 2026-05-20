@@ -78,8 +78,6 @@ impl PanelState {
 #[derive(Debug, Default)]
 pub struct Repo {
     pub name: String,
-    #[allow(dead_code)]
-    pub owner: String,
     pub description: Option<String>,
     pub language: Option<String>,
     pub stars: u32,

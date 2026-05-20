@@ -13,7 +13,6 @@ pub struct NotificationsPanel {
     pub notifications: Vec<Notification>,
     pub list_state: ListState,
     pub loading: bool,
-    pub error: Option<String>,
     pub detail_pane: DetailPane,
     pub show_all: bool,
 }
@@ -26,7 +25,6 @@ impl Default for NotificationsPanel {
             notifications: Vec::new(),
             list_state,
             loading: false,
-            error: None,
             detail_pane: DetailPane::new(),
             show_all: false,
         }
@@ -84,14 +82,6 @@ impl NotificationsPanel {
 
         if state.loading {
             LoadingWidget::new().render(frame, area, tick, block);
-            return;
-        }
-
-        if let Some(ref err) = state.error {
-            let text = Paragraph::new(format!("\n  Error: {}", err))
-                .block(block)
-                .style(theme.error);
-            frame.render_widget(text, area);
             return;
         }
 

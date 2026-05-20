@@ -20,11 +20,7 @@ pub struct ReposPanel {
     pub filtered_indices: Vec<usize>,
     pub list_state: ratatui::widgets::TableState,
     pub loading: bool,
-    #[allow(dead_code)]
-    pub error: Option<String>,
     pub detail_pane: DetailPane,
-    #[allow(dead_code)]
-    pub filter: Option<String>,
     pub sort: RepoSort,
 }
 
@@ -37,9 +33,7 @@ impl Default for ReposPanel {
             filtered_indices: Vec::new(),
             list_state,
             loading: false,
-            error: None,
             detail_pane: DetailPane::new(),
-            filter: None,
             sort: RepoSort::Name,
         }
     }

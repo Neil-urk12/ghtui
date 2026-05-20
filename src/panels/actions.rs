@@ -13,7 +13,6 @@ pub struct ActionsPanel {
     pub runs: Vec<WorkflowRun>,
     pub list_state: ListState,
     pub loading: bool,
-    pub error: Option<String>,
     pub detail_pane: DetailPane,
     pub expanded_run: Option<usize>,
     pub owner: Option<String>,
@@ -28,7 +27,6 @@ impl Default for ActionsPanel {
             runs: Vec::new(),
             list_state,
             loading: false,
-            error: None,
             detail_pane: DetailPane::new(),
             expanded_run: None,
             owner: None,
@@ -56,11 +54,6 @@ impl ActionsPanel {
 
     pub fn selected_item(&self) -> Option<&WorkflowRun> {
         self.list_state.selected().and_then(|i| self.runs.get(i))
-    }
-
-    #[allow(dead_code)]
-    pub fn selected_run_id(&self) -> Option<u32> {
-        self.selected_item().map(|r| r.run_number)
     }
 
     pub fn toggle_expand(&mut self) {
@@ -127,14 +120,6 @@ impl ActionsPanel {
 
         if state.loading {
             LoadingWidget::new().render(frame, area, tick, block);
-            return;
-        }
-
-        if let Some(ref err) = state.error {
-            let text = Paragraph::new(format!("\n  Error: {}", err))
-                .block(block)
-                .style(theme.error);
-            frame.render_widget(text, area);
             return;
         }
 

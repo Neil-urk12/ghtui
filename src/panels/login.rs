@@ -19,8 +19,6 @@ pub struct LoginState {
 
 pub enum LoginStatus {
     Waiting,
-    #[allow(dead_code)]
-    Polling,
     Success(String),
     Expired,
     Error(String),
@@ -84,24 +82,6 @@ impl LoginState {
         }
     }
 
-    #[allow(dead_code)]
-    pub async fn restart(&mut self) -> Result<()> {
-        let resp = auth::request_device_code(
-            &self.http_client,
-            auth::GHTUI_CLIENT_ID,
-            auth::GHTUI_SCOPES,
-        )
-        .await?;
-
-        self.user_code = resp.user_code;
-        self.verification_uri = resp.verification_uri;
-        self.device_code = resp.device_code;
-        self.expires_at = Instant::now() + Duration::from_secs(resp.expires_in);
-        self.poll_interval = Duration::from_secs(resp.interval);
-        self.last_poll = Instant::now();
-        self.status = LoginStatus::Waiting;
-        Ok(())
-    }
 }
 
 pub fn render_login(frame: &mut Frame, state: &LoginState) {
@@ -158,7 +138,7 @@ pub fn render_login(frame: &mut Frame, state: &LoginState) {
     let countdown = format!("{}:{:02}", mins, secs);
 
     let status_line = match &state.status {
-        LoginStatus::Waiting | LoginStatus::Polling => Line::from(vec![
+        LoginStatus::Waiting => Line::from(vec![
             "Waiting for authorization... ".gray(),
             countdown.white(),
         ]),

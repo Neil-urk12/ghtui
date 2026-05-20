@@ -12,12 +12,8 @@ pub struct PullsPanel {
     pub filtered_indices: Vec<usize>,
     pub list_state: ratatui::widgets::TableState,
     pub loading: bool,
-    #[allow(dead_code)]
-    pub error: Option<String>,
     pub detail_pane: DetailPane,
     pub state_filter: String, // "open", "closed", "all"
-    #[allow(dead_code)]
-    pub filter: Option<String>,
     pub owner: Option<String>,
     pub repo: Option<String>,
 }
@@ -31,10 +27,8 @@ impl Default for PullsPanel {
             filtered_indices: Vec::new(),
             list_state,
             loading: false,
-            error: None,
             detail_pane: DetailPane::new(),
             state_filter: "open".to_string(),
-            filter: None,
             owner: None,
             repo: None,
         }
@@ -72,28 +66,6 @@ impl PullsPanel {
         if i + 1 < self.filtered_indices.len() {
             self.list_state.select(Some(i + 1));
             self.detail_pane.reset_scroll();
-        }
-    }
-
-    #[allow(dead_code)]
-    fn status_style(state: &str, merged_at: Option<&str>, theme: &Theme) -> Style {
-        if merged_at.is_some() {
-            Style::default().fg(Color::Magenta)
-        } else if state == "closed" {
-            theme.error
-        } else {
-            theme.success
-        }
-    }
-
-    #[allow(dead_code)]
-    fn status_label(state: &str, merged_at: Option<&str>) -> &'static str {
-        if merged_at.is_some() {
-            "merged"
-        } else if state == "closed" {
-            "closed"
-        } else {
-            "open"
         }
     }
 

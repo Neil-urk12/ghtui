@@ -5,7 +5,6 @@ use crate::app::Issue;
 use crate::theme::Theme;
 use crate::util::format;
 use crate::util::format::relative_time;
-use crate::util::fuzzy;
 use crate::util::markdown::render_markdown;
 use crate::widgets::detail_pane::DetailPane;
 use crate::widgets::empty_state::EmptyStateWidget;
@@ -17,10 +16,8 @@ pub struct IssuesPanel {
     pub filtered_indices: Vec<usize>,
     pub list_state: ListState,
     pub loading: bool,
-    pub error: Option<String>,
     pub detail_pane: DetailPane,
     pub state_filter: String,
-    pub filter: Option<String>,
     pub owner: Option<String>,
     pub repo: Option<String>,
 }
@@ -34,10 +31,8 @@ impl Default for IssuesPanel {
             filtered_indices: Vec::new(),
             list_state,
             loading: false,
-            error: None,
             detail_pane: DetailPane::new(),
             state_filter: "open".to_string(),
-            filter: None,
             owner: None,
             repo: None,
         }
@@ -45,18 +40,9 @@ impl Default for IssuesPanel {
 }
 
 impl IssuesPanel {
-    pub fn apply_filter(&mut self) {
-        if let Some(query) = &self.filter {
-            let scored = fuzzy::fuzzy_filter(&self.issues, query, |i| i.title.clone());
-            self.filtered_indices = scored.into_iter().map(|(i, _)| i).collect();
-        } else {
-            self.filtered_indices = (0..self.issues.len()).collect();
-        }
-    }
-
     pub fn set_issues(&mut self, issues: Vec<Issue>) {
         self.issues = issues;
-        self.apply_filter();
+        self.filtered_indices = (0..self.issues.len()).collect();
         self.list_state.select(if self.filtered_indices.is_empty() { None } else { Some(0) });
         self.detail_pane.reset_scroll();
     }
@@ -95,14 +81,6 @@ impl IssuesPanel {
 
         if state.loading {
             LoadingWidget::new().render(frame, area, tick, block);
-            return;
-        }
-
-        if let Some(ref err) = state.error {
-            let text = Paragraph::new(format!("\n  Error: {}", err))
-                .block(block)
-                .style(theme.error);
-            frame.render_widget(text, area);
             return;
         }
 
