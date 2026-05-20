@@ -31,8 +31,9 @@ async fn main() -> color_eyre::Result<()> {
 
     color_eyre::install()?;
 
+    let config = config::Config::load();
     let mut terminal = ratatui::init();
-    let mut app = app::App::new();
+    let mut app = app::App::new(config);
 
     let result = run::run(&mut app, &mut terminal).await;
 

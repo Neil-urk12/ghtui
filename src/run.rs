@@ -8,6 +8,7 @@ use tokio::time;
 
 use crate::app::{update, view, App, Message};
 use crate::event::Event;
+use crate::keys;
 
 pub async fn run(app: &mut App, terminal: &mut DefaultTerminal) -> Result<()> {
     let mut event_stream = EventStream::new();
@@ -21,7 +22,7 @@ pub async fn run(app: &mut App, terminal: &mut DefaultTerminal) -> Result<()> {
             _ = tick_interval.tick() => Event::Tick,
         };
 
-        let messages = process_event(event);
+        let messages = process_event(event, app);
 
         for msg in messages {
             let cmd = update(app, msg);
@@ -36,19 +37,58 @@ pub async fn run(app: &mut App, terminal: &mut DefaultTerminal) -> Result<()> {
     Ok(())
 }
 
-fn process_event(event: Event) -> Vec<Message> {
+fn process_event(event: Event, app: &App) -> Vec<Message> {
     match event {
         Event::Input(CrosstermEvent::Key(key)) if key.kind == KeyEventKind::Press => {
-            // Global key handling
+            // Ctrl+C always quits
             if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
                 return vec![Message::Quit];
             }
-            match key.code {
-                KeyCode::Char('q') => vec![Message::Quit],
-                KeyCode::Tab => vec![Message::NextTab],
-                KeyCode::BackTab => vec![Message::PrevTab],
-                KeyCode::Char('r') => vec![Message::Refresh],
-                _ => vec![Message::Noop],
+
+            // Help overlay takes precedence
+            if app.show_help {
+                return match key.code {
+                    KeyCode::Esc | KeyCode::Char('?') => vec![Message::ToggleHelp],
+                    _ => vec![Message::Noop],
+                };
+            }
+
+            // Search mode: capture all input
+            if app.search.active {
+                return match key.code {
+                    KeyCode::Esc => vec![Message::SearchClear],
+                    KeyCode::Enter => vec![Message::SearchSubmit],
+                    KeyCode::Backspace => vec![Message::SearchBackspace],
+                    KeyCode::Char(c) => vec![Message::SearchInput(c)],
+                    _ => vec![Message::Noop],
+                };
+            }
+
+            // Dismiss error toast on any key
+            if app.error_toast.is_some() {
+                return vec![Message::DismissError];
+            }
+
+            // Normal mode
+            let bindings = &app.config.keybindings;
+            if keys::matches_key(key, &bindings.quit) {
+                vec![Message::Quit]
+            } else if keys::matches_key(key, &bindings.refresh) {
+                vec![Message::Refresh]
+            } else if keys::matches_key(key, &bindings.next_tab) {
+                vec![Message::NextTab]
+            } else if keys::matches_key(key, &bindings.prev_tab) {
+                vec![Message::PrevTab]
+            } else if keys::matches_key(key, &bindings.search) {
+                vec![Message::SearchActivate]
+            } else if keys::matches_key(key, &bindings.help) {
+                vec![Message::ToggleHelp]
+            } else if let KeyCode::Char(c) = key.code {
+                vec![Message::PanelKeyInput(c)]
+            } else if let KeyCode::Enter = key.code {
+                vec![Message::PanelKeyInput('\n')]
+            } else {
+                vec![Message::Noop]
             }
         }
         Event::Tick => vec![Message::Noop],

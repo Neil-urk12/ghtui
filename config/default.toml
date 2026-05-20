@@ -1,0 +1,39 @@
+# ghtui configuration
+# Copy to ~/.config/ghtui/config.toml to customize
+
+[theme]
+active_border_color = "cyan"
+inactive_border_color = "gray"
+highlight_color = "blue"
+muted_color = "gray"
+success_color = "green"
+error_color = "red"
+warning_color = "yellow"
+
+[keybindings]
+quit = "q"
+refresh = "r"
+next_tab = "Tab"
+prev_tab = "Shift-Tab"
+search = "/"
+help = "?"
+navigate_up = "k"
+navigate_down = "j"
+select = "Enter"
+back = "Esc"
+
+[defaults]
+pulls_state = "open"
+issues_state = "open"
+notifications_show_all = false
+refresh_interval_secs = 60
+
+[api]
+base_url = "https://api.github.com"
+
+[api.cache_ttl_secs]
+repos = 300
+pulls = 30
+issues = 60
+notifications = 15
+actions = 10

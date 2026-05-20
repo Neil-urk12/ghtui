@@ -1,5 +1,7 @@
 use ratatui::prelude::*;
 
+use crate::config::ThemeConfig;
+
 #[derive(Clone)]
 pub struct Theme {
     pub active_border: Style,
@@ -30,5 +32,42 @@ impl Default for Theme {
             tab_inactive: Style::default().fg(Color::Gray),
             status_bar: Style::default().fg(Color::White).bg(Color::DarkGray),
         }
+    }
+}
+
+impl Theme {
+    pub fn from_config(config: &ThemeConfig) -> Self {
+        Self {
+            active_border: Style::default().fg(parse_color(&config.active_border_color)),
+            inactive_border: Style::default().fg(parse_color(&config.inactive_border_color)),
+            highlight: Style::default()
+                .fg(parse_color(&config.highlight_color))
+                .add_modifier(Modifier::BOLD),
+            muted: Style::default().fg(parse_color(&config.muted_color)),
+            success: Style::default().fg(parse_color(&config.success_color)),
+            error: Style::default().fg(parse_color(&config.error_color)),
+            warning: Style::default().fg(parse_color(&config.warning_color)),
+            tab_active: Style::default()
+                .fg(parse_color(&config.active_border_color))
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+            tab_inactive: Style::default().fg(parse_color(&config.muted_color)),
+            status_bar: Style::default().fg(Color::White).bg(Color::DarkGray),
+        }
+    }
+}
+
+fn parse_color(s: &str) -> Color {
+    match s.to_lowercase().as_str() {
+        "black" => Color::Black,
+        "red" => Color::Red,
+        "green" => Color::Green,
+        "yellow" => Color::Yellow,
+        "blue" => Color::Blue,
+        "magenta" | "purple" => Color::Magenta,
+        "cyan" => Color::Cyan,
+        "gray" | "grey" => Color::Gray,
+        "darkgray" | "darkgrey" => Color::DarkGray,
+        "white" => Color::White,
+        _ => Color::Cyan,
     }
 }

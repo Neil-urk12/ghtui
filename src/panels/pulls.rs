@@ -1,0 +1,245 @@
+use ratatui::prelude::*;
+use ratatui::widgets::{Block, Borders, Cell, Row, StatefulWidget, Table};
+
+use crate::app::PullRequest;
+use crate::theme::Theme;
+use crate::util::{format, fuzzy};
+use crate::widgets::{detail_pane::DetailPane, empty_state::EmptyStateWidget, loading::LoadingWidget};
+
+#[derive(Debug)]
+pub struct PullsPanel {
+    pub pulls: Vec<PullRequest>,
+    pub filtered_indices: Vec<usize>,
+    pub list_state: ratatui::widgets::TableState,
+    pub loading: bool,
+    pub error: Option<String>,
+    pub detail_pane: DetailPane,
+    pub state_filter: String, // "open", "closed", "all"
+    pub filter: Option<String>,
+    pub owner: Option<String>,
+    pub repo: Option<String>,
+}
+
+impl Default for PullsPanel {
+    fn default() -> Self {
+        let mut list_state = ratatui::widgets::TableState::default();
+        list_state.select(Some(0));
+        Self {
+            pulls: Vec::new(),
+            filtered_indices: Vec::new(),
+            list_state,
+            loading: false,
+            error: None,
+            detail_pane: DetailPane::new(),
+            state_filter: "open".to_string(),
+            filter: None,
+            owner: None,
+            repo: None,
+        }
+    }
+}
+
+impl PullsPanel {
+    pub fn apply_filter(&mut self) {
+        if let Some(query) = &self.filter {
+            let scored = fuzzy::fuzzy_filter(&self.pulls, query, |pr| pr.title.clone());
+            self.filtered_indices = scored.into_iter().map(|(i, _)| i).collect();
+        } else {
+            self.filtered_indices = (0..self.pulls.len()).collect();
+        }
+    }
+
+    pub fn set_pulls(&mut self, pulls: Vec<PullRequest>) {
+        self.pulls = pulls;
+        self.apply_filter();
+        self.list_state.select(if self.filtered_indices.is_empty() {
+            None
+        } else {
+            Some(0)
+        });
+        self.detail_pane.reset_scroll();
+    }
+
+    pub fn set_repo(&mut self, owner: String, repo: String) {
+        self.owner = Some(owner);
+        self.repo = Some(repo);
+    }
+
+    pub fn selected_pr(&self) -> Option<&PullRequest> {
+        let idx = self.list_state.selected()?;
+        self.filtered_indices.get(idx).map(|&i| &self.pulls[i])
+    }
+
+    pub fn navigate_up(&mut self) {
+        let i = self.list_state.selected().unwrap_or(0);
+        if i > 0 {
+            self.list_state.select(Some(i - 1));
+            self.detail_pane.reset_scroll();
+        }
+    }
+
+    pub fn navigate_down(&mut self) {
+        let i = self.list_state.selected().unwrap_or(0);
+        if i + 1 < self.filtered_indices.len() {
+            self.list_state.select(Some(i + 1));
+            self.detail_pane.reset_scroll();
+        }
+    }
+
+    fn status_style(state: &str, merged_at: Option<&str>, theme: &Theme) -> Style {
+        if merged_at.is_some() {
+            Style::default().fg(Color::Magenta)
+        } else if state == "closed" {
+            theme.error
+        } else {
+            theme.success
+        }
+    }
+
+    fn status_label(state: &str, merged_at: Option<&str>) -> &'static str {
+        if merged_at.is_some() {
+            "merged"
+        } else if state == "closed" {
+            "closed"
+        } else {
+            "open"
+        }
+    }
+
+    pub fn view(
+        frame: &mut Frame,
+        area: Rect,
+        state: &PullsPanel,
+        focused: bool,
+        theme: &Theme,
+        tick: u64,
+    ) {
+        let [list_area, detail_area] =
+            Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .areas(area);
+
+        let border_style = if focused {
+            theme.active_border
+        } else {
+            theme.inactive_border
+        };
+
+        let title = match (&state.owner, &state.repo) {
+            (Some(o), Some(r)) => format!(" PRs: {o}/{r} "),
+            _ => " Pull Requests ".to_string(),
+        };
+
+        let block = Block::default()
+            .title(title)
+            .borders(Borders::ALL)
+            .border_style(border_style);
+
+        if state.loading {
+            LoadingWidget::new().render(frame, list_area, tick, block);
+            return;
+        }
+
+        if state.pulls.is_empty() {
+            let msg = if state.owner.is_some() {
+                "No pull requests found"
+            } else {
+                "Select a repository first (Enter on a repo)"
+            };
+            EmptyStateWidget::render(frame, list_area, msg, block);
+        } else {
+            let rows: Vec<Row> = state
+                .filtered_indices
+                .iter()
+                .map(|&i| {
+                    let pr = &state.pulls[i];
+                    let status_str = if pr.state == "closed" { "closed" } else { "open" };
+                    let status_style = if pr.state == "closed" { theme.error } else { theme.success };
+                    let updated = format::relative_time(&pr.updated_at);
+                    Row::new(vec![
+                        Cell::from(format!("#{}", pr.number)),
+                        Cell::from(pr.title.clone()),
+                        Cell::from(pr.author.clone()),
+                        Cell::from(Span::styled(status_str, status_style)),
+                        Cell::from(updated),
+                    ])
+                })
+                .collect();
+
+            let widths = [
+                Constraint::Length(6),
+                Constraint::Fill(3),
+                Constraint::Fill(1),
+                Constraint::Length(8),
+                Constraint::Fill(1),
+            ];
+            let header =
+                Row::new(["#", "Title", "Author", "Status", "Updated"]).style(theme.muted);
+            let table = Table::new(rows, widths)
+                .header(header)
+                .block(block)
+                .highlight_style(theme.highlight);
+            StatefulWidget::render(
+                table,
+                list_area,
+                frame.buffer_mut(),
+                &mut state.list_state.clone(),
+            );
+        }
+
+        // Detail pane
+        let detail_block = Block::default()
+            .title(" PR Details ")
+            .borders(Borders::ALL)
+            .border_style(border_style);
+
+        if let Some(pr) = state.selected_pr() {
+            let mut lines = vec![
+                Line::from(Span::styled(
+                    format!("#{} {}", pr.number, pr.title),
+                    Style::default().add_modifier(Modifier::BOLD),
+                )),
+                Line::from(format!("by {} | {}", pr.author, format::relative_time(&pr.updated_at))),
+                Line::from(""),
+            ];
+
+            if !pr.labels.is_empty() {
+                let labels: Vec<Span> = pr
+                    .labels
+                    .iter()
+                    .map(|l| Span::styled(format!("[{l}]"), Style::default().fg(Color::Yellow)))
+                    .collect();
+                let mut label_line = vec![Span::raw("Labels: ")];
+                label_line.extend(labels);
+                lines.push(Line::from(label_line));
+                lines.push(Line::from(""));
+            }
+
+            if let Some(body) = &pr.body {
+                let rendered = crate::util::markdown::render_markdown(body);
+                lines.extend(rendered);
+            } else {
+                lines.push(Line::from(Span::styled(
+                    "(no description)",
+                    theme.muted,
+                )));
+            }
+
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "1/2/3: filter | o: open | c: checkout | a: approve | m: merge",
+                theme.muted,
+            )));
+
+            state
+                .detail_pane
+                .render(frame, detail_area, " PR Details ", lines, detail_block);
+        } else {
+            EmptyStateWidget::render(
+                frame,
+                detail_area,
+                "Select a pull request",
+                detail_block,
+            );
+        }
+    }
+}
