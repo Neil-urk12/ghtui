@@ -2,6 +2,7 @@ use ratatui::prelude::*;
 use ratatui::widgets::*;
 
 use crate::app::Issue;
+use crate::cmd::Cmd;
 use crate::theme::Theme;
 use crate::util::format;
 use crate::util::format::relative_time;
@@ -9,6 +10,7 @@ use crate::util::markdown::render_markdown;
 use crate::widgets::detail_pane::DetailPane;
 use crate::widgets::empty_state::EmptyStateWidget;
 use crate::widgets::loading::LoadingWidget;
+use super::panel::Panel;
 
 #[derive(Debug)]
 pub struct IssuesPanel {
@@ -188,5 +190,73 @@ impl IssuesPanel {
         } else {
             EmptyStateWidget::render(frame, chunks[1], "Select an issue to view details", detail_block);
         }
+    }
+}
+
+impl Panel for IssuesPanel {
+    fn detail_pane(&mut self) -> &mut DetailPane {
+        &mut self.detail_pane
+    }
+
+    fn list_len(&self) -> usize {
+        self.filtered_indices.len()
+    }
+
+    fn selected_index(&self) -> Option<usize> {
+        self.list_state.selected()
+    }
+
+    fn set_selected(&mut self, index: Option<usize>) {
+        self.list_state.select(index);
+    }
+
+    fn handle_key(&mut self, key: char) -> Option<Cmd> {
+        match key {
+            'j' => { self.navigate_down(); None }
+            'k' => { self.navigate_up(); None }
+            '1' => {
+                self.state_filter = "open".to_string();
+                if let (Some(owner), Some(repo)) = (&self.owner, &self.repo) {
+                    Some(Cmd::FetchIssues { owner: owner.clone(), repo: repo.clone(), state: "open".into() })
+                } else { None }
+            }
+            '2' => {
+                self.state_filter = "closed".to_string();
+                if let (Some(owner), Some(repo)) = (&self.owner, &self.repo) {
+                    Some(Cmd::FetchIssues { owner: owner.clone(), repo: repo.clone(), state: "closed".into() })
+                } else { None }
+            }
+            '3' => {
+                self.state_filter = "all".to_string();
+                if let (Some(owner), Some(repo)) = (&self.owner, &self.repo) {
+                    Some(Cmd::FetchIssues { owner: owner.clone(), repo: repo.clone(), state: "all".into() })
+                } else { None }
+            }
+            'o' => {
+                if let Some(issue) = self.selected_item() {
+                    if let (Some(owner), Some(repo)) = (&self.owner, &self.repo) {
+                        let _ = std::process::Command::new("gh")
+                            .args(["browse", &format!("{}", issue.number), "--repo", &format!("{}/{}", owner, repo)])
+                            .spawn();
+                    }
+                }
+                None
+            }
+            'c' => {
+                if let Some(issue) = self.selected_item() {
+                    if let (Some(owner), Some(repo)) = (&self.owner, &self.repo) {
+                        let _ = std::process::Command::new("gh")
+                            .args(["browse", &format!("{}", issue.number), "--repo", &format!("{}/{}", owner, repo)])
+                            .spawn();
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
+    fn render(&self, frame: &mut Frame, area: Rect, focused: bool, theme: &Theme, tick: u64) {
+        Self::view(frame, area, self, focused, theme, tick);
     }
 }

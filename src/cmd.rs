@@ -11,6 +11,7 @@ pub enum Cmd {
     MergePr { owner: String, repo: String, pr_number: u64 },
     RerunWorkflow { owner: String, repo: String, run_id: u64 },
     CancelWorkflow { owner: String, repo: String, run_id: u64 },
+    OpenRepoDetail { owner: String, repo: String },
 }
 
 impl std::fmt::Debug for Cmd {
@@ -28,6 +29,7 @@ impl std::fmt::Debug for Cmd {
             Cmd::MergePr { owner, repo, pr_number } => write!(f, "MergePr({}/{}/{})", owner, repo, pr_number),
             Cmd::RerunWorkflow { owner, repo, run_id } => write!(f, "RerunWorkflow({}/{}/{})", owner, repo, run_id),
             Cmd::CancelWorkflow { owner, repo, run_id } => write!(f, "CancelWorkflow({}/{}/{})", owner, repo, run_id),
+            Cmd::OpenRepoDetail { owner, repo } => write!(f, "OpenRepoDetail({}/{})", owner, repo),
         }
     }
 }

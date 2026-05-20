@@ -2,11 +2,13 @@ use ratatui::prelude::*;
 use ratatui::widgets::*;
 
 use crate::app::Notification;
+use crate::cmd::Cmd;
 use crate::theme::Theme;
 use crate::util::format::relative_time;
 use crate::widgets::detail_pane::DetailPane;
 use crate::widgets::empty_state::EmptyStateWidget;
 use crate::widgets::loading::LoadingWidget;
+use super::panel::Panel;
 
 #[derive(Debug)]
 pub struct NotificationsPanel {
@@ -187,5 +189,53 @@ impl NotificationsPanel {
                 detail_block,
             );
         }
+    }
+}
+
+impl Panel for NotificationsPanel {
+    fn detail_pane(&mut self) -> &mut DetailPane {
+        &mut self.detail_pane
+    }
+
+    fn list_len(&self) -> usize {
+        self.notifications.len()
+    }
+
+    fn selected_index(&self) -> Option<usize> {
+        self.list_state.selected()
+    }
+
+    fn set_selected(&mut self, index: Option<usize>) {
+        self.list_state.select(index);
+    }
+
+    fn handle_key(&mut self, key: char) -> Option<Cmd> {
+        match key {
+            'j' => { self.navigate_down(); None }
+            'k' => { self.navigate_up(); None }
+            'x' => {
+                if let Some(notif) = self.selected_item() {
+                    let id = notif.id.clone();
+                    if !id.is_empty() {
+                        return Some(Cmd::MarkNotificationRead { id });
+                    }
+                }
+                None
+            }
+            'X' => Some(Cmd::MarkAllNotificationsRead),
+            '1' => {
+                self.show_all = false;
+                Some(Cmd::FetchNotifications { all: false })
+            }
+            '2' => {
+                self.show_all = true;
+                Some(Cmd::FetchNotifications { all: true })
+            }
+            _ => None,
+        }
+    }
+
+    fn render(&self, frame: &mut Frame, area: Rect, focused: bool, theme: &Theme, tick: u64) {
+        Self::view(frame, area, self, focused, theme, tick);
     }
 }

@@ -217,6 +217,9 @@ fn spawn_cmd(cmd: Cmd, client: &Arc<GitHubClient>, tx: mpsc::Sender<Result<ApiPa
                 let _ = tx.send(result.map(|_| ApiPayload::Success(format!("Workflow #{} cancelled", run_id)))).await;
             });
         }
+        Cmd::OpenRepoDetail { .. } => {
+            // Handled in update(), should not reach spawn_cmd
+        }
     }
 }
 

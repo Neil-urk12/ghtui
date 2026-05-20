@@ -2,9 +2,11 @@ use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Cell, Row, StatefulWidget, Table};
 
 use crate::app::Repo;
+use crate::cmd::Cmd;
 use crate::theme::Theme;
 use crate::util::format;
 use crate::widgets::{detail_pane::DetailPane, empty_state::EmptyStateWidget, loading::LoadingWidget};
+use super::panel::Panel;
 
 #[derive(Debug, Default)]
 pub enum RepoSort {
@@ -209,5 +211,48 @@ impl ReposPanel {
                 detail_block,
             );
         }
+    }
+}
+
+impl Panel for ReposPanel {
+    fn detail_pane(&mut self) -> &mut DetailPane {
+        &mut self.detail_pane
+    }
+
+    fn list_len(&self) -> usize {
+        self.filtered_indices.len()
+    }
+
+    fn selected_index(&self) -> Option<usize> {
+        self.list_state.selected()
+    }
+
+    fn set_selected(&mut self, index: Option<usize>) {
+        self.list_state.select(index);
+    }
+
+    fn handle_key(&mut self, key: char) -> Option<Cmd> {
+        match key {
+            'j' => { self.navigate_down(); None }
+            'k' => { self.navigate_up(); None }
+            's' => { self.cycle_sort(); None }
+            '\n' => {
+                if let Some(repo) = self.selected_repo() {
+                    let parts: Vec<&str> = repo.name.splitn(2, '/').collect();
+                    if parts.len() == 2 {
+                        return Some(Cmd::OpenRepoDetail {
+                            owner: parts[0].to_string(),
+                            repo: parts[1].to_string(),
+                        });
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
+    fn render(&self, frame: &mut Frame, area: Rect, focused: bool, theme: &Theme, tick: u64) {
+        Self::view(frame, area, self, focused, theme, tick);
     }
 }

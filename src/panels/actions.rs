@@ -2,11 +2,13 @@ use ratatui::prelude::*;
 use ratatui::widgets::*;
 
 use crate::app::WorkflowRun;
+use crate::cmd::Cmd;
 use crate::theme::Theme;
 use crate::util::format::relative_time;
 use crate::widgets::detail_pane::DetailPane;
 use crate::widgets::empty_state::EmptyStateWidget;
 use crate::widgets::loading::LoadingWidget;
+use super::panel::Panel;
 
 #[derive(Debug)]
 pub struct ActionsPanel {
@@ -241,5 +243,52 @@ impl ActionsPanel {
                 detail_block,
             );
         }
+    }
+}
+
+impl Panel for ActionsPanel {
+    fn detail_pane(&mut self) -> &mut DetailPane {
+        &mut self.detail_pane
+    }
+
+    fn list_len(&self) -> usize {
+        self.runs.len()
+    }
+
+    fn selected_index(&self) -> Option<usize> {
+        self.list_state.selected()
+    }
+
+    fn set_selected(&mut self, index: Option<usize>) {
+        self.list_state.select(index);
+    }
+
+    fn handle_key(&mut self, key: char) -> Option<Cmd> {
+        match key {
+            'j' => { self.navigate_down(); None }
+            'k' => { self.navigate_up(); None }
+            '\n' => { self.toggle_expand(); None }
+            'r' => {
+                if let Some(run) = self.selected_item() {
+                    if let (Some(owner), Some(repo)) = (&self.owner, &self.repo) {
+                        return Some(Cmd::RerunWorkflow { owner: owner.clone(), repo: repo.clone(), run_id: run.id });
+                    }
+                }
+                None
+            }
+            'c' => {
+                if let Some(run) = self.selected_item() {
+                    if let (Some(owner), Some(repo)) = (&self.owner, &self.repo) {
+                        return Some(Cmd::CancelWorkflow { owner: owner.clone(), repo: repo.clone(), run_id: run.id });
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
+    fn render(&self, frame: &mut Frame, area: Rect, focused: bool, theme: &Theme, tick: u64) {
+        Self::view(frame, area, self, focused, theme, tick);
     }
 }
