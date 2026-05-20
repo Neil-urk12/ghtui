@@ -8,7 +8,7 @@ use ratatui::widgets::*;
 use crate::api::client::GitHubClient;
 use crate::cmd::Cmd;
 use crate::config::Config;
-use crate::panels::{ActionsPanel, IssuesPanel, NotificationsPanel, PullsPanel, ReposPanel};
+use crate::panels::{login::LoginState, ActionsPanel, IssuesPanel, NotificationsPanel, PullsPanel, ReposPanel};
 use crate::theme::Theme;
 use crate::widgets::popup;
 use crate::widgets::status_bar::render_status_bar;
@@ -143,7 +143,11 @@ pub struct SearchState {
     pub query: String,
 }
 
-#[derive(Debug)]
+pub enum AppState {
+    Login,
+    Main,
+}
+
 pub enum Message {
     NextTab,
     PrevTab,
@@ -161,9 +165,40 @@ pub enum Message {
     DetailScrollDown,
     Quit,
     Noop,
+    LoginInit(LoginState),
+    LoginSuccess(String),
+    LoginError(String),
+}
+
+impl fmt::Debug for Message {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Message::NextTab => write!(f, "NextTab"),
+            Message::PrevTab => write!(f, "PrevTab"),
+            Message::Refresh => write!(f, "Refresh"),
+            Message::SearchActivate => write!(f, "SearchActivate"),
+            Message::SearchInput(c) => write!(f, "SearchInput({})", c),
+            Message::SearchBackspace => write!(f, "SearchBackspace"),
+            Message::SearchSubmit => write!(f, "SearchSubmit"),
+            Message::SearchClear => write!(f, "SearchClear"),
+            Message::DismissError => write!(f, "DismissError"),
+            Message::DismissSuccess => write!(f, "DismissSuccess"),
+            Message::ToggleHelp => write!(f, "ToggleHelp"),
+            Message::PanelKeyInput(c) => write!(f, "PanelKeyInput({})", c),
+            Message::DetailScrollUp => write!(f, "DetailScrollUp"),
+            Message::DetailScrollDown => write!(f, "DetailScrollDown"),
+            Message::Quit => write!(f, "Quit"),
+            Message::Noop => write!(f, "Noop"),
+            Message::LoginInit(_) => write!(f, "LoginInit"),
+            Message::LoginSuccess(_) => write!(f, "LoginSuccess"),
+            Message::LoginError(msg) => write!(f, "LoginError({})", msg),
+        }
+    }
 }
 
 pub struct App {
+    pub state: AppState,
+    pub login: Option<LoginState>,
     pub active_panel: PanelKind,
     pub panels: HashMap<PanelKind, PanelState>,
     pub config: Config,
@@ -180,8 +215,13 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(config: Config, client: Arc<GitHubClient>) -> Self {
+    pub fn new(config: Config, token: Option<String>) -> Self {
         let theme = Theme::from_config(&config.theme);
+
+        let (client, state) = match token {
+            Some(token) => (Arc::new(GitHubClient::new(token)), AppState::Main),
+            None => (Arc::new(GitHubClient::new(String::new())), AppState::Login),
+        };
 
         // Apply config defaults
         let mut panels = HashMap::new();
@@ -198,6 +238,8 @@ impl App {
         panels.insert(PanelKind::Actions, PanelState::Actions(ActionsPanel::default()));
 
         Self {
+            state,
+            login: None,
             active_panel: PanelKind::Repos,
             panels,
             config,
@@ -341,6 +383,12 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
             Cmd::None
         }
         Message::PanelKeyInput(c) => {
+            if !matches!(app.state, AppState::Main) {
+                if c == 'q' {
+                    app.should_quit = true;
+                }
+                return Cmd::None;
+            }
             match app.active_panel {
                 PanelKind::Repos => {
                     if let Some(PanelState::Repos(ref mut repos)) = app.panels.get_mut(&PanelKind::Repos) {
@@ -532,6 +580,22 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
             }
             Cmd::None
         }
+        Message::LoginInit(login) => {
+            app.state = AppState::Login;
+            app.login = Some(login);
+            Cmd::None
+        }
+        Message::LoginSuccess(token) => {
+            let _ = crate::api::auth::save_token(&token, crate::api::auth::GHTUI_SCOPES);
+            app.client = Arc::new(GitHubClient::new(token));
+            app.login = None;
+            app.state = AppState::Main;
+            Cmd::FetchRepos
+        }
+        Message::LoginError(msg) => {
+            app.error_toast = Some(msg);
+            Cmd::None
+        }
         Message::Quit => {
             app.should_quit = true;
             Cmd::None
@@ -542,6 +606,18 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
 
 pub fn view(frame: &mut Frame, app: &App) {
     let area = frame.area();
+
+    // Login screen — render instead of main UI
+    if matches!(app.state, AppState::Login) {
+        if let Some(ref login) = app.login {
+            crate::panels::login::render_login(frame, login);
+        } else {
+            let loading = Paragraph::new("Initializing login...")
+                .alignment(Alignment::Center);
+            frame.render_widget(loading, area);
+        }
+        return;
+    }
 
     // Main layout: tab bar, content, search/status
     let (content_height, status_height) = if app.search.active {

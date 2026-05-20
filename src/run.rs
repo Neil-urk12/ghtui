@@ -10,7 +10,7 @@ use tokio::time;
 
 use crate::api::client::GitHubClient;
 use crate::api::cache::CacheKey;
-use crate::app::{update, view, App, Message, PanelKind, PanelState};
+use crate::app::{update, view, App, AppState, Message, PanelKind, PanelState};
 use crate::cmd::Cmd;
 use crate::event::{ApiPayload, Event};
 use crate::keys;
@@ -21,8 +21,21 @@ pub async fn run(app: &mut App, terminal: &mut DefaultTerminal) -> Result<()> {
     let mut tick_interval = time::interval(Duration::from_millis(250));
     let (tx, mut rx) = mpsc::channel::<Result<ApiPayload>>(128);
 
-    // Auto-fetch repos on startup
-    spawn_cmd(Cmd::FetchRepos, &app.client, tx.clone());
+    // Initialize login if no token found
+    if matches!(app.state, AppState::Login) {
+        let http = reqwest::Client::new();
+        match crate::panels::login::LoginState::new(http).await {
+            Ok(login) => {
+                let _ = update(app, Message::LoginInit(login));
+            }
+            Err(e) => {
+                let _ = update(app, Message::LoginError(e.to_string()));
+            }
+        }
+    } else {
+        // Auto-fetch repos on startup (only when authenticated)
+        spawn_cmd(Cmd::FetchRepos, &app.client, tx.clone());
+    }
 
     loop {
         terminal.draw(|frame| view(frame, app))?;
@@ -49,6 +62,33 @@ pub async fn run(app: &mut App, terminal: &mut DefaultTerminal) -> Result<()> {
         };
 
         let messages = process_event(event, app);
+
+        // Login tick — poll for auth on each tick
+        if matches!(app.state, AppState::Login) {
+            if let Some(ref mut login) = app.login {
+                login.tick().await;
+                match &login.status {
+                    crate::panels::login::LoginStatus::Success(token) => {
+                        let token = token.clone();
+                        let _ = update(app, Message::LoginSuccess(token));
+                        // Start fetching repos now that we're authenticated
+                        spawn_cmd(Cmd::FetchRepos, &app.client, tx.clone());
+                    }
+                    crate::panels::login::LoginStatus::Error(msg) => {
+                        let msg = msg.clone();
+                        let _ = update(app, Message::LoginError(msg));
+                    }
+                    crate::panels::login::LoginStatus::Expired => {
+                        // Auto-restart device flow
+                        let http = reqwest::Client::new();
+                        if let Ok(new_login) = crate::panels::login::LoginState::new(http).await {
+                            app.login = Some(new_login);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
 
         for msg in messages {
             let cmd = update(app, msg);
