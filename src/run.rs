@@ -74,19 +74,19 @@ fn spawn_cmd(cmd: Cmd, client: &Arc<GitHubClient>, tx: mpsc::Sender<Result<ApiPa
                 let _ = tx.send(result).await;
             });
         }
-        Cmd::FetchPulls { owner, repo } => {
+        Cmd::FetchPulls { owner, repo, state } => {
             tokio::spawn(async move {
                 let result = client
-                    .get_pulls(&owner, &repo, "open")
+                    .get_pulls(&owner, &repo, &state)
                     .await
                     .map(ApiPayload::Pulls);
                 let _ = tx.send(result).await;
             });
         }
-        Cmd::FetchIssues { owner, repo } => {
+        Cmd::FetchIssues { owner, repo, state } => {
             tokio::spawn(async move {
                 let result = client
-                    .get_issues(&owner, &repo, "open")
+                    .get_issues(&owner, &repo, &state)
                     .await
                     .map(ApiPayload::Issues);
                 let _ = tx.send(result).await;
@@ -135,7 +135,9 @@ fn spawn_cmd(cmd: Cmd, client: &Arc<GitHubClient>, tx: mpsc::Sender<Result<ApiPa
                     .approve_pr(&owner, &repo, pr_number)
                     .await;
                 if result.is_ok() {
-                    client.invalidate_cache(&CacheKey::Pulls { owner: owner.clone(), repo: repo.clone(), state: "open".into() });
+                    for state in ["open", "closed", "all"] {
+                        client.invalidate_cache(&CacheKey::Pulls { owner: owner.clone(), repo: repo.clone(), state: state.into() });
+                    }
                 }
                 let _ = tx.send(result.map(|_| ApiPayload::Success(format!("PR #{} approved", pr_number)))).await;
             });
@@ -146,7 +148,9 @@ fn spawn_cmd(cmd: Cmd, client: &Arc<GitHubClient>, tx: mpsc::Sender<Result<ApiPa
                     .merge_pr(&owner, &repo, pr_number)
                     .await;
                 if result.is_ok() {
-                    client.invalidate_cache(&CacheKey::Pulls { owner: owner.clone(), repo: repo.clone(), state: "open".into() });
+                    for state in ["open", "closed", "all"] {
+                        client.invalidate_cache(&CacheKey::Pulls { owner: owner.clone(), repo: repo.clone(), state: state.into() });
+                    }
                 }
                 let _ = tx.send(result.map(|_| ApiPayload::Success(format!("PR #{} merged", pr_number)))).await;
             });
@@ -202,6 +206,9 @@ fn process_event(event: Event, app: &mut App) -> Vec<Message> {
 
             if app.error_toast.is_some() {
                 return vec![Message::DismissError];
+            }
+            if app.success_toast.is_some() {
+                return vec![Message::DismissSuccess];
             }
 
             let bindings = &app.config.keybindings;
@@ -294,8 +301,7 @@ fn handle_api_result(app: &mut App, payload: ApiPayload) {
             }
         }
         ApiPayload::Success(msg) => {
-            // Refresh current panel data after successful mutation
-            app.error_toast = Some(msg);
+            app.success_toast = Some(msg);
         }
     }
 }

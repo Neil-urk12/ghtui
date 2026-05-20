@@ -14,6 +14,19 @@ pub fn render_error_toast(frame: &mut Frame, area: Rect, message: &str) {
     frame.render_widget(text, toast_area);
 }
 
+pub fn render_success_toast(frame: &mut Frame, area: Rect, message: &str) {
+    let toast_area = centered_rect(50, 10, area);
+    frame.render_widget(Clear, toast_area);
+    let block = Block::default()
+        .title("Success")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Green));
+    let text = Paragraph::new(message)
+        .block(block)
+        .wrap(Wrap { trim: true });
+    frame.render_widget(text, toast_area);
+}
+
 pub fn render_help(frame: &mut Frame, area: Rect, panel: &str) {
     let help_area = centered_rect(70, 60, area);
     frame.render_widget(Clear, help_area);

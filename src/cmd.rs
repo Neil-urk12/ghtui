@@ -1,8 +1,8 @@
 pub enum Cmd {
     None,
     FetchRepos,
-    FetchPulls { owner: String, repo: String },
-    FetchIssues { owner: String, repo: String },
+    FetchPulls { owner: String, repo: String, state: String },
+    FetchIssues { owner: String, repo: String, state: String },
     FetchNotifications { all: bool },
     FetchActions { owner: String, repo: String },
     MarkNotificationRead { id: String },
@@ -18,8 +18,8 @@ impl std::fmt::Debug for Cmd {
         match self {
             Cmd::None => write!(f, "None"),
             Cmd::FetchRepos => write!(f, "FetchRepos"),
-            Cmd::FetchPulls { owner, repo } => write!(f, "FetchPulls({}, {})", owner, repo),
-            Cmd::FetchIssues { owner, repo } => write!(f, "FetchIssues({}, {})", owner, repo),
+            Cmd::FetchPulls { owner, repo, state } => write!(f, "FetchPulls({}, {}, {})", owner, repo, state),
+            Cmd::FetchIssues { owner, repo, state } => write!(f, "FetchIssues({}, {}, {})", owner, repo, state),
             Cmd::FetchNotifications { all } => write!(f, "FetchNotifications(all={})", all),
             Cmd::FetchActions { owner, repo } => write!(f, "FetchActions({}, {})", owner, repo),
             Cmd::MarkNotificationRead { id } => write!(f, "MarkNotificationRead({})", id),

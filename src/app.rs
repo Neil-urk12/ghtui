@@ -154,6 +154,7 @@ pub enum Message {
     SearchSubmit,
     SearchClear,
     DismissError,
+    DismissSuccess,
     ToggleHelp,
     PanelKeyInput(char),
     DetailScrollUp,
@@ -169,6 +170,7 @@ pub struct App {
     pub theme: Theme,
     pub search: SearchState,
     pub error_toast: Option<String>,
+    pub success_toast: Option<String>,
     pub show_help: bool,
     pub should_quit: bool,
     pub tick: u64,
@@ -202,6 +204,7 @@ impl App {
             theme,
             search: SearchState::default(),
             error_toast: None,
+            success_toast: None,
             show_help: false,
             should_quit: false,
             tick: 0,
@@ -237,6 +240,7 @@ fn fetch_for_active_panel(app: &App) -> Cmd {
                     (Some(owner), Some(repo)) => Cmd::FetchPulls {
                         owner: owner.clone(),
                         repo: repo.clone(),
+                        state: p.state_filter.clone(),
                     },
                     _ => Cmd::None,
                 }
@@ -250,6 +254,7 @@ fn fetch_for_active_panel(app: &App) -> Cmd {
                     (Some(owner), Some(repo)) => Cmd::FetchIssues {
                         owner: owner.clone(),
                         repo: repo.clone(),
+                        state: i.state_filter.clone(),
                     },
                     _ => Cmd::None,
                 }
@@ -315,6 +320,10 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
             app.error_toast = None;
             Cmd::None
         }
+        Message::DismissSuccess => {
+            app.success_toast = None;
+            Cmd::None
+        }
         Message::ToggleHelp => {
             app.show_help = !app.show_help;
             Cmd::None
@@ -356,8 +365,13 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
                                         actions.owner = Some(owner.clone());
                                         actions.repo = Some(repo.clone());
                                     }
+                                    let state = if let Some(PanelState::Pulls(ref p)) = app.panels.get(&PanelKind::Pulls) {
+                                        p.state_filter.clone()
+                                    } else {
+                                        "open".to_string()
+                                    };
                                     app.active_panel = PanelKind::Pulls;
-                                    return Cmd::FetchPulls { owner, repo };
+                                    return Cmd::FetchPulls { owner, repo, state };
                                 }
                             }
                             _ => {}
@@ -372,19 +386,19 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
                             '1' => {
                                 pulls.state_filter = "open".to_string();
                                 if let (Some(owner), Some(repo)) = (&pulls.owner, &pulls.repo) {
-                                    return Cmd::FetchPulls { owner: owner.clone(), repo: repo.clone() };
+                                    return Cmd::FetchPulls { owner: owner.clone(), repo: repo.clone(), state: "open".into() };
                                 }
                             }
                             '2' => {
                                 pulls.state_filter = "closed".to_string();
                                 if let (Some(owner), Some(repo)) = (&pulls.owner, &pulls.repo) {
-                                    return Cmd::FetchPulls { owner: owner.clone(), repo: repo.clone() };
+                                    return Cmd::FetchPulls { owner: owner.clone(), repo: repo.clone(), state: "closed".into() };
                                 }
                             }
                             '3' => {
                                 pulls.state_filter = "all".to_string();
                                 if let (Some(owner), Some(repo)) = (&pulls.owner, &pulls.repo) {
-                                    return Cmd::FetchPulls { owner: owner.clone(), repo: repo.clone() };
+                                    return Cmd::FetchPulls { owner: owner.clone(), repo: repo.clone(), state: "all".into() };
                                 }
                             }
                             'o' => {
@@ -422,19 +436,19 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
                             '1' => {
                                 issues.state_filter = "open".to_string();
                                 if let (Some(owner), Some(repo)) = (&issues.owner, &issues.repo) {
-                                    return Cmd::FetchIssues { owner: owner.clone(), repo: repo.clone() };
+                                    return Cmd::FetchIssues { owner: owner.clone(), repo: repo.clone(), state: "open".into() };
                                 }
                             }
                             '2' => {
                                 issues.state_filter = "closed".to_string();
                                 if let (Some(owner), Some(repo)) = (&issues.owner, &issues.repo) {
-                                    return Cmd::FetchIssues { owner: owner.clone(), repo: repo.clone() };
+                                    return Cmd::FetchIssues { owner: owner.clone(), repo: repo.clone(), state: "closed".into() };
                                 }
                             }
                             '3' => {
                                 issues.state_filter = "all".to_string();
                                 if let (Some(owner), Some(repo)) = (&issues.owner, &issues.repo) {
-                                    return Cmd::FetchIssues { owner: owner.clone(), repo: repo.clone() };
+                                    return Cmd::FetchIssues { owner: owner.clone(), repo: repo.clone(), state: "all".into() };
                                 }
                             }
                             'o' => {
@@ -599,6 +613,11 @@ pub fn view(frame: &mut Frame, app: &App) {
     // Error toast overlay
     if let Some(ref err) = app.error_toast {
         popup::render_error_toast(frame, area, err);
+    }
+
+    // Success toast overlay
+    if let Some(ref msg) = app.success_toast {
+        popup::render_success_toast(frame, area, msg);
     }
 
     // Help overlay
