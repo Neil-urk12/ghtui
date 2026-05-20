@@ -8,10 +8,10 @@ pub enum Event {
 
 #[derive(Debug)]
 pub enum ApiPayload {
-    Repos(Vec<crate::app::Repo>),
-    Pulls(Vec<crate::app::PullRequest>),
-    Issues(Vec<crate::app::Issue>),
-    Notifications(Vec<crate::app::Notification>),
-    Actions(Vec<crate::app::WorkflowRun>),
+    Repos(Vec<crate::domain::Repo>),
+    Pulls(Vec<crate::domain::PullRequest>),
+    Issues(Vec<crate::domain::Issue>),
+    Notifications(Vec<crate::domain::Notification>),
+    Actions(Vec<crate::domain::WorkflowRun>),
     Success(String),
 }

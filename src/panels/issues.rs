@@ -1,7 +1,7 @@
 use ratatui::prelude::*;
 use ratatui::widgets::*;
 
-use crate::app::Issue;
+use crate::domain::Issue;
 use crate::cmd::Cmd;
 use crate::theme::Theme;
 use crate::util::format;

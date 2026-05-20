@@ -1,7 +1,7 @@
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Cell, Row, StatefulWidget, Table};
 
-use crate::app::PullRequest;
+use crate::domain::PullRequest;
 use crate::cmd::Cmd;
 use crate::theme::Theme;
 use crate::util::format;

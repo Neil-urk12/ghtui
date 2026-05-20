@@ -1,7 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-use crate::app;
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
     pub login: String,
@@ -25,21 +23,6 @@ pub struct Repo {
     pub html_url: String,
 }
 
-impl From<Repo> for app::Repo {
-    fn from(r: Repo) -> Self {
-        Self {
-            name: r.full_name,
-            description: r.description,
-            language: r.language,
-            stars: r.stargazers_count as u32,
-            forks: r.forks_count as u32,
-            updated_at: r.updated_at,
-            visibility: r.visibility.unwrap_or_default(),
-            default_branch: r.default_branch,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Label {
     pub name: String,
@@ -61,21 +44,6 @@ pub struct PullRequest {
     pub draft: Option<bool>,
 }
 
-impl From<PullRequest> for app::PullRequest {
-    fn from(pr: PullRequest) -> Self {
-        Self {
-            number: pr.number as u32,
-            title: pr.title,
-            author: pr.user.login,
-            state: pr.state,
-            labels: pr.labels.into_iter().map(|l| l.name).collect(),
-            created_at: pr.created_at,
-            updated_at: pr.updated_at,
-            body: pr.body,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Issue {
     pub number: u64,
@@ -90,22 +58,6 @@ pub struct Issue {
     pub assignees: Vec<User>,
     #[serde(default)]
     pub pull_request: Option<serde_json::Value>,
-}
-
-impl From<Issue> for app::Issue {
-    fn from(i: Issue) -> Self {
-        Self {
-            number: i.number as u32,
-            title: i.title,
-            author: i.user.login,
-            state: i.state,
-            labels: i.labels.into_iter().map(|l| l.name).collect(),
-            assignees: i.assignees.into_iter().map(|u| u.login).collect(),
-            created_at: i.created_at,
-            updated_at: i.updated_at,
-            body: i.body,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -132,20 +84,6 @@ pub struct Notification {
     pub last_read_at: Option<String>,
 }
 
-impl From<Notification> for app::Notification {
-    fn from(n: Notification) -> Self {
-        Self {
-            id: n.id,
-            repo_name: n.repository.full_name,
-            subject_title: n.subject.title,
-            subject_type: n.subject.subject_type,
-            reason: n.reason,
-            unread: n.unread,
-            updated_at: n.updated_at,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkflowRun {
     pub id: u64,
@@ -157,21 +95,6 @@ pub struct WorkflowRun {
     pub created_at: String,
     pub run_number: u64,
     pub html_url: String,
-}
-
-impl From<WorkflowRun> for app::WorkflowRun {
-    fn from(w: WorkflowRun) -> Self {
-        Self {
-            id: w.id,
-            name: w.name,
-            status: w.status,
-            conclusion: w.conclusion,
-            branch: w.head_branch,
-            event: w.event,
-            created_at: w.created_at,
-            run_number: w.run_number as u32,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -6,7 +6,7 @@ use reqwest::Client;
 
 use super::cache::{Cache, CacheKey};
 use super::models::*;
-use crate::app;
+use crate::domain;
 
 const BASE_URL: &str = "https://api.github.com";
 const USER_AGENT: &str = "ghtui";
@@ -186,11 +186,20 @@ impl GitHubClient {
         Ok(())
     }
 
-    pub async fn get_repos(&self) -> Result<Vec<app::Repo>> {
+    pub async fn get_repos(&self) -> Result<Vec<domain::Repo>> {
         let models: Vec<Repo> = self
             .get("/user/repos?sort=updated&per_page=100", Some(CacheKey::UserRepos), Duration::from_secs(60))
             .await?;
-        Ok(models.into_iter().map(app::Repo::from).collect())
+        Ok(models.into_iter().map(|r| domain::Repo {
+            name: r.full_name,
+            description: r.description,
+            language: r.language,
+            stars: r.stargazers_count as u32,
+            forks: r.forks_count as u32,
+            updated_at: r.updated_at,
+            visibility: r.visibility.unwrap_or_default(),
+            default_branch: r.default_branch,
+        }).collect())
     }
 
     pub async fn get_pulls(
@@ -198,12 +207,21 @@ impl GitHubClient {
         owner: &str,
         repo: &str,
         state: &str,
-    ) -> Result<Vec<app::PullRequest>> {
+    ) -> Result<Vec<domain::PullRequest>> {
         let path = format!("/repos/{owner}/{repo}/pulls?state={state}&per_page=100");
         let models: Vec<PullRequest> = self
             .get(&path, Some(CacheKey::Pulls { owner: owner.to_string(), repo: repo.to_string(), state: state.to_string() }), Duration::from_secs(30))
             .await?;
-        Ok(models.into_iter().map(app::PullRequest::from).collect())
+        Ok(models.into_iter().map(|pr| domain::PullRequest {
+            number: pr.number as u32,
+            title: pr.title,
+            author: pr.user.login,
+            state: pr.state,
+            labels: pr.labels.into_iter().map(|l| l.name).collect(),
+            created_at: pr.created_at,
+            updated_at: pr.updated_at,
+            body: pr.body,
+        }).collect())
     }
 
     pub async fn get_issues(
@@ -211,7 +229,7 @@ impl GitHubClient {
         owner: &str,
         repo: &str,
         state: &str,
-    ) -> Result<Vec<app::Issue>> {
+    ) -> Result<Vec<domain::Issue>> {
         let path = format!("/repos/{owner}/{repo}/issues?state={state}&per_page=100");
         let models: Vec<Issue> = self
             .get(&path, Some(CacheKey::Issues { owner: owner.to_string(), repo: repo.to_string(), state: state.to_string() }), Duration::from_secs(30))
@@ -220,11 +238,21 @@ impl GitHubClient {
         Ok(models
             .into_iter()
             .filter(|i| i.pull_request.is_none())
-            .map(app::Issue::from)
+            .map(|i| domain::Issue {
+                number: i.number as u32,
+                title: i.title,
+                author: i.user.login,
+                state: i.state,
+                labels: i.labels.into_iter().map(|l| l.name).collect(),
+                assignees: i.assignees.into_iter().map(|u| u.login).collect(),
+                created_at: i.created_at,
+                updated_at: i.updated_at,
+                body: i.body,
+            })
             .collect())
     }
 
-    pub async fn get_notifications(&self, all: bool) -> Result<Vec<app::Notification>> {
+    pub async fn get_notifications(&self, all: bool) -> Result<Vec<domain::Notification>> {
         let path = if all {
             "/notifications?per_page=100&all=true"
         } else {
@@ -233,19 +261,36 @@ impl GitHubClient {
         let models: Vec<Notification> = self
             .get(path, Some(CacheKey::Notifications), Duration::from_secs(15))
             .await?;
-        Ok(models.into_iter().map(app::Notification::from).collect())
+        Ok(models.into_iter().map(|n| domain::Notification {
+            id: n.id,
+            repo_name: n.repository.full_name,
+            subject_title: n.subject.title,
+            subject_type: n.subject.subject_type,
+            reason: n.reason,
+            unread: n.unread,
+            updated_at: n.updated_at,
+        }).collect())
     }
 
     pub async fn get_actions(
         &self,
         owner: &str,
         repo: &str,
-    ) -> Result<Vec<app::WorkflowRun>> {
+    ) -> Result<Vec<domain::WorkflowRun>> {
         let path = format!("/repos/{owner}/{repo}/actions/runs?per_page=50");
         let resp: WorkflowRunsResponse = self
             .get(&path, Some(CacheKey::Actions { owner: owner.to_string(), repo: repo.to_string() }), Duration::from_secs(30))
             .await?;
-        Ok(resp.workflow_runs.into_iter().map(app::WorkflowRun::from).collect())
+        Ok(resp.workflow_runs.into_iter().map(|w| domain::WorkflowRun {
+            id: w.id,
+            name: w.name,
+            status: w.status,
+            conclusion: w.conclusion,
+            branch: w.head_branch,
+            event: w.event,
+            created_at: w.created_at,
+            run_number: w.run_number as u32,
+        }).collect())
     }
 
     pub async fn mark_notification_read(&self, id: &str) -> Result<()> {

@@ -1,7 +1,7 @@
 use ratatui::prelude::*;
 use ratatui::widgets::*;
 
-use crate::app::Notification;
+use crate::domain::Notification;
 use crate::cmd::Cmd;
 use crate::theme::Theme;
 use crate::util::format::relative_time;

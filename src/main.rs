@@ -2,6 +2,7 @@ mod api;
 mod app;
 mod cmd;
 mod config;
+mod domain;
 mod event;
 mod keys;
 mod panels;
