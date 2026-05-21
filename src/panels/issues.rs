@@ -42,27 +42,16 @@ impl Default for IssuesPanel {
 }
 
 impl IssuesPanel {
+    pub fn set_repo(&mut self, owner: String, repo: String) {
+        self.owner = Some(owner);
+        self.repo = Some(repo);
+    }
+
     pub fn set_issues(&mut self, issues: Vec<Issue>) {
         self.issues = issues;
         self.filtered_indices = (0..self.issues.len()).collect();
         self.list_state.select(if self.filtered_indices.is_empty() { None } else { Some(0) });
         self.detail_pane.reset_scroll();
-    }
-
-    pub fn navigate_up(&mut self) {
-        let i = self.list_state.selected().unwrap_or(0);
-        if i > 0 {
-            self.list_state.select(Some(i - 1));
-            self.detail_pane.reset_scroll();
-        }
-    }
-
-    pub fn navigate_down(&mut self) {
-        let i = self.list_state.selected().unwrap_or(0);
-        if i + 1 < self.filtered_indices.len() {
-            self.list_state.select(Some(i + 1));
-            self.detail_pane.reset_scroll();
-        }
     }
 
     pub fn selected_item(&self) -> Option<&Issue> {
@@ -212,8 +201,6 @@ impl Panel for IssuesPanel {
 
     fn handle_key(&mut self, key: char) -> Option<Cmd> {
         match key {
-            'j' => { self.navigate_down(); None }
-            'k' => { self.navigate_up(); None }
             '1' => {
                 self.state_filter = "open".to_string();
                 if let (Some(owner), Some(repo)) = (&self.owner, &self.repo) {
@@ -252,7 +239,7 @@ impl Panel for IssuesPanel {
                 }
                 None
             }
-            _ => None,
+            _ => Panel::handle_key(self, key),
         }
     }
 

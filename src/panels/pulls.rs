@@ -55,22 +55,6 @@ impl PullsPanel {
         self.filtered_indices.get(idx).map(|&i| &self.pulls[i])
     }
 
-    pub fn navigate_up(&mut self) {
-        let i = self.list_state.selected().unwrap_or(0);
-        if i > 0 {
-            self.list_state.select(Some(i - 1));
-            self.detail_pane.reset_scroll();
-        }
-    }
-
-    pub fn navigate_down(&mut self) {
-        let i = self.list_state.selected().unwrap_or(0);
-        if i + 1 < self.filtered_indices.len() {
-            self.list_state.select(Some(i + 1));
-            self.detail_pane.reset_scroll();
-        }
-    }
-
     pub fn view(
         frame: &mut Frame,
         area: Rect,
@@ -228,8 +212,6 @@ impl Panel for PullsPanel {
 
     fn handle_key(&mut self, key: char) -> Option<Cmd> {
         match key {
-            'j' => { self.navigate_down(); None }
-            'k' => { self.navigate_up(); None }
             '1' => {
                 self.state_filter = "open".to_string();
                 if let (Some(owner), Some(repo)) = (&self.owner, &self.repo) {
@@ -274,7 +256,7 @@ impl Panel for PullsPanel {
                 }
                 None
             }
-            _ => None,
+            _ => Panel::handle_key(self, key),
         }
     }
 

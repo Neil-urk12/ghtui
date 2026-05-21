@@ -38,22 +38,6 @@ impl Default for ActionsPanel {
 }
 
 impl ActionsPanel {
-    pub fn navigate_up(&mut self) {
-        let i = self.list_state.selected().unwrap_or(0);
-        if i > 0 {
-            self.list_state.select(Some(i - 1));
-            self.detail_pane.reset_scroll();
-        }
-    }
-
-    pub fn navigate_down(&mut self) {
-        let i = self.list_state.selected().unwrap_or(0);
-        if i + 1 < self.runs.len() {
-            self.list_state.select(Some(i + 1));
-            self.detail_pane.reset_scroll();
-        }
-    }
-
     pub fn selected_item(&self) -> Option<&WorkflowRun> {
         self.list_state.selected().and_then(|i| self.runs.get(i))
     }
@@ -265,8 +249,6 @@ impl Panel for ActionsPanel {
 
     fn handle_key(&mut self, key: char) -> Option<Cmd> {
         match key {
-            'j' => { self.navigate_down(); None }
-            'k' => { self.navigate_up(); None }
             '\n' => { self.toggle_expand(); None }
             'r' => {
                 if let Some(run) = self.selected_item() {
@@ -284,7 +266,7 @@ impl Panel for ActionsPanel {
                 }
                 None
             }
-            _ => None,
+            _ => Panel::handle_key(self, key),
         }
     }
 

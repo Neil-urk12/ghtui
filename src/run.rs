@@ -10,7 +10,8 @@ use tokio::time;
 
 use crate::api::client::GitHubClient;
 use crate::api::cache::CacheKey;
-use crate::app::{update, view, App, AppState, Message, PanelKind, PanelState};
+use crate::app::{view, App, AppState, PanelKind, PanelState};
+use crate::update::{update, Message};
 use crate::cmd::Cmd;
 use crate::event::{ApiPayload, Event};
 use crate::keys;

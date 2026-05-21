@@ -75,22 +75,6 @@ impl ReposPanel {
         self.filtered_indices.get(idx).map(|&i| &self.repos[i])
     }
 
-    pub fn navigate_up(&mut self) {
-        let i = self.list_state.selected().unwrap_or(0);
-        if i > 0 {
-            self.list_state.select(Some(i - 1));
-            self.detail_pane.reset_scroll();
-        }
-    }
-
-    pub fn navigate_down(&mut self) {
-        let i = self.list_state.selected().unwrap_or(0);
-        if i + 1 < self.filtered_indices.len() {
-            self.list_state.select(Some(i + 1));
-            self.detail_pane.reset_scroll();
-        }
-    }
-
     pub fn cycle_sort(&mut self) {
         self.sort = match self.sort {
             RepoSort::Name => RepoSort::Stars,
@@ -233,8 +217,6 @@ impl Panel for ReposPanel {
 
     fn handle_key(&mut self, key: char) -> Option<Cmd> {
         match key {
-            'j' => { self.navigate_down(); None }
-            'k' => { self.navigate_up(); None }
             's' => { self.cycle_sort(); None }
             '\n' => {
                 if let Some(repo) = self.selected_repo() {
@@ -248,7 +230,7 @@ impl Panel for ReposPanel {
                 }
                 None
             }
-            _ => None,
+            _ => Panel::handle_key(self, key),
         }
     }
 

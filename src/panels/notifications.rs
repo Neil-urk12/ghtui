@@ -34,22 +34,6 @@ impl Default for NotificationsPanel {
 }
 
 impl NotificationsPanel {
-    pub fn navigate_up(&mut self) {
-        let i = self.list_state.selected().unwrap_or(0);
-        if i > 0 {
-            self.list_state.select(Some(i - 1));
-            self.detail_pane.reset_scroll();
-        }
-    }
-
-    pub fn navigate_down(&mut self) {
-        let i = self.list_state.selected().unwrap_or(0);
-        if i + 1 < self.notifications.len() {
-            self.list_state.select(Some(i + 1));
-            self.detail_pane.reset_scroll();
-        }
-    }
-
     pub fn selected_item(&self) -> Option<&Notification> {
         self.list_state
             .selected()
@@ -211,8 +195,6 @@ impl Panel for NotificationsPanel {
 
     fn handle_key(&mut self, key: char) -> Option<Cmd> {
         match key {
-            'j' => { self.navigate_down(); None }
-            'k' => { self.navigate_up(); None }
             'x' => {
                 if let Some(notif) = self.selected_item() {
                     let id = notif.id.clone();
@@ -231,7 +213,7 @@ impl Panel for NotificationsPanel {
                 self.show_all = true;
                 Some(Cmd::FetchNotifications { all: true })
             }
-            _ => None,
+            _ => Panel::handle_key(self, key),
         }
     }
 

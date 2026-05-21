@@ -5,9 +5,11 @@ mod config;
 mod domain;
 mod event;
 mod keys;
+mod navigation;
 mod panels;
 mod run;
 mod theme;
+mod update;
 mod util;
 mod widgets;
 
