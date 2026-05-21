@@ -113,3 +113,78 @@ fn parse_inline(text: &str) -> Vec<Span<'static>> {
 
     spans
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn plain_text(lines: &[Line]) -> Vec<String> {
+        lines
+            .iter()
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.content.as_ref().to_string())
+                    .collect::<String>()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn empty_input() {
+        let result = render_markdown("");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn plain_text_line() {
+        let result = render_markdown("hello world");
+        assert_eq!(result.len(), 1);
+        assert_eq!(plain_text(&result), vec!["hello world"]);
+    }
+
+    #[test]
+    fn h1_heading() {
+        let result = render_markdown("# Title");
+        assert_eq!(result.len(), 1);
+        assert_eq!(plain_text(&result), vec!["Title"]);
+    }
+
+    #[test]
+    fn h2_heading() {
+        let result = render_markdown("## Subtitle");
+        assert_eq!(result.len(), 1);
+        assert_eq!(plain_text(&result), vec!["Subtitle"]);
+    }
+
+    #[test]
+    fn list_items() {
+        let result = render_markdown("- item one\n- item two");
+        assert_eq!(result.len(), 2);
+        let text = plain_text(&result);
+        assert!(text[0].contains("item one"));
+        assert!(text[1].contains("item two"));
+    }
+
+    #[test]
+    fn code_block() {
+        let input = "```\nfn main() {}\n```";
+        let result = render_markdown(input);
+        assert_eq!(result.len(), 1);
+        assert_eq!(plain_text(&result), vec!["  fn main() {}"]);
+    }
+
+    #[test]
+    fn empty_line_preserved() {
+        let result = render_markdown("line one\n\nline two");
+        assert_eq!(result.len(), 3);
+    }
+
+    #[test]
+    fn inline_code() {
+        let result = render_markdown("use `foo` here");
+        assert_eq!(result.len(), 1);
+        let text = plain_text(&result);
+        assert!(text[0].contains(" foo "));
+    }
+}

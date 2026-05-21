@@ -33,3 +33,44 @@ pub fn abbreviate_number(n: u64) -> String {
         n.to_string()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn abbreviate_small_numbers() {
+        assert_eq!(abbreviate_number(0), "0");
+        assert_eq!(abbreviate_number(1), "1");
+        assert_eq!(abbreviate_number(999), "999");
+    }
+
+    #[test]
+    fn abbreviate_thousands() {
+        assert_eq!(abbreviate_number(1000), "1.0k");
+        assert_eq!(abbreviate_number(1200), "1.2k");
+        assert_eq!(abbreviate_number(15500), "15.5k");
+    }
+
+    #[test]
+    fn abbreviate_millions() {
+        assert_eq!(abbreviate_number(1_000_000), "1.0M");
+        assert_eq!(abbreviate_number(2_500_000), "2.5M");
+    }
+
+    #[test]
+    fn relative_time_invalid_input() {
+        assert_eq!(relative_time("not-a-date"), "not-a-date");
+        assert_eq!(relative_time(""), "");
+    }
+
+    #[test]
+    fn relative_time_format_produces_suffix() {
+        let result = relative_time("2020-01-01T00:00:00Z");
+        assert!(
+            result.ends_with("y ago") || result.ends_with("mo ago") || result.ends_with("d ago"),
+            "unexpected format: {}",
+            result
+        );
+    }
+}

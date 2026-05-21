@@ -98,3 +98,138 @@ pub fn process_event(event: Event, app: &App) -> Vec<Message> {
         _ => vec![Message::Noop],
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::App;
+    use crate::config::Config;
+
+    fn test_app() -> App {
+        App::new(Config::default(), Some("test-token".into()))
+    }
+
+    fn key_event(code: KeyCode) -> CrosstermEvent {
+        CrosstermEvent::Key(crossterm::event::KeyEvent::new(code, KeyModifiers::NONE))
+    }
+
+    fn key_event_mod(code: KeyCode, mods: KeyModifiers) -> CrosstermEvent {
+        CrosstermEvent::Key(crossterm::event::KeyEvent::new(code, mods))
+    }
+
+    #[test]
+    fn ctrl_c_quits() {
+        let app = test_app();
+        let msgs = process_event(Event::Input(key_event_mod(KeyCode::Char('c'), KeyModifiers::CONTROL)), &app);
+        assert_eq!(msgs.len(), 1);
+        assert!(matches!(msgs[0], Message::Quit));
+    }
+
+    #[test]
+    fn help_overlay_captures_keys() {
+        let mut app = test_app();
+        app.show_help = true;
+
+        // Any key other than Esc/? -> Noop
+        let msgs = process_event(Event::Input(key_event(KeyCode::Char('j'))), &app);
+        assert!(matches!(msgs[0], Message::Noop));
+
+        // Esc dismisses help
+        let msgs = process_event(Event::Input(key_event(KeyCode::Esc)), &app);
+        assert!(matches!(msgs[0], Message::ToggleHelp));
+
+        // ? dismisses help
+        let msgs = process_event(Event::Input(key_event(KeyCode::Char('?'))), &app);
+        assert!(matches!(msgs[0], Message::ToggleHelp));
+    }
+
+    #[test]
+    fn search_mode_captures_keys() {
+        let mut app = test_app();
+        app.search.active = true;
+
+        let msgs = process_event(Event::Input(key_event(KeyCode::Char('a'))), &app);
+        assert!(matches!(msgs[0], Message::SearchInput('a')));
+
+        let msgs = process_event(Event::Input(key_event(KeyCode::Backspace)), &app);
+        assert!(matches!(msgs[0], Message::SearchBackspace));
+
+        let msgs = process_event(Event::Input(key_event(KeyCode::Enter)), &app);
+        assert!(matches!(msgs[0], Message::SearchSubmit));
+
+        let msgs = process_event(Event::Input(key_event(KeyCode::Esc)), &app);
+        assert!(matches!(msgs[0], Message::SearchClear));
+    }
+
+    #[test]
+    fn toast_dismissal() {
+        let mut app = test_app();
+
+        app.error_toast = Some("err".into());
+        let msgs = process_event(Event::Input(key_event(KeyCode::Char('x'))), &app);
+        assert!(matches!(msgs[0], Message::DismissError));
+
+        app.error_toast = None;
+        app.success_toast = Some("ok".into());
+        let msgs = process_event(Event::Input(key_event(KeyCode::Char('x'))), &app);
+        assert!(matches!(msgs[0], Message::DismissSuccess));
+    }
+
+    #[test]
+    fn j_k_detail_scroll() {
+        let app = test_app();
+
+        let msgs = process_event(Event::Input(key_event(KeyCode::Char('J'))), &app);
+        assert!(matches!(msgs[0], Message::DetailScrollDown));
+
+        let msgs = process_event(Event::Input(key_event(KeyCode::Char('K'))), &app);
+        assert!(matches!(msgs[0], Message::DetailScrollUp));
+    }
+
+    #[test]
+    fn regular_char_becomes_panel_input() {
+        let app = test_app();
+        let msgs = process_event(Event::Input(key_event(KeyCode::Char('j'))), &app);
+        assert!(matches!(msgs[0], Message::PanelKeyInput('j')));
+    }
+
+    #[test]
+    fn enter_becomes_panel_input_newline() {
+        let app = test_app();
+        let msgs = process_event(Event::Input(key_event(KeyCode::Enter)), &app);
+        assert!(matches!(msgs[0], Message::PanelKeyInput('\n')));
+    }
+
+    #[test]
+    fn api_result_success_produces_loaded_and_refresh() {
+        let app = test_app();
+        let msgs = process_event(Event::ApiResult { payload: ApiPayload::Success("ok".into()) }, &app);
+        assert_eq!(msgs.len(), 2);
+        assert!(matches!(&msgs[0], Message::ApiLoaded(_)));
+        assert!(matches!(msgs[1], Message::Refresh));
+    }
+
+    #[test]
+    fn api_result_data_produces_loaded_only() {
+        let app = test_app();
+        let msgs = process_event(Event::ApiResult { payload: ApiPayload::Repos(vec![]) }, &app);
+        assert_eq!(msgs.len(), 1);
+        assert!(matches!(&msgs[0], Message::ApiLoaded(_)));
+    }
+
+    #[test]
+    fn api_error_produces_message() {
+        let app = test_app();
+        let msgs = process_event(Event::ApiError("fail".into()), &app);
+        assert!(matches!(&msgs[0], Message::ApiError(msg) if msg == "fail"));
+    }
+
+    #[test]
+    fn tick_produces_rate_limit_and_tick() {
+        let app = test_app();
+        let msgs = process_event(Event::Tick, &app);
+        assert_eq!(msgs.len(), 2);
+        assert!(matches!(&msgs[0], Message::RateLimitUpdate { .. }));
+        assert!(matches!(msgs[1], Message::Tick));
+    }
+}

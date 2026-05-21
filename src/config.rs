@@ -106,3 +106,51 @@ fn config_path() -> PathBuf {
         .join("ghtui")
         .join("config.toml")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_config_values() {
+        let config = Config::default();
+        assert_eq!(config.theme.active_border_color, "cyan");
+        assert_eq!(config.theme.inactive_border_color, "gray");
+        assert_eq!(config.keybindings.quit, "q");
+        assert_eq!(config.keybindings.next_tab, "Tab");
+        assert_eq!(config.keybindings.prev_tab, "Shift-Tab");
+        assert_eq!(config.defaults.pulls_state, "open");
+        assert_eq!(config.defaults.issues_state, "open");
+        assert!(!config.defaults.notifications_show_all);
+    }
+
+    #[test]
+    fn parse_toml_overrides() {
+        let toml_str = r#"
+[keybindings]
+quit = "x"
+
+[defaults]
+pulls_state = "closed"
+notifications_show_all = true
+
+[theme]
+active_border_color = "red"
+"#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.keybindings.quit, "x");
+        assert_eq!(config.defaults.pulls_state, "closed");
+        assert!(config.defaults.notifications_show_all);
+        assert_eq!(config.theme.active_border_color, "red");
+        // Unspecified fields get defaults
+        assert_eq!(config.keybindings.refresh, "r");
+        assert_eq!(config.defaults.issues_state, "open");
+    }
+
+    #[test]
+    fn parse_empty_toml() {
+        let config: Config = toml::from_str("").unwrap();
+        assert_eq!(config.keybindings.quit, "q");
+        assert_eq!(config.defaults.pulls_state, "open");
+    }
+}

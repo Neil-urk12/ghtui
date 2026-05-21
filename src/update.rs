@@ -212,3 +212,176 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+
+    fn test_app() -> App {
+        App::new(Config::default(), Some("test-token".into()))
+    }
+
+    #[test]
+    fn quit_sets_flag() {
+        let mut app = test_app();
+        assert!(!app.should_quit);
+        let cmd = update(&mut app, Message::Quit);
+        assert!(app.should_quit);
+        assert!(matches!(cmd, Cmd::None));
+    }
+
+    #[test]
+    fn next_tab_cycles() {
+        let mut app = test_app();
+        assert_eq!(app.active_panel, PanelKind::Repos);
+        let cmd = update(&mut app, Message::NextTab);
+        assert_eq!(app.active_panel, PanelKind::Pulls);
+        // fetch_cmd returns Cmd::None because no owner/repo set
+        assert!(matches!(cmd, Cmd::None));
+    }
+
+    #[test]
+    fn prev_tab_wraps() {
+        let mut app = test_app();
+        assert_eq!(app.active_panel, PanelKind::Repos);
+        update(&mut app, Message::PrevTab);
+        assert_eq!(app.active_panel, PanelKind::Actions);
+    }
+
+    #[test]
+    fn next_tab_wraps_around() {
+        let mut app = test_app();
+        // Go through all 5 tabs
+        for _ in 0..5 {
+            update(&mut app, Message::NextTab);
+        }
+        assert_eq!(app.active_panel, PanelKind::Repos);
+    }
+
+    #[test]
+    fn search_activate_and_clear() {
+        let mut app = test_app();
+        assert!(!app.search.active);
+
+        update(&mut app, Message::SearchActivate);
+        assert!(app.search.active);
+        assert!(app.search.query.is_empty());
+
+        update(&mut app, Message::SearchInput('f'));
+        update(&mut app, Message::SearchInput('o'));
+        update(&mut app, Message::SearchInput('o'));
+        assert_eq!(app.search.query, "foo");
+
+        update(&mut app, Message::SearchBackspace);
+        assert_eq!(app.search.query, "fo");
+
+        update(&mut app, Message::SearchClear);
+        assert!(!app.search.active);
+        assert!(app.search.query.is_empty());
+    }
+
+    #[test]
+    fn search_submit_deactivates() {
+        let mut app = test_app();
+        update(&mut app, Message::SearchActivate);
+        update(&mut app, Message::SearchInput('x'));
+        update(&mut app, Message::SearchSubmit);
+        assert!(!app.search.active);
+        // query preserved on submit (not cleared)
+        assert_eq!(app.search.query, "x");
+    }
+
+    #[test]
+    fn dismiss_toasts() {
+        let mut app = test_app();
+        app.error_toast = Some("err".into());
+        app.success_toast = Some("ok".into());
+
+        update(&mut app, Message::DismissError);
+        assert!(app.error_toast.is_none());
+        assert!(app.success_toast.is_some());
+
+        update(&mut app, Message::DismissSuccess);
+        assert!(app.success_toast.is_none());
+    }
+
+    #[test]
+    fn toggle_help() {
+        let mut app = test_app();
+        assert!(!app.show_help);
+        update(&mut app, Message::ToggleHelp);
+        assert!(app.show_help);
+        update(&mut app, Message::ToggleHelp);
+        assert!(!app.show_help);
+    }
+
+    #[test]
+    fn tick_increments() {
+        let mut app = test_app();
+        assert_eq!(app.tick, 0);
+        update(&mut app, Message::Tick);
+        assert_eq!(app.tick, 1);
+        update(&mut app, Message::Tick);
+        assert_eq!(app.tick, 2);
+    }
+
+    #[test]
+    fn api_loaded_routes_to_correct_panel() {
+        use crate::domain;
+        use crate::event::ApiPayload;
+
+        let mut app = test_app();
+        let repos = vec![domain::Repo {
+            name: "test/repo".into(),
+            ..Default::default()
+        }];
+        update(&mut app, Message::ApiLoaded(ApiPayload::Repos(repos)));
+
+        // Verify data landed in Repos panel
+        if let Some(crate::app::PanelState::Repos(panel)) = app.panels.get(&PanelKind::Repos) {
+            assert_eq!(panel.repos.len(), 1);
+            assert_eq!(panel.repos[0].name, "test/repo");
+        } else {
+            panic!("Expected Repos panel");
+        }
+    }
+
+    #[test]
+    fn api_loaded_success_shows_toast() {
+        use crate::event::ApiPayload;
+        let mut app = test_app();
+        update(&mut app, Message::ApiLoaded(ApiPayload::Success("done".into())));
+        assert_eq!(app.success_toast.as_deref(), Some("done"));
+    }
+
+    #[test]
+    fn api_error_shows_toast() {
+        let mut app = test_app();
+        update(&mut app, Message::ApiError("fail".into()));
+        assert_eq!(app.error_toast.as_deref(), Some("fail"));
+    }
+
+    #[test]
+    fn rate_limit_update() {
+        let mut app = test_app();
+        assert!(app.rate_remaining.is_none());
+        update(&mut app, Message::RateLimitUpdate {
+            remaining: Some(42),
+            reset_secs: Some(3600),
+        });
+        assert_eq!(app.rate_remaining, Some(42));
+        assert_eq!(app.rate_reset_secs, Some(3600));
+    }
+
+    #[test]
+    fn next_tab_clears_search() {
+        let mut app = test_app();
+        update(&mut app, Message::SearchActivate);
+        update(&mut app, Message::SearchInput('x'));
+        assert!(app.search.active);
+
+        update(&mut app, Message::NextTab);
+        assert!(!app.search.active);
+    }
+}

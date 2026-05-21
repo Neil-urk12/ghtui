@@ -47,3 +47,73 @@ pub fn matches_key(event: KeyEvent, binding: &str) -> bool {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    fn key_mod(code: KeyCode, mods: KeyModifiers) -> KeyEvent {
+        KeyEvent::new(code, mods)
+    }
+
+    #[test]
+    fn single_char_binding() {
+        assert!(matches_key(key(KeyCode::Char('q')), "q"));
+        assert!(matches_key(key(KeyCode::Char('r')), "r"));
+        assert!(!matches_key(key(KeyCode::Char('x')), "q"));
+    }
+
+    #[test]
+    fn single_char_rejects_modifiers() {
+        assert!(!matches_key(key_mod(KeyCode::Char('q'), KeyModifiers::CONTROL), "q"));
+    }
+
+    #[test]
+    fn ctrl_combo() {
+        assert!(matches_key(key_mod(KeyCode::Char('c'), KeyModifiers::CONTROL), "Ctrl+c"));
+        assert!(!matches_key(key(KeyCode::Char('c')), "Ctrl+c"));
+    }
+
+    #[test]
+    fn shift_tab() {
+        assert!(matches_key(key(KeyCode::BackTab), "Shift-Tab"));
+        assert!(!matches_key(key(KeyCode::Tab), "Shift-Tab"));
+    }
+
+    #[test]
+    fn special_keys() {
+        assert!(matches_key(key(KeyCode::Tab), "Tab"));
+        assert!(matches_key(key(KeyCode::Enter), "Enter"));
+        assert!(matches_key(key(KeyCode::Esc), "Esc"));
+        assert!(matches_key(key(KeyCode::Esc), "Escape"));
+        assert!(matches_key(key(KeyCode::Backspace), "Backspace"));
+        assert!(matches_key(key(KeyCode::Up), "Up"));
+        assert!(matches_key(key(KeyCode::Down), "Down"));
+        assert!(matches_key(key(KeyCode::PageUp), "PageUp"));
+    }
+
+    #[test]
+    fn slash_and_question() {
+        assert!(matches_key(key(KeyCode::Char('/')), "/"));
+        assert!(matches_key(key(KeyCode::Char('?')), "?"));
+    }
+
+    #[test]
+    fn space_binding() {
+        assert!(matches_key(key(KeyCode::Char(' ')), "Space"));
+    }
+
+    #[test]
+    fn empty_binding() {
+        assert!(!matches_key(key(KeyCode::Char('q')), ""));
+    }
+
+    #[test]
+    fn whitespace_trimmed() {
+        assert!(matches_key(key(KeyCode::Char('q')), "  q  "));
+    }
+}
