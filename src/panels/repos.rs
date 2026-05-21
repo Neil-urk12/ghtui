@@ -6,7 +6,7 @@ use crate::cmd::Cmd;
 use crate::theme::Theme;
 use crate::util::format;
 use crate::widgets::{detail_pane::DetailPane, empty_state::EmptyStateWidget, loading::LoadingWidget};
-use super::panel::Panel;
+use super::panel::{Panel, handle_key_default};
 
 #[derive(Debug, Default)]
 pub enum RepoSort {
@@ -230,7 +230,7 @@ impl Panel for ReposPanel {
                 }
                 None
             }
-            _ => Panel::handle_key(self, key),
+            _ => handle_key_default(self, key),
         }
     }
 

@@ -24,14 +24,8 @@ pub trait Panel: std::fmt::Debug {
     /// Default impl handles `j` (down) and `k` (up).
     fn handle_key(&mut self, key: char) -> Option<Cmd> {
         match key {
-            'j' => {
-                self.navigate_down();
-                None
-            }
-            'k' => {
-                self.navigate_up();
-                None
-            }
+            'j' => { self.navigate_down(); None }
+            'k' => { self.navigate_up(); None }
             _ => None,
         }
     }
@@ -63,5 +57,21 @@ pub trait Panel: std::fmt::Debug {
 
     fn scroll_detail_down(&mut self) {
         self.detail_pane().scroll_down();
+    }
+}
+
+/// Default key handling for panels. Call this from panel `handle_key` impls
+/// to delegate unhandled keys (j/k navigation). Avoids UFCS recursion.
+pub fn handle_key_default<T: Panel>(panel: &mut T, key: char) -> Option<Cmd> {
+    match key {
+        'j' => {
+            panel.navigate_down();
+            None
+        }
+        'k' => {
+            panel.navigate_up();
+            None
+        }
+        _ => None,
     }
 }

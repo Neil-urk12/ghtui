@@ -10,7 +10,7 @@ use crate::util::markdown::render_markdown;
 use crate::widgets::detail_pane::DetailPane;
 use crate::widgets::empty_state::EmptyStateWidget;
 use crate::widgets::loading::LoadingWidget;
-use super::panel::Panel;
+use super::panel::{Panel, handle_key_default};
 
 #[derive(Debug)]
 pub struct IssuesPanel {
@@ -239,7 +239,7 @@ impl Panel for IssuesPanel {
                 }
                 None
             }
-            _ => Panel::handle_key(self, key),
+            _ => handle_key_default(self, key),
         }
     }
 

@@ -8,7 +8,7 @@ use crate::util::format::relative_time;
 use crate::widgets::detail_pane::DetailPane;
 use crate::widgets::empty_state::EmptyStateWidget;
 use crate::widgets::loading::LoadingWidget;
-use super::panel::Panel;
+use super::panel::{Panel, handle_key_default};
 
 #[derive(Debug)]
 pub struct NotificationsPanel {
@@ -213,7 +213,7 @@ impl Panel for NotificationsPanel {
                 self.show_all = true;
                 Some(Cmd::FetchNotifications { all: true })
             }
-            _ => Panel::handle_key(self, key),
+            _ => handle_key_default(self, key),
         }
     }
 
