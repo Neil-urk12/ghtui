@@ -31,8 +31,7 @@ struct Cli {
     logout: bool,
 }
 
-#[tokio::main]
-async fn main() -> color_eyre::Result<()> {
+fn main() -> color_eyre::Result<()> {
     let cli = Cli::parse();
 
     if cli.debug {
@@ -58,11 +57,20 @@ async fn main() -> color_eyre::Result<()> {
     };
 
     let config = config::Config::load();
-    let mut terminal = ratatui::init();
-    let mut app = app::App::new(config, token);
 
-    let result = run::run(&mut app, &mut terminal).await;
+    // Use larger stack to prevent overflow from tokio::select! in debug builds
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .thread_stack_size(16 * 1024 * 1024)
+        .build()?;
 
-    ratatui::restore();
-    result
+    rt.block_on(async {
+        let mut terminal = ratatui::init();
+        let mut app = app::App::new(config, token);
+
+        let result = run::run(&mut app, &mut terminal).await;
+
+        ratatui::restore();
+        result
+    })
 }
