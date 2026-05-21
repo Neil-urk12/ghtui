@@ -3,6 +3,7 @@ use ratatui::widgets::*;
 
 use crate::domain::WorkflowRun;
 use crate::cmd::Cmd;
+use crate::event::ApiPayload;
 use crate::theme::Theme;
 use crate::util::format::relative_time;
 use crate::widgets::detail_pane::DetailPane;
@@ -244,6 +245,28 @@ impl Panel for ActionsPanel {
 
     fn set_selected(&mut self, index: Option<usize>) {
         self.list_state.select(index);
+    }
+
+    fn fetch_cmd(&self) -> Cmd {
+        match (&self.owner, &self.repo) {
+            (Some(owner), Some(repo)) => Cmd::FetchActions {
+                owner: owner.clone(),
+                repo: repo.clone(),
+            },
+            _ => Cmd::None,
+        }
+    }
+
+    fn set_repo_context(&mut self, owner: &str, repo: &str) {
+        self.owner = Some(owner.to_string());
+        self.repo = Some(repo.to_string());
+    }
+
+    fn load_data(&mut self, payload: ApiPayload) {
+        if let ApiPayload::Actions(runs) = payload {
+            self.runs = runs;
+            self.loading = false;
+        }
     }
 
     fn handle_key(&mut self, key: char) -> Option<Cmd> {

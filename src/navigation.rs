@@ -11,18 +11,8 @@ pub fn handle_open_repo_detail(
     owner: String,
     repo: String,
 ) -> Cmd {
-    // Wire PullsPanel
-    if let Some(PanelState::Pulls(ref mut pulls)) = panels.get_mut(&PanelKind::Pulls) {
-        pulls.set_repo(owner.clone(), repo.clone());
-    }
-    // Wire ActionsPanel
-    if let Some(PanelState::Actions(ref mut actions)) = panels.get_mut(&PanelKind::Actions) {
-        actions.owner = Some(owner.clone());
-        actions.repo = Some(repo.clone());
-    }
-    // Wire IssuesPanel
-    if let Some(PanelState::Issues(ref mut issues)) = panels.get_mut(&PanelKind::Issues) {
-        issues.set_repo(owner.clone(), repo.clone());
+    for panel in panels.values_mut() {
+        panel.as_panel_mut().set_repo_context(&owner, &repo);
     }
     Cmd::FetchPulls {
         owner,

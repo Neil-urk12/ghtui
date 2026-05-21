@@ -3,6 +3,7 @@ use ratatui::widgets::*;
 
 use crate::domain::Issue;
 use crate::cmd::Cmd;
+use crate::event::ApiPayload;
 use crate::theme::Theme;
 use crate::util::format;
 use crate::util::format::relative_time;
@@ -197,6 +198,27 @@ impl Panel for IssuesPanel {
 
     fn set_selected(&mut self, index: Option<usize>) {
         self.list_state.select(index);
+    }
+
+    fn fetch_cmd(&self) -> Cmd {
+        match (&self.owner, &self.repo) {
+            (Some(owner), Some(repo)) => Cmd::FetchIssues {
+                owner: owner.clone(),
+                repo: repo.clone(),
+                state: self.state_filter.clone(),
+            },
+            _ => Cmd::None,
+        }
+    }
+
+    fn set_repo_context(&mut self, owner: &str, repo: &str) {
+        self.set_repo(owner.to_string(), repo.to_string());
+    }
+
+    fn load_data(&mut self, payload: ApiPayload) {
+        if let ApiPayload::Issues(issues) = payload {
+            self.set_issues(issues);
+        }
     }
 
     fn handle_key(&mut self, key: char) -> Option<Cmd> {

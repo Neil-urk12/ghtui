@@ -3,6 +3,7 @@ use ratatui::widgets::*;
 
 use crate::domain::Notification;
 use crate::cmd::Cmd;
+use crate::event::ApiPayload;
 use crate::theme::Theme;
 use crate::util::format::relative_time;
 use crate::widgets::detail_pane::DetailPane;
@@ -191,6 +192,16 @@ impl Panel for NotificationsPanel {
 
     fn set_selected(&mut self, index: Option<usize>) {
         self.list_state.select(index);
+    }
+
+    fn fetch_cmd(&self) -> Cmd {
+        Cmd::FetchNotifications { all: self.show_all }
+    }
+
+    fn load_data(&mut self, payload: ApiPayload) {
+        if let ApiPayload::Notifications(notifs) = payload {
+            self.set_notifications(notifs);
+        }
     }
 
     fn handle_key(&mut self, key: char) -> Option<Cmd> {

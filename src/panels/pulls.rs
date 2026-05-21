@@ -3,6 +3,7 @@ use ratatui::widgets::{Block, Borders, Cell, Row, StatefulWidget, Table};
 
 use crate::domain::PullRequest;
 use crate::cmd::Cmd;
+use crate::event::ApiPayload;
 use crate::theme::Theme;
 use crate::util::format;
 use crate::widgets::{detail_pane::DetailPane, empty_state::EmptyStateWidget, loading::LoadingWidget};
@@ -208,6 +209,27 @@ impl Panel for PullsPanel {
 
     fn set_selected(&mut self, index: Option<usize>) {
         self.list_state.select(index);
+    }
+
+    fn fetch_cmd(&self) -> Cmd {
+        match (&self.owner, &self.repo) {
+            (Some(owner), Some(repo)) => Cmd::FetchPulls {
+                owner: owner.clone(),
+                repo: repo.clone(),
+                state: self.state_filter.clone(),
+            },
+            _ => Cmd::None,
+        }
+    }
+
+    fn set_repo_context(&mut self, owner: &str, repo: &str) {
+        self.set_repo(owner.to_string(), repo.to_string());
+    }
+
+    fn load_data(&mut self, payload: ApiPayload) {
+        if let ApiPayload::Pulls(pulls) = payload {
+            self.set_pulls(pulls);
+        }
     }
 
     fn handle_key(&mut self, key: char) -> Option<Cmd> {

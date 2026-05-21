@@ -3,6 +3,7 @@ use ratatui::widgets::{Block, Borders, Cell, Row, StatefulWidget, Table};
 
 use crate::domain::Repo;
 use crate::cmd::Cmd;
+use crate::event::ApiPayload;
 use crate::theme::Theme;
 use crate::util::format;
 use crate::widgets::{detail_pane::DetailPane, empty_state::EmptyStateWidget, loading::LoadingWidget};
@@ -213,6 +214,16 @@ impl Panel for ReposPanel {
 
     fn set_selected(&mut self, index: Option<usize>) {
         self.list_state.select(index);
+    }
+
+    fn fetch_cmd(&self) -> Cmd {
+        Cmd::FetchRepos
+    }
+
+    fn load_data(&mut self, payload: ApiPayload) {
+        if let ApiPayload::Repos(repos) = payload {
+            self.set_repos(repos);
+        }
     }
 
     fn handle_key(&mut self, key: char) -> Option<Cmd> {

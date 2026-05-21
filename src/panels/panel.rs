@@ -1,5 +1,6 @@
 use ratatui::prelude::*;
 use crate::cmd::Cmd;
+use crate::event::ApiPayload;
 use crate::theme::Theme;
 use crate::widgets::detail_pane::DetailPane;
 
@@ -32,6 +33,16 @@ pub trait Panel: std::fmt::Debug {
 
     /// Render the panel into the given area.
     fn render(&self, frame: &mut Frame, area: Rect, focused: bool, theme: &Theme, tick: u64);
+
+    /// What Cmd to run when this panel needs data (tab switch, refresh).
+    /// Default returns Cmd::None.
+    fn fetch_cmd(&self) -> Cmd { Cmd::None }
+
+    /// Wire owner/repo context into the panel. Default no-op.
+    fn set_repo_context(&mut self, _owner: &str, _repo: &str) {}
+
+    /// Load API response data into the panel.
+    fn load_data(&mut self, payload: ApiPayload);
 
     // --- provided methods ---
 

@@ -2,7 +2,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use crate::api::client::GitHubClient;
-use crate::app::{App, AppState, PanelKind, PanelState};
+use crate::app::{App, AppState, PanelKind};
 use crate::cmd::Cmd;
 use crate::navigation;
 use crate::panels::login::LoginState;
@@ -65,69 +65,27 @@ impl fmt::Debug for Message {
     }
 }
 
-fn fetch_for_active_panel(app: &App) -> Cmd {
-    match app.active_panel {
-        PanelKind::Repos => Cmd::FetchRepos,
-        PanelKind::Pulls => {
-            if let Some(PanelState::Pulls(ref p)) = app.panels.get(&PanelKind::Pulls) {
-                match (&p.owner, &p.repo) {
-                    (Some(owner), Some(repo)) => Cmd::FetchPulls {
-                        owner: owner.clone(),
-                        repo: repo.clone(),
-                        state: p.state_filter.clone(),
-                    },
-                    _ => Cmd::None,
-                }
-            } else {
-                Cmd::None
-            }
-        }
-        PanelKind::Issues => {
-            if let Some(PanelState::Issues(ref i)) = app.panels.get(&PanelKind::Issues) {
-                match (&i.owner, &i.repo) {
-                    (Some(owner), Some(repo)) => Cmd::FetchIssues {
-                        owner: owner.clone(),
-                        repo: repo.clone(),
-                        state: i.state_filter.clone(),
-                    },
-                    _ => Cmd::None,
-                }
-            } else {
-                Cmd::None
-            }
-        }
-        PanelKind::Notifications => {
-            let show_all = if let Some(PanelState::Notifications(ref n)) = app.panels.get(&PanelKind::Notifications) {
-                n.show_all
-            } else {
-                false
-            };
-            Cmd::FetchNotifications { all: show_all }
-        }
-        PanelKind::Actions => {
-            if let Some(PanelState::Actions(ref a)) = app.panels.get(&PanelKind::Actions) {
-                if let (Some(owner), Some(repo)) = (&a.owner, &a.repo) {
-                    return Cmd::FetchActions { owner: owner.clone(), repo: repo.clone() };
-                }
-            }
-            Cmd::None
-        }
-    }
-}
-
 pub fn update(app: &mut App, msg: Message) -> Cmd {
     match msg {
         Message::NextTab => {
             app.search.active = false;
             app.next_tab();
-            fetch_for_active_panel(app)
+            app.panels.get(&app.active_panel)
+                .map(|p| p.as_panel().fetch_cmd())
+                .unwrap_or(Cmd::None)
         }
         Message::PrevTab => {
             app.search.active = false;
             app.prev_tab();
-            fetch_for_active_panel(app)
+            app.panels.get(&app.active_panel)
+                .map(|p| p.as_panel().fetch_cmd())
+                .unwrap_or(Cmd::None)
         }
-        Message::Refresh => fetch_for_active_panel(app),
+        Message::Refresh => {
+            app.panels.get(&app.active_panel)
+                .map(|p| p.as_panel().fetch_cmd())
+                .unwrap_or(Cmd::None)
+        }
         Message::SearchActivate => {
             app.search.active = true;
             app.search.query.clear();
@@ -218,39 +176,23 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
 
         Message::ApiLoaded(payload) => {
             use crate::event::ApiPayload;
-            match payload {
-                ApiPayload::Repos(repos) => {
-                    if let Some(PanelState::Repos(ref mut panel)) = app.panels.get_mut(&PanelKind::Repos) {
-                        panel.set_repos(repos);
-                    }
-                }
-                ApiPayload::Pulls(pulls) => {
-                    if let Some(PanelState::Pulls(ref mut panel)) = app.panels.get_mut(&PanelKind::Pulls) {
-                        panel.set_pulls(pulls);
-                    }
-                }
-                ApiPayload::Issues(issues) => {
-                    if let Some(PanelState::Issues(ref mut panel)) = app.panels.get_mut(&PanelKind::Issues) {
-                        panel.set_issues(issues);
-                    }
-                }
-                ApiPayload::Notifications(notifs) => {
-                    if let Some(PanelState::Notifications(ref mut panel)) =
-                        app.panels.get_mut(&PanelKind::Notifications)
-                    {
-                        panel.set_notifications(notifs);
-                    }
-                }
-                ApiPayload::Actions(runs) => {
-                    if let Some(PanelState::Actions(ref mut panel)) =
-                        app.panels.get_mut(&PanelKind::Actions)
-                    {
-                        panel.runs = runs;
-                        panel.loading = false;
-                    }
-                }
-                ApiPayload::Success(msg) => {
-                    app.success_toast = Some(msg);
+            if let ApiPayload::Success(ref msg) = payload {
+                app.success_toast = Some(msg.clone());
+            }
+            // Route by payload type to the correct panel, not just active panel.
+            // This handles the case where a fetch response arrives after the user
+            // has switched tabs — data still loads into the owning panel.
+            let target = match &payload {
+                ApiPayload::Repos(_) => Some(PanelKind::Repos),
+                ApiPayload::Pulls(_) => Some(PanelKind::Pulls),
+                ApiPayload::Issues(_) => Some(PanelKind::Issues),
+                ApiPayload::Notifications(_) => Some(PanelKind::Notifications),
+                ApiPayload::Actions(_) => Some(PanelKind::Actions),
+                ApiPayload::Success(_) => None,
+            };
+            if let Some(kind) = target {
+                if let Some(panel) = app.panels.get_mut(&kind) {
+                    panel.as_panel_mut().load_data(payload);
                 }
             }
             Cmd::None
