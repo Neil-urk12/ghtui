@@ -27,6 +27,10 @@ pub enum Message {
     LoginInit(LoginState),
     LoginSuccess(String),
     LoginError(String),
+    ApiLoaded(crate::event::ApiPayload),
+    ApiError(String),
+    RateLimitUpdate { remaining: Option<u32>, reset_secs: Option<u64> },
+    Tick,
 }
 
 impl fmt::Debug for Message {
@@ -51,6 +55,12 @@ impl fmt::Debug for Message {
             Message::LoginInit(_) => write!(f, "LoginInit"),
             Message::LoginSuccess(_) => write!(f, "LoginSuccess"),
             Message::LoginError(msg) => write!(f, "LoginError({})", msg),
+            Message::ApiLoaded(_) => write!(f, "ApiLoaded"),
+            Message::ApiError(ref msg) => write!(f, "ApiError({})", msg),
+            Message::RateLimitUpdate { remaining, reset_secs } => {
+                write!(f, "RateLimitUpdate(remaining={:?}, reset={:?})", remaining, reset_secs)
+            }
+            Message::Tick => write!(f, "Tick"),
         }
     }
 }
@@ -205,5 +215,58 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
             Cmd::None
         }
         Message::Noop => Cmd::None,
+
+        Message::ApiLoaded(payload) => {
+            use crate::event::ApiPayload;
+            match payload {
+                ApiPayload::Repos(repos) => {
+                    if let Some(PanelState::Repos(ref mut panel)) = app.panels.get_mut(&PanelKind::Repos) {
+                        panel.set_repos(repos);
+                    }
+                }
+                ApiPayload::Pulls(pulls) => {
+                    if let Some(PanelState::Pulls(ref mut panel)) = app.panels.get_mut(&PanelKind::Pulls) {
+                        panel.set_pulls(pulls);
+                    }
+                }
+                ApiPayload::Issues(issues) => {
+                    if let Some(PanelState::Issues(ref mut panel)) = app.panels.get_mut(&PanelKind::Issues) {
+                        panel.set_issues(issues);
+                    }
+                }
+                ApiPayload::Notifications(notifs) => {
+                    if let Some(PanelState::Notifications(ref mut panel)) =
+                        app.panels.get_mut(&PanelKind::Notifications)
+                    {
+                        panel.set_notifications(notifs);
+                    }
+                }
+                ApiPayload::Actions(runs) => {
+                    if let Some(PanelState::Actions(ref mut panel)) =
+                        app.panels.get_mut(&PanelKind::Actions)
+                    {
+                        panel.runs = runs;
+                        panel.loading = false;
+                    }
+                }
+                ApiPayload::Success(msg) => {
+                    app.success_toast = Some(msg);
+                }
+            }
+            Cmd::None
+        }
+        Message::ApiError(msg) => {
+            app.error_toast = Some(msg);
+            Cmd::None
+        }
+        Message::RateLimitUpdate { remaining, reset_secs } => {
+            app.rate_remaining = remaining;
+            app.rate_reset_secs = reset_secs;
+            Cmd::None
+        }
+        Message::Tick => {
+            app.tick += 1;
+            Cmd::None
+        }
     }
 }

@@ -63,7 +63,7 @@ pub async fn run(app: &mut App, terminal: &mut DefaultTerminal) -> Result<()> {
 
         let messages = event::process_event(event, app);
 
-        // Login tick — poll for auth on each tick
+        // Login tick — poll for auth on each tick (async, stays in run loop)
         if matches!(app.state, AppState::Login) {
             if let Some(ref mut login) = app.login {
                 login.tick().await;
@@ -71,7 +71,6 @@ pub async fn run(app: &mut App, terminal: &mut DefaultTerminal) -> Result<()> {
                     crate::panels::login::LoginStatus::Success(token) => {
                         let token = token.clone();
                         let _ = update(app, Message::LoginSuccess(token));
-                        // Start fetching repos now that we're authenticated
                         spawn_cmd(Cmd::FetchRepos, &app.client, tx.clone());
                     }
                     crate::panels::login::LoginStatus::Error(msg) => {
@@ -79,7 +78,6 @@ pub async fn run(app: &mut App, terminal: &mut DefaultTerminal) -> Result<()> {
                         let _ = update(app, Message::LoginError(msg));
                     }
                     crate::panels::login::LoginStatus::Expired => {
-                        // Auto-restart device flow
                         let http = reqwest::Client::new();
                         if let Ok(new_login) = crate::panels::login::LoginState::new(http).await {
                             app.login = Some(new_login);

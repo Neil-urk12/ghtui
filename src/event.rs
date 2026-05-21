@@ -1,6 +1,6 @@
 use crossterm::event::{Event as CrosstermEvent, KeyCode, KeyEventKind, KeyModifiers};
 
-use crate::app::{App, PanelKind, PanelState};
+use crate::app::App;
 use crate::keys;
 use crate::update::Message;
 
@@ -22,7 +22,7 @@ pub enum ApiPayload {
     Success(String),
 }
 
-pub fn process_event(event: Event, app: &mut App) -> Vec<Message> {
+pub fn process_event(event: Event, app: &App) -> Vec<Message> {
     match event {
         Event::Input(CrosstermEvent::Key(key)) if key.kind == KeyEventKind::Press => {
             if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
@@ -80,68 +80,21 @@ pub fn process_event(event: Event, app: &mut App) -> Vec<Message> {
         }
         Event::ApiResult { payload } => {
             let is_success = matches!(payload, ApiPayload::Success(_));
-            handle_api_result(app, payload);
+            let mut msgs = vec![Message::ApiLoaded(payload)];
             if is_success {
-                vec![Message::Refresh]
-            } else {
-                vec![Message::Noop]
+                msgs.push(Message::Refresh);
             }
+            msgs
         }
-        Event::ApiError(msg) => {
-            app.error_toast = Some(msg);
-            vec![Message::Noop]
-        }
+        Event::ApiError(msg) => vec![Message::ApiError(msg)],
         Event::Tick => {
-            if let Ok(remaining) = app.client.rate_remaining.lock() {
-                app.rate_remaining = *remaining;
-            }
-            if let Ok(reset) = app.client.rate_reset.lock() {
-                app.rate_reset_secs = reset.map(|inst| {
-                    let dur = inst.saturating_duration_since(std::time::Instant::now());
-                    dur.as_secs()
-                });
-            }
-            app.tick += 1;
-            vec![Message::Noop]
+            let (remaining, reset) = app.client.rate_info();
+            let reset_secs = reset.map(|inst| {
+                let dur = inst.saturating_duration_since(std::time::Instant::now());
+                dur.as_secs()
+            });
+            vec![Message::RateLimitUpdate { remaining, reset_secs }, Message::Tick]
         }
         _ => vec![Message::Noop],
-    }
-}
-
-fn handle_api_result(app: &mut App, payload: ApiPayload) {
-    match payload {
-        ApiPayload::Repos(repos) => {
-            if let Some(PanelState::Repos(ref mut panel)) = app.panels.get_mut(&PanelKind::Repos) {
-                panel.set_repos(repos);
-            }
-        }
-        ApiPayload::Pulls(pulls) => {
-            if let Some(PanelState::Pulls(ref mut panel)) = app.panels.get_mut(&PanelKind::Pulls) {
-                panel.set_pulls(pulls);
-            }
-        }
-        ApiPayload::Issues(issues) => {
-            if let Some(PanelState::Issues(ref mut panel)) = app.panels.get_mut(&PanelKind::Issues) {
-                panel.set_issues(issues);
-            }
-        }
-        ApiPayload::Notifications(notifs) => {
-            if let Some(PanelState::Notifications(ref mut panel)) =
-                app.panels.get_mut(&PanelKind::Notifications)
-            {
-                panel.set_notifications(notifs);
-            }
-        }
-        ApiPayload::Actions(runs) => {
-            if let Some(PanelState::Actions(ref mut panel)) =
-                app.panels.get_mut(&PanelKind::Actions)
-            {
-                panel.runs = runs;
-                panel.loading = false;
-            }
-        }
-        ApiPayload::Success(msg) => {
-            app.success_toast = Some(msg);
-        }
     }
 }

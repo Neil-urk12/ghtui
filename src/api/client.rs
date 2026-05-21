@@ -2,7 +2,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use color_eyre::Result;
-use reqwest::Client;
+use reqwest::{Client, Method};
 
 use super::cache::{Cache, CacheKey};
 use super::models::*;
@@ -34,6 +34,12 @@ impl GitHubClient {
         if let Ok(mut cache) = self.cache.lock() {
             cache.invalidate(key);
         }
+    }
+
+    pub fn rate_info(&self) -> (Option<u32>, Option<Instant>) {
+        let remaining = self.rate_remaining.lock().ok().and_then(|v| *v);
+        let reset = self.rate_reset.lock().ok().and_then(|v| *v);
+        (remaining, reset)
     }
 
     fn track_rate_limits(&self, headers: &reqwest::header::HeaderMap) {
@@ -75,27 +81,7 @@ impl GitHubClient {
             }
         }
 
-        let url = format!("{BASE_URL}{path}");
-        let resp = self
-            .http
-            .get(&url)
-            .bearer_auth(&self.token)
-            .header("Accept", "application/vnd.github+json")
-            .header("User-Agent", USER_AGENT)
-            .send()
-            .await?;
-
-        self.track_rate_limits(resp.headers());
-
-        let status = resp.status();
-        if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(color_eyre::eyre::eyre!(
-                "GitHub API error {}: {}",
-                status,
-                body
-            ));
-        }
+        let resp = self.send_and_check(self.request(Method::GET, path)).await?;
 
         let data = resp.json::<T>().await?;
 
@@ -110,79 +96,20 @@ impl GitHubClient {
     }
 
     async fn post_empty(&self, path: &str) -> Result<()> {
-        let url = format!("{BASE_URL}{path}");
-        let resp = self
-            .http
-            .post(&url)
-            .header("Authorization", format!("Bearer {}", self.token))
-            .header("Accept", "application/vnd.github+json")
-            .header("User-Agent", USER_AGENT)
-            .header("Content-Length", "0")
-            .send()
+        self.send_and_check(self.request(Method::POST, path).header("Content-Length", "0"))
             .await?;
-
-        self.track_rate_limits(resp.headers());
-
-        let status = resp.status();
-        if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(color_eyre::eyre::eyre!(
-                "GitHub API error {}: {}",
-                status,
-                body
-            ));
-        }
         Ok(())
     }
 
     async fn post_json<T: serde::Serialize + ?Sized>(&self, path: &str, body: &T) -> Result<()> {
-        let url = format!("{BASE_URL}{path}");
-        let resp = self
-            .http
-            .post(&url)
-            .header("Authorization", format!("Bearer {}", self.token))
-            .header("Accept", "application/vnd.github+json")
-            .header("User-Agent", USER_AGENT)
-            .json(body)
-            .send()
+        self.send_and_check(self.request(Method::POST, path).json(body))
             .await?;
-
-        self.track_rate_limits(resp.headers());
-
-        let status = resp.status();
-        if !status.is_success() {
-            let body_text = resp.text().await.unwrap_or_default();
-            return Err(color_eyre::eyre::eyre!(
-                "GitHub API error {}: {}",
-                status,
-                body_text
-            ));
-        }
         Ok(())
     }
 
     async fn patch_empty(&self, path: &str) -> Result<()> {
-        let url = format!("{BASE_URL}{path}");
-        let resp = self
-            .http
-            .patch(&url)
-            .header("Authorization", format!("Bearer {}", self.token))
-            .header("Accept", "application/vnd.github+json")
-            .header("User-Agent", USER_AGENT)
-            .send()
+        self.send_and_check(self.request(Method::PATCH, path))
             .await?;
-
-        self.track_rate_limits(resp.headers());
-
-        let status = resp.status();
-        if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(color_eyre::eyre::eyre!(
-                "GitHub API error {}: {}",
-                status,
-                body
-            ));
-        }
         Ok(())
     }
 
@@ -331,27 +258,28 @@ impl GitHubClient {
     }
 
     async fn put_empty(&self, path: &str) -> Result<()> {
+        self.send_and_check(self.request(Method::PUT, path))
+            .await?;
+        Ok(())
+    }
+
+    fn request(&self, method: Method, path: &str) -> reqwest::RequestBuilder {
         let url = format!("{BASE_URL}{path}");
-        let resp = self
-            .http
-            .put(&url)
-            .header("Authorization", format!("Bearer {}", self.token))
+        self.http
+            .request(method, &url)
+            .bearer_auth(&self.token)
             .header("Accept", "application/vnd.github+json")
             .header("User-Agent", USER_AGENT)
-            .send()
-            .await?;
+    }
 
+    async fn send_and_check(&self, builder: reqwest::RequestBuilder) -> Result<reqwest::Response> {
+        let resp = builder.send().await?;
         self.track_rate_limits(resp.headers());
-
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
-            return Err(color_eyre::eyre::eyre!(
-                "GitHub API error {}: {}",
-                status,
-                body
-            ));
+            return Err(color_eyre::eyre::eyre!("GitHub API error {}: {}", status, body));
         }
-        Ok(())
+        Ok(resp)
     }
 }
