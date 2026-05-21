@@ -11,6 +11,7 @@ mod run;
 mod theme;
 mod update;
 mod util;
+mod view;
 mod widgets;
 
 use clap::Parser;
