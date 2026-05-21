@@ -33,12 +33,22 @@ pub struct KeybindingsConfig {
     pub help: String,
 }
 
-#[derive(Debug, Default, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(default)]
 pub struct DefaultsConfig {
     pub pulls_state: String,
     pub issues_state: String,
     pub notifications_show_all: bool,
+}
+
+impl Default for DefaultsConfig {
+    fn default() -> Self {
+        Self {
+            pulls_state: "open".to_string(),
+            issues_state: "open".to_string(),
+            notifications_show_all: false,
+        }
+    }
 }
 
 impl Default for ThemeConfig {
