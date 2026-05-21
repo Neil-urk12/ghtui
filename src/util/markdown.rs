@@ -21,18 +21,18 @@ pub fn render_markdown(input: &str) -> Vec<Line<'static>> {
             continue;
         }
 
-        if line.starts_with("# ") {
+        if let Some(heading) = line.strip_prefix("# ") {
             lines.push(Line::from(Span::styled(
-                line[2..].to_string(),
+                heading.to_string(),
                 Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
             )));
-        } else if line.starts_with("## ") {
+        } else if let Some(heading) = line.strip_prefix("## ") {
             lines.push(Line::from(Span::styled(
-                line[3..].to_string(),
+                heading.to_string(),
                 Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD),
             )));
-        } else if line.starts_with("- ") || line.starts_with("* ") {
-            let content = parse_inline(&line[2..]);
+        } else if let Some(item) = line.strip_prefix("- ").or_else(|| line.strip_prefix("* ")) {
+            let content = parse_inline(item);
             let mut spans = vec![Span::raw("  • ")];
             spans.extend(content);
             lines.push(Line::from(spans));

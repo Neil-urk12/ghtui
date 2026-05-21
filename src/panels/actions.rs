@@ -122,8 +122,7 @@ impl ActionsPanel {
         let items: Vec<ListItem> = state
             .runs
             .iter()
-            .enumerate()
-            .map(|(_, run)| {
+            .map(|run| {
                 let (icon, style) = Self::status_icon(run);
                 let is_expanded = state.expanded_run == state.list_state.selected();
 

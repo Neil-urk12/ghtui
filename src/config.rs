@@ -3,7 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 use tracing::warn;
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Default, Deserialize, Clone)]
 #[serde(default)]
 pub struct Config {
     pub theme: ThemeConfig,
@@ -33,22 +33,12 @@ pub struct KeybindingsConfig {
     pub help: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Default, Deserialize, Clone)]
 #[serde(default)]
 pub struct DefaultsConfig {
     pub pulls_state: String,
     pub issues_state: String,
     pub notifications_show_all: bool,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            theme: ThemeConfig::default(),
-            keybindings: KeybindingsConfig::default(),
-            defaults: DefaultsConfig::default(),
-        }
-    }
 }
 
 impl Default for ThemeConfig {
@@ -73,16 +63,6 @@ impl Default for KeybindingsConfig {
             prev_tab: "Shift-Tab".to_string(),
             search: "/".to_string(),
             help: "?".to_string(),
-        }
-    }
-}
-
-impl Default for DefaultsConfig {
-    fn default() -> Self {
-        Self {
-            pulls_state: "open".to_string(),
-            issues_state: "open".to_string(),
-            notifications_show_all: false,
         }
     }
 }

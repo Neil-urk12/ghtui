@@ -115,15 +115,18 @@ impl App {
         // Apply config defaults
         let mut panels = HashMap::new();
         panels.insert(PanelKind::Repos, PanelState::Repos(ReposPanel::default()));
-        let mut pulls = PullsPanel::default();
-        pulls.state_filter = config.defaults.pulls_state.clone();
-        panels.insert(PanelKind::Pulls, PanelState::Pulls(pulls));
-        let mut issues = IssuesPanel::default();
-        issues.state_filter = config.defaults.issues_state.clone();
-        panels.insert(PanelKind::Issues, PanelState::Issues(issues));
-        let mut notifs = NotificationsPanel::default();
-        notifs.show_all = config.defaults.notifications_show_all;
-        panels.insert(PanelKind::Notifications, PanelState::Notifications(notifs));
+        panels.insert(PanelKind::Pulls, PanelState::Pulls(PullsPanel {
+            state_filter: config.defaults.pulls_state.clone(),
+            ..Default::default()
+        }));
+        panels.insert(PanelKind::Issues, PanelState::Issues(IssuesPanel {
+            state_filter: config.defaults.issues_state.clone(),
+            ..Default::default()
+        }));
+        panels.insert(PanelKind::Notifications, PanelState::Notifications(NotificationsPanel {
+            show_all: config.defaults.notifications_show_all,
+            ..Default::default()
+        }));
         panels.insert(PanelKind::Actions, PanelState::Actions(ActionsPanel::default()));
 
         Self {

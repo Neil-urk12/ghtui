@@ -14,7 +14,7 @@ pub fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
     let global_hints = "j/k: nav | Tab: switch | /: search | ?: help | q: quit";
 
     let rate_str = match (app.rate_remaining, app.rate_reset_secs) {
-        (Some(remaining), _) if remaining == 0 => {
+        (Some(0), _) => {
             if let Some(reset) = app.rate_reset_secs {
                 format!(" | API: rate limited ({}s)", reset)
             } else {
