@@ -1,12 +1,13 @@
 use ratatui::prelude::*;
-use ratatui::widgets::{Block, Borders, Cell, Row, StatefulWidget, Table};
+use ratatui::widgets::{Cell, Row};
 
 use crate::domain::Repo;
 use crate::cmd::Cmd;
 use crate::event::ApiPayload;
 use crate::theme::Theme;
 use crate::util::format;
-use crate::widgets::{detail_pane::DetailPane, empty_state::EmptyStateWidget, loading::LoadingWidget};
+use crate::widgets::detail_pane::DetailPane;
+use crate::widgets::list_view::{render_list_view, LeftContent, ListViewConfig};
 use super::panel::{Panel, handle_key_default};
 
 #[derive(Debug, Default)]
@@ -93,66 +94,24 @@ impl ReposPanel {
         theme: &Theme,
         tick: u64,
     ) {
-        let [list_area, detail_area] =
-            Layout::horizontal([Constraint::Percentage(45), Constraint::Percentage(55)])
-                .areas(area);
+        let rows: Vec<Row> = state
+            .filtered_indices
+            .iter()
+            .map(|&i| {
+                let repo = &state.repos[i];
+                let stars = format::abbreviate_number(repo.stars as u64);
+                let lang = repo.language.as_deref().unwrap_or("-");
+                let updated = format::relative_time(&repo.updated_at);
+                Row::new(vec![
+                    Cell::from(repo.name.clone()),
+                    Cell::from(lang),
+                    Cell::from(stars),
+                    Cell::from(updated),
+                ])
+            })
+            .collect();
 
-        let border_style = if focused {
-            theme.active_border
-        } else {
-            theme.inactive_border
-        };
-        let block = Block::default()
-            .title(" Repositories ")
-            .borders(Borders::ALL)
-            .border_style(border_style);
-
-        if state.loading {
-            LoadingWidget::new().render(frame, list_area, tick, block);
-            return;
-        }
-
-        if state.repos.is_empty() {
-            EmptyStateWidget::render(frame, list_area, "No repositories found", block);
-        } else {
-            let rows: Vec<Row> = state
-                .filtered_indices
-                .iter()
-                .map(|&i| {
-                    let repo = &state.repos[i];
-                    let stars = format::abbreviate_number(repo.stars as u64);
-                    let lang = repo.language.as_deref().unwrap_or("-");
-                    let updated = format::relative_time(&repo.updated_at);
-                    Row::new(vec![
-                        Cell::from(repo.name.clone()),
-                        Cell::from(lang),
-                        Cell::from(stars),
-                        Cell::from(updated),
-                    ])
-                })
-                .collect();
-
-            let widths = [
-                Constraint::Fill(3),
-                Constraint::Fill(1),
-                Constraint::Fill(1),
-                Constraint::Fill(1),
-            ];
-            let header = Row::new(["Name", "Lang", "Stars", "Updated"]).style(theme.muted);
-            let table = Table::new(rows, widths)
-                .header(header)
-                .block(block)
-                .row_highlight_style(theme.highlight);
-            StatefulWidget::render(table, list_area, frame.buffer_mut(), &mut state.list_state.clone());
-        }
-
-        // Detail pane
-        let detail_block = Block::default()
-            .title(" Details ")
-            .borders(Borders::ALL)
-            .border_style(border_style);
-
-        if let Some(repo) = state.selected_repo() {
+        let detail_lines = if let Some(repo) = state.selected_repo() {
             let mut lines = vec![
                 Line::from(Span::styled(
                     repo.name.clone(),
@@ -184,18 +143,37 @@ impl ReposPanel {
                 "Enter: view PRs | r: refresh | s: sort",
                 theme.muted,
             )));
-
-            state
-                .detail_pane
-                .render(frame, detail_area, " Details ", lines, detail_block);
+            lines
         } else {
-            EmptyStateWidget::render(
-                frame,
-                detail_area,
-                "Select a repository",
-                detail_block,
-            );
-        }
+            vec![]
+        };
+
+        let config = ListViewConfig {
+            split_ratio: (45, 55),
+            margin: 0,
+            focused,
+            block_title: " Repositories ".to_string(),
+            wrap_full: false,
+            loading: state.loading,
+            empty_message: "No repositories found".to_string(),
+            detail_title: " Details ".to_string(),
+            highlight_symbol: "▸ ".to_string(),
+            detail_empty_message: "Select a repository".to_string(),
+        };
+
+        let left = LeftContent::Table {
+            headers: vec!["Name", "Lang", "Stars", "Updated"],
+            rows,
+            widths: vec![
+                Constraint::Fill(3),
+                Constraint::Fill(1),
+                Constraint::Fill(1),
+                Constraint::Fill(1),
+            ],
+            state: &mut state.list_state.clone(),
+        };
+
+        render_list_view(frame, area, config, left, &mut state.detail_pane.clone(), detail_lines, theme, tick);
     }
 }
 

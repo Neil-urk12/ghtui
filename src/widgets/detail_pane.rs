@@ -1,7 +1,7 @@
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Paragraph};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DetailPane {
     pub scroll: u16,
 }

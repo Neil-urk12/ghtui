@@ -1,12 +1,13 @@
 use ratatui::prelude::*;
-use ratatui::widgets::{Block, Borders, Cell, Row, StatefulWidget, Table};
+use ratatui::widgets::{Cell, Row};
 
 use crate::domain::PullRequest;
 use crate::cmd::Cmd;
 use crate::event::ApiPayload;
 use crate::theme::Theme;
 use crate::util::format;
-use crate::widgets::{detail_pane::DetailPane, empty_state::EmptyStateWidget, loading::LoadingWidget};
+use crate::widgets::detail_pane::DetailPane;
+use crate::widgets::list_view::{render_list_view, LeftContent, ListViewConfig};
 use super::panel::{Panel, handle_key_default};
 
 #[derive(Debug)]
@@ -64,85 +65,25 @@ impl PullsPanel {
         theme: &Theme,
         tick: u64,
     ) {
-        let [list_area, detail_area] =
-            Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
-                .areas(area);
+        let rows: Vec<Row> = state
+            .filtered_indices
+            .iter()
+            .map(|&i| {
+                let pr = &state.pulls[i];
+                let status_str = if pr.state == "closed" { "closed" } else { "open" };
+                let status_style = if pr.state == "closed" { theme.error } else { theme.success };
+                let updated = format::relative_time(&pr.updated_at);
+                Row::new(vec![
+                    Cell::from(format!("#{}", pr.number)),
+                    Cell::from(pr.title.clone()),
+                    Cell::from(pr.author.clone()),
+                    Cell::from(Span::styled(status_str, status_style)),
+                    Cell::from(updated),
+                ])
+            })
+            .collect();
 
-        let border_style = if focused {
-            theme.active_border
-        } else {
-            theme.inactive_border
-        };
-
-        let title = match (&state.owner, &state.repo) {
-            (Some(o), Some(r)) => format!(" PRs: {o}/{r} "),
-            _ => " Pull Requests ".to_string(),
-        };
-
-        let block = Block::default()
-            .title(title)
-            .borders(Borders::ALL)
-            .border_style(border_style);
-
-        if state.loading {
-            LoadingWidget::new().render(frame, list_area, tick, block);
-            return;
-        }
-
-        if state.pulls.is_empty() {
-            let msg = if state.owner.is_some() {
-                "No pull requests found"
-            } else {
-                "Select a repository first (Enter on a repo)"
-            };
-            EmptyStateWidget::render(frame, list_area, msg, block);
-        } else {
-            let rows: Vec<Row> = state
-                .filtered_indices
-                .iter()
-                .map(|&i| {
-                    let pr = &state.pulls[i];
-                    let status_str = if pr.state == "closed" { "closed" } else { "open" };
-                    let status_style = if pr.state == "closed" { theme.error } else { theme.success };
-                    let updated = format::relative_time(&pr.updated_at);
-                    Row::new(vec![
-                        Cell::from(format!("#{}", pr.number)),
-                        Cell::from(pr.title.clone()),
-                        Cell::from(pr.author.clone()),
-                        Cell::from(Span::styled(status_str, status_style)),
-                        Cell::from(updated),
-                    ])
-                })
-                .collect();
-
-            let widths = [
-                Constraint::Length(6),
-                Constraint::Fill(3),
-                Constraint::Fill(1),
-                Constraint::Length(8),
-                Constraint::Fill(1),
-            ];
-            let header =
-                Row::new(["#", "Title", "Author", "Status", "Updated"]).style(theme.muted);
-            let table = Table::new(rows, widths)
-                .header(header)
-                .block(block)
-                .row_highlight_style(theme.highlight);
-            StatefulWidget::render(
-                table,
-                list_area,
-                frame.buffer_mut(),
-                &mut state.list_state.clone(),
-            );
-        }
-
-        // Detail pane
-        let detail_block = Block::default()
-            .title(" PR Details ")
-            .borders(Borders::ALL)
-            .border_style(border_style);
-
-        if let Some(pr) = state.selected_pr() {
+        let detail_lines = if let Some(pr) = state.selected_pr() {
             let mut lines = vec![
                 Line::from(Span::styled(
                     format!("#{} {}", pr.number, pr.title),
@@ -180,17 +121,49 @@ impl PullsPanel {
                 theme.muted,
             )));
 
-            state
-                .detail_pane
-                .render(frame, detail_area, " PR Details ", lines, detail_block);
+            lines
         } else {
-            EmptyStateWidget::render(
-                frame,
-                detail_area,
-                "Select a pull request",
-                detail_block,
-            );
-        }
+            vec![]
+        };
+
+        let block_title = match (&state.owner, &state.repo) {
+            (Some(o), Some(r)) => format!(" PRs: {o}/{r} "),
+            _ => " Pull Requests ".to_string(),
+        };
+
+        let empty_message = if state.owner.is_some() {
+            "No pull requests found".to_string()
+        } else {
+            "Select a repository first (Enter on a repo)".to_string()
+        };
+
+        let config = ListViewConfig {
+            split_ratio: (50, 50),
+            margin: 0,
+            focused,
+            block_title,
+            wrap_full: false,
+            loading: state.loading,
+            empty_message,
+            detail_title: " PR Details ".to_string(),
+            highlight_symbol: "▸ ".to_string(),
+            detail_empty_message: "Select a pull request".to_string(),
+        };
+
+        let left = LeftContent::Table {
+            headers: vec!["#", "Title", "Author", "Status", "Updated"],
+            rows,
+            widths: vec![
+                Constraint::Length(6),
+                Constraint::Fill(3),
+                Constraint::Fill(1),
+                Constraint::Length(8),
+                Constraint::Fill(1),
+            ],
+            state: &mut state.list_state.clone(),
+        };
+
+        render_list_view(frame, area, config, left, &mut state.detail_pane.clone(), detail_lines, theme, tick);
     }
 }
 

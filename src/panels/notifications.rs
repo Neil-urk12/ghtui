@@ -7,8 +7,7 @@ use crate::event::ApiPayload;
 use crate::theme::Theme;
 use crate::util::format::relative_time;
 use crate::widgets::detail_pane::DetailPane;
-use crate::widgets::empty_state::EmptyStateWidget;
-use crate::widgets::loading::LoadingWidget;
+use crate::widgets::list_view::{render_list_view, LeftContent, ListViewConfig};
 use super::panel::{Panel, handle_key_default};
 
 #[derive(Debug)]
@@ -56,32 +55,7 @@ impl NotificationsPanel {
         theme: &Theme,
         tick: u64,
     ) {
-        let border_style = if focused {
-            theme.active_border
-        } else {
-            theme.inactive_border
-        };
-
-        let filter_label = if state.show_all { "all" } else { "unread" };
-        let block = Block::bordered()
-            .title(format!(" Notifications [{}] ", filter_label))
-            .border_style(border_style);
-
-        if state.loading {
-            LoadingWidget::new().render(frame, area, tick, block);
-            return;
-        }
-
-        if state.notifications.is_empty() {
-            EmptyStateWidget::render(frame, area, "No notifications", block);
-            return;
-        }
-
-        let chunks = Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
-            .margin(1)
-            .split(area);
-
-        // Left: notification list
+        // Build items
         let items: Vec<ListItem> = state
             .notifications
             .iter()
@@ -116,22 +90,8 @@ impl NotificationsPanel {
             })
             .collect();
 
-        let list = List::new(items)
-            .highlight_style(theme.highlight)
-            .highlight_symbol("▸ ");
-
-        frame.render_stateful_widget(list, chunks[0], &mut state.list_state.clone());
-
-        // Right: detail pane
-        let detail_block = Block::bordered()
-            .title(" Detail ")
-            .border_style(if focused {
-                theme.active_border
-            } else {
-                theme.inactive_border
-            });
-
-        if let Some(notif) = state.selected_item() {
+        // Build detail lines
+        let detail_lines = if let Some(notif) = state.selected_item() {
             let mut content: Vec<Line> = Vec::new();
             content.push(Line::from(Span::styled(
                 &notif.subject_title,
@@ -162,18 +122,44 @@ impl NotificationsPanel {
                     Span::styled("read", theme.muted)
                 },
             ]));
-
-            state
-                .detail_pane
-                .render(frame, chunks[1], "Detail", content, detail_block);
+            content
         } else {
-            EmptyStateWidget::render(
-                frame,
-                chunks[1],
-                "Select a notification to view details",
-                detail_block,
-            );
-        }
+            vec![]
+        };
+
+        let config = ListViewConfig {
+            split_ratio: (50, 50),
+            margin: 1,
+            focused,
+            block_title: if state.show_all {
+                " Notifications [all] "
+            } else {
+                " Notifications [unread] "
+            }
+            .to_string(),
+            wrap_full: true,
+            loading: state.loading,
+            empty_message: "No notifications".to_string(),
+            detail_title: " Detail ".to_string(),
+            highlight_symbol: "▸ ".to_string(),
+            detail_empty_message: "Select a notification to view details".to_string(),
+        };
+
+        let left = LeftContent::List {
+            items,
+            state: &mut state.list_state.clone(),
+        };
+
+        render_list_view(
+            frame,
+            area,
+            config,
+            left,
+            &mut state.detail_pane.clone(),
+            detail_lines,
+            theme,
+            tick,
+        );
     }
 }
 

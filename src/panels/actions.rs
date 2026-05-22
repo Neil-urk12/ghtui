@@ -7,8 +7,7 @@ use crate::event::ApiPayload;
 use crate::theme::Theme;
 use crate::util::format::relative_time;
 use crate::widgets::detail_pane::DetailPane;
-use crate::widgets::empty_state::EmptyStateWidget;
-use crate::widgets::loading::LoadingWidget;
+use crate::widgets::list_view::{render_list_view, LeftContent, ListViewConfig};
 use super::panel::{Panel, handle_key_default};
 
 #[derive(Debug)]
@@ -95,75 +94,31 @@ impl ActionsPanel {
         theme: &Theme,
         tick: u64,
     ) {
-        let border_style = if focused {
-            theme.active_border
-        } else {
-            theme.inactive_border
-        };
+        let items: Vec<ListItem> = state.runs.iter().enumerate().map(|(i, run)| {
+            let (icon, style) = Self::status_icon(run);
+            let is_expanded = state.expanded_run == Some(i);
 
-        let block = Block::bordered()
-            .title(" Actions ")
-            .border_style(border_style);
-
-        if state.loading {
-            LoadingWidget::new().render(frame, area, tick, block);
-            return;
-        }
-
-        if state.runs.is_empty() {
-            EmptyStateWidget::render(frame, area, "No workflow runs found", block);
-            return;
-        }
-
-        let chunks = Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)])
-            .margin(1)
-            .split(area);
-
-        // Left: run list
-        let items: Vec<ListItem> = state
-            .runs
-            .iter()
-            .map(|run| {
-                let (icon, style) = Self::status_icon(run);
-                let is_expanded = state.expanded_run == state.list_state.selected();
-
-                let status_text = if run.status == "in_progress" {
-                    "in_progress"
-                } else {
-                    run.conclusion.as_deref().unwrap_or(&run.status)
-                };
-
-                let expand_marker = if is_expanded { "▾ " } else { "▸ " };
-
-                let line = Line::from(vec![
-                    Span::raw(expand_marker),
-                    icon,
-                    Span::styled(&run.name, style),
-                    Span::raw(format!(" #{}", run.run_number)),
-                    Span::styled(format!("  {}  ", status_text), theme.muted),
-                    Span::styled(&run.branch, Style::default().fg(Color::Blue)),
-                    Span::raw(format!("  {}", relative_time(&run.created_at))),
-                ]);
-                ListItem::new(line)
-            })
-            .collect();
-
-        let list = List::new(items)
-            .highlight_style(theme.highlight)
-            .highlight_symbol("  ");
-
-        frame.render_stateful_widget(list, chunks[0], &mut state.list_state.clone());
-
-        // Right: detail pane
-        let detail_block = Block::bordered()
-            .title(" Detail ")
-            .border_style(if focused {
-                theme.active_border
+            let status_text = if run.status == "in_progress" {
+                "in_progress"
             } else {
-                theme.inactive_border
-            });
+                run.conclusion.as_deref().unwrap_or(&run.status)
+            };
 
-        if let Some(run) = state.selected_item() {
+            let expand_marker = if is_expanded { "▾ " } else { "▸ " };
+
+            let line = Line::from(vec![
+                Span::raw(expand_marker),
+                icon,
+                Span::styled(&run.name, style),
+                Span::raw(format!(" #{}", run.run_number)),
+                Span::styled(format!("  {}  ", status_text), theme.muted),
+                Span::styled(&run.branch, Style::default().fg(Color::Blue)),
+                Span::raw(format!("  {}", relative_time(&run.created_at))),
+            ]);
+            ListItem::new(line)
+        }).collect();
+
+        let detail_lines = if let Some(run) = state.selected_item() {
             let mut content: Vec<Line> = Vec::new();
 
             let (icon, status_style) = Self::status_icon(run);
@@ -216,17 +171,34 @@ impl ActionsPanel {
                 )));
             }
 
-            state
-                .detail_pane
-                .render(frame, chunks[1], "Detail", content, detail_block);
+            content
         } else {
-            EmptyStateWidget::render(
-                frame,
-                chunks[1],
-                "Select a run to view details",
-                detail_block,
-            );
-        }
+            vec![]
+        };
+
+        let config = ListViewConfig {
+            split_ratio: (50, 50),
+            margin: 1,
+            focused,
+            block_title: format!(
+                " Actions: {}/{} ",
+                state.owner.as_deref().unwrap_or(""),
+                state.repo.as_deref().unwrap_or("")
+            ),
+            wrap_full: true,
+            loading: state.loading,
+            empty_message: "No workflow runs".to_string(),
+            detail_title: " Detail ".to_string(),
+            highlight_symbol: "  ".to_string(),
+            detail_empty_message: "Select a run to view details".to_string(),
+        };
+
+        let left = LeftContent::List {
+            items,
+            state: &mut state.list_state.clone(),
+        };
+
+        render_list_view(frame, area, config, left, &mut state.detail_pane.clone(), detail_lines, theme, tick);
     }
 }
 

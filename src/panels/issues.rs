@@ -9,8 +9,7 @@ use crate::util::format;
 use crate::util::format::relative_time;
 use crate::util::markdown::render_markdown;
 use crate::widgets::detail_pane::DetailPane;
-use crate::widgets::empty_state::EmptyStateWidget;
-use crate::widgets::loading::LoadingWidget;
+use crate::widgets::list_view::{render_list_view, LeftContent, ListViewConfig};
 use super::panel::{Panel, handle_key_default};
 
 #[derive(Debug)]
@@ -61,31 +60,6 @@ impl IssuesPanel {
     }
 
     pub fn view(frame: &mut Frame, area: Rect, state: &IssuesPanel, focused: bool, theme: &Theme, tick: u64) {
-        let border_style = if focused {
-            theme.active_border
-        } else {
-            theme.inactive_border
-        };
-
-        let block = Block::bordered()
-            .title(format!(" Issues [{}] ", state.state_filter))
-            .border_style(border_style);
-
-        if state.loading {
-            LoadingWidget::new().render(frame, area, tick, block);
-            return;
-        }
-
-        if state.issues.is_empty() {
-            EmptyStateWidget::render(frame, area, "No issues found", block);
-            return;
-        }
-
-        let chunks = Layout::horizontal([Constraint::Percentage(45), Constraint::Percentage(55)])
-            .margin(1)
-            .split(area);
-
-        // Left: issue list
         let items: Vec<ListItem> = state
             .filtered_indices
             .iter()
@@ -121,18 +95,7 @@ impl IssuesPanel {
             })
             .collect();
 
-        let list = List::new(items)
-            .highlight_style(theme.highlight)
-            .highlight_symbol("▸ ");
-
-        frame.render_stateful_widget(list, chunks[0], &mut state.list_state.clone());
-
-        // Right: detail pane
-        let detail_block = Block::bordered()
-            .title(" Detail ")
-            .border_style(if focused { theme.active_border } else { theme.inactive_border });
-
-        if let Some(issue) = state.selected_item() {
+        let detail_lines: Vec<Line> = if let Some(issue) = state.selected_item() {
             let mut content: Vec<Line> = Vec::new();
             content.push(Line::from(vec![
                 Span::styled(format!("#{} ", issue.number), theme.muted),
@@ -174,12 +137,30 @@ impl IssuesPanel {
                 content.push(Line::from(Span::styled("No description", theme.muted)));
             }
 
-            state
-                .detail_pane
-                .render(frame, chunks[1], "Detail", content, detail_block);
+            content
         } else {
-            EmptyStateWidget::render(frame, chunks[1], "Select an issue to view details", detail_block);
-        }
+            vec![]
+        };
+
+        let config = ListViewConfig {
+            split_ratio: (45, 55),
+            margin: 1,
+            focused,
+            block_title: format!(" Issues [{}] ", state.state_filter),
+            wrap_full: true,
+            loading: state.loading,
+            empty_message: "No issues found".to_string(),
+            detail_title: " Detail ".to_string(),
+            highlight_symbol: "▸ ".to_string(),
+            detail_empty_message: "Select an issue to view details".to_string(),
+        };
+
+        let left = LeftContent::List {
+            items,
+            state: &mut state.list_state.clone(),
+        };
+
+        render_list_view(frame, area, config, left, &mut state.detail_pane.clone(), detail_lines, theme, tick);
     }
 }
 
