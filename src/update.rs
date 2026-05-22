@@ -70,40 +70,15 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
         Message::NextTab => {
             app.search.active = false;
             app.next_tab();
-            let cmd = app.panels.get(&app.active_panel)
-                .map(|entry| entry.panel.as_panel().fetch_cmd())
-                .unwrap_or(Cmd::None);
-            if !matches!(cmd, Cmd::None) {
-                if let Some(entry) = app.panels.get_mut(&app.active_panel) {
-                    entry.panel.as_panel_mut().set_loading(true);
-                }
-            }
-            cmd
+            fetch_and_set_loading(app)
         }
         Message::PrevTab => {
             app.search.active = false;
             app.prev_tab();
-            let cmd = app.panels.get(&app.active_panel)
-                .map(|entry| entry.panel.as_panel().fetch_cmd())
-                .unwrap_or(Cmd::None);
-            if !matches!(cmd, Cmd::None) {
-                if let Some(entry) = app.panels.get_mut(&app.active_panel) {
-                    entry.panel.as_panel_mut().set_loading(true);
-                }
-            }
-            cmd
+            fetch_and_set_loading(app)
         }
-        Message::Refresh => {
-            let cmd = app.panels.get(&app.active_panel)
-                .map(|entry| entry.panel.as_panel().fetch_cmd())
-                .unwrap_or(Cmd::None);
-            if !matches!(cmd, Cmd::None) {
-                if let Some(entry) = app.panels.get_mut(&app.active_panel) {
-                    entry.panel.as_panel_mut().set_loading(true);
-                }
-            }
-            cmd
-        }
+        Message::Refresh => fetch_and_set_loading(app),
+        
         Message::SearchActivate => {
             app.search.active = true;
             app.search.query.clear();
@@ -252,6 +227,18 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
             Cmd::None
         }
     }
+}
+
+fn fetch_and_set_loading(app: &mut App) -> Cmd {
+    let cmd = app.panels.get(&app.active_panel)
+        .map(|entry| entry.panel.as_panel().fetch_cmd())
+        .unwrap_or(Cmd::None);
+    if !matches!(cmd, Cmd::None) {
+        if let Some(entry) = app.panels.get_mut(&app.active_panel) {
+            entry.panel.as_panel_mut().set_loading(true);
+        }
+    }
+    cmd
 }
 
 #[cfg(test)]
