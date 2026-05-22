@@ -8,49 +8,36 @@ use crate::theme::Theme;
 use crate::util::format::relative_time;
 use crate::widgets::detail_pane::DetailPane;
 use crate::widgets::list_view::{render_list_view, LeftContent, ListViewConfig};
-use super::panel::{Panel, handle_key_default};
+use super::panel::{Panel, SelectionState, handle_key_default};
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct NotificationsPanel {
     pub notifications: Vec<Notification>,
-    pub list_state: ListState,
     pub loading: bool,
-    pub detail_pane: DetailPane,
     pub show_all: bool,
 }
 
-impl Default for NotificationsPanel {
-    fn default() -> Self {
-        let mut list_state = ListState::default();
-        list_state.select(Some(0));
-        Self {
-            notifications: Vec::new(),
-            list_state,
-            loading: false,
-            detail_pane: DetailPane::new(),
-            show_all: false,
-        }
-    }
-}
-
 impl NotificationsPanel {
-    pub fn selected_item(&self) -> Option<&Notification> {
-        self.list_state
+    pub fn selected_item(&self, selection: &SelectionState) -> Option<&Notification> {
+        selection
             .selected()
             .and_then(|i| self.notifications.get(i))
     }
 
-    pub fn set_notifications(&mut self, notifs: Vec<Notification>) {
+    pub fn set_notifications(&mut self, notifs: Vec<Notification>, selection: &mut SelectionState) {
         self.notifications = notifs;
         self.loading = false;
-        self.list_state.select(if self.notifications.is_empty() { None } else { Some(0) });
-        self.detail_pane.reset_scroll();
+        selection.select(if self.notifications.is_empty() { None } else { Some(0) });
+        selection.set_len(self.notifications.len());
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn view(
         frame: &mut Frame,
         area: Rect,
         state: &NotificationsPanel,
+        selection: &mut SelectionState,
+        detail_pane: &DetailPane,
         focused: bool,
         theme: &Theme,
         tick: u64,
@@ -91,7 +78,7 @@ impl NotificationsPanel {
             .collect();
 
         // Build detail lines
-        let detail_lines = if let Some(notif) = state.selected_item() {
+        let detail_lines = if let Some(notif) = state.selected_item(selection) {
             let mut content: Vec<Line> = Vec::new();
             content.push(Line::from(Span::styled(
                 &notif.subject_title,
@@ -145,17 +132,15 @@ impl NotificationsPanel {
             detail_empty_message: "Select a notification to view details".to_string(),
         };
 
-        let left = LeftContent::List {
-            items,
-            state: &mut state.list_state.clone(),
-        };
+        let left = LeftContent::List { items };
 
         render_list_view(
             frame,
             area,
             config,
             left,
-            &mut state.detail_pane.clone(),
+            selection,
+            detail_pane,
             detail_lines,
             theme,
             tick,
@@ -164,57 +149,38 @@ impl NotificationsPanel {
 }
 
 impl Panel for NotificationsPanel {
-    fn detail_pane(&mut self) -> &mut DetailPane {
-        &mut self.detail_pane
-    }
-
-    fn list_len(&self) -> usize {
-        self.notifications.len()
-    }
-
-    fn selected_index(&self) -> Option<usize> {
-        self.list_state.selected()
-    }
-
-    fn set_selected(&mut self, index: Option<usize>) {
-        self.list_state.select(index);
-    }
-
     fn fetch_cmd(&self) -> Cmd {
         Cmd::FetchNotifications { all: self.show_all }
     }
 
-    fn load_data(&mut self, payload: ApiPayload) {
+    fn load_data(&mut self, payload: ApiPayload, selection: &mut SelectionState) {
         if let ApiPayload::Notifications(notifs) = payload {
-            self.set_notifications(notifs);
+            self.set_notifications(notifs, selection);
         }
     }
 
-    fn handle_key(&mut self, key: char) -> Option<Cmd> {
+    fn handle_key(&mut self, key: char, selection: &mut SelectionState, detail_pane: &mut DetailPane) -> Option<Cmd> {
         match key {
-            'x' => {
-                if let Some(notif) = self.selected_item() {
-                    let id = notif.id.clone();
-                    if !id.is_empty() {
-                        return Some(Cmd::MarkNotificationRead { id });
-                    }
-                }
+            'a' => {
+                self.show_all = !self.show_all;
+                selection.select(if self.notifications.is_empty() { None } else { Some(0) });
+                selection.set_len(self.notifications.len());
                 None
             }
-            'X' => Some(Cmd::MarkAllNotificationsRead),
-            '1' => {
-                self.show_all = false;
-                Some(Cmd::FetchNotifications { all: false })
+            'm' => {
+                if let Some(notif) = self.selected_item(selection) {
+                    let id = notif.id.clone();
+                    Some(Cmd::MarkNotificationRead { id })
+                } else {
+                    None
+                }
             }
-            '2' => {
-                self.show_all = true;
-                Some(Cmd::FetchNotifications { all: true })
-            }
-            _ => handle_key_default(self, key),
+            'M' => Some(Cmd::MarkAllNotificationsRead),
+            _ => handle_key_default(self, key, selection, detail_pane),
         }
     }
 
-    fn render(&self, frame: &mut Frame, area: Rect, focused: bool, theme: &Theme, tick: u64) {
-        Self::view(frame, area, self, focused, theme, tick);
+    fn render(&self, frame: &mut Frame, area: Rect, selection: &mut SelectionState, detail_pane: &DetailPane, focused: bool, theme: &Theme, tick: u64) {
+        Self::view(frame, area, self, selection, detail_pane, focused, theme, tick);
     }
 }

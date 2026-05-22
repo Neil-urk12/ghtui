@@ -8,15 +8,13 @@ use crate::theme::Theme;
 use crate::util::format;
 use crate::widgets::detail_pane::DetailPane;
 use crate::widgets::list_view::{render_list_view, LeftContent, ListViewConfig};
-use super::panel::{Panel, handle_key_default};
+use super::panel::{Panel, SelectionState, handle_key_default};
 
 #[derive(Debug)]
 pub struct PullsPanel {
     pub pulls: Vec<PullRequest>,
     pub filtered_indices: Vec<usize>,
-    pub list_state: ratatui::widgets::TableState,
     pub loading: bool,
-    pub detail_pane: DetailPane,
     pub state_filter: String, // "open", "closed", "all"
     pub owner: Option<String>,
     pub repo: Option<String>,
@@ -24,14 +22,10 @@ pub struct PullsPanel {
 
 impl Default for PullsPanel {
     fn default() -> Self {
-        let mut list_state = ratatui::widgets::TableState::default();
-        list_state.select(Some(0));
         Self {
             pulls: Vec::new(),
             filtered_indices: Vec::new(),
-            list_state,
             loading: false,
-            detail_pane: DetailPane::new(),
             state_filter: "open".to_string(),
             owner: None,
             repo: None,
@@ -40,11 +34,11 @@ impl Default for PullsPanel {
 }
 
 impl PullsPanel {
-    pub fn set_pulls(&mut self, pulls: Vec<PullRequest>) {
+    pub fn set_pulls(&mut self, pulls: Vec<PullRequest>, selection: &mut SelectionState) {
         self.pulls = pulls;
         self.filtered_indices = (0..self.pulls.len()).collect();
-        self.list_state.select(if self.filtered_indices.is_empty() { None } else { Some(0) });
-        self.detail_pane.reset_scroll();
+        selection.select(if self.filtered_indices.is_empty() { None } else { Some(0) });
+        selection.set_len(self.filtered_indices.len());
     }
 
     pub fn set_repo(&mut self, owner: String, repo: String) {
@@ -52,15 +46,18 @@ impl PullsPanel {
         self.repo = Some(repo);
     }
 
-    pub fn selected_pr(&self) -> Option<&PullRequest> {
-        let idx = self.list_state.selected()?;
+    pub fn selected_pr(&self, selection: &SelectionState) -> Option<&PullRequest> {
+        let idx = selection.selected()?;
         self.filtered_indices.get(idx).map(|&i| &self.pulls[i])
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn view(
         frame: &mut Frame,
         area: Rect,
         state: &PullsPanel,
+        selection: &mut SelectionState,
+        detail_pane: &DetailPane,
         focused: bool,
         theme: &Theme,
         tick: u64,
@@ -83,7 +80,7 @@ impl PullsPanel {
             })
             .collect();
 
-        let detail_lines = if let Some(pr) = state.selected_pr() {
+        let detail_lines = if let Some(pr) = state.selected_pr(selection) {
             let mut lines = vec![
                 Line::from(Span::styled(
                     format!("#{} {}", pr.number, pr.title),
@@ -160,30 +157,13 @@ impl PullsPanel {
                 Constraint::Length(8),
                 Constraint::Fill(1),
             ],
-            state: &mut state.list_state.clone(),
         };
 
-        render_list_view(frame, area, config, left, &mut state.detail_pane.clone(), detail_lines, theme, tick);
+        render_list_view(frame, area, config, left, selection, detail_pane, detail_lines, theme, tick);
     }
 }
 
 impl Panel for PullsPanel {
-    fn detail_pane(&mut self) -> &mut DetailPane {
-        &mut self.detail_pane
-    }
-
-    fn list_len(&self) -> usize {
-        self.filtered_indices.len()
-    }
-
-    fn selected_index(&self) -> Option<usize> {
-        self.list_state.selected()
-    }
-
-    fn set_selected(&mut self, index: Option<usize>) {
-        self.list_state.select(index);
-    }
-
     fn fetch_cmd(&self) -> Cmd {
         match (&self.owner, &self.repo) {
             (Some(owner), Some(repo)) => Cmd::FetchPulls {
@@ -199,13 +179,13 @@ impl Panel for PullsPanel {
         self.set_repo(owner.to_string(), repo.to_string());
     }
 
-    fn load_data(&mut self, payload: ApiPayload) {
+    fn load_data(&mut self, payload: ApiPayload, selection: &mut SelectionState) {
         if let ApiPayload::Pulls(pulls) = payload {
-            self.set_pulls(pulls);
+            self.set_pulls(pulls, selection);
         }
     }
 
-    fn handle_key(&mut self, key: char) -> Option<Cmd> {
+    fn handle_key(&mut self, key: char, selection: &mut SelectionState, detail_pane: &mut DetailPane) -> Option<Cmd> {
         match key {
             '1' => {
                 self.state_filter = "open".to_string();
@@ -226,7 +206,7 @@ impl Panel for PullsPanel {
                 } else { None }
             }
             'o' => {
-                if let Some(pr) = self.selected_pr() {
+                if let Some(pr) = self.selected_pr(selection) {
                     if let (Some(owner), Some(repo)) = (&self.owner, &self.repo) {
                         let _ = std::process::Command::new("gh")
                             .args(["browse", &format!("{}", pr.number), "--repo", &format!("{}/{}", owner, repo)])
@@ -236,7 +216,7 @@ impl Panel for PullsPanel {
                 None
             }
             'a' => {
-                if let Some(pr) = self.selected_pr() {
+                if let Some(pr) = self.selected_pr(selection) {
                     if let (Some(owner), Some(repo)) = (&self.owner, &self.repo) {
                         return Some(Cmd::ApprovePr { owner: owner.clone(), repo: repo.clone(), pr_number: pr.number as u64 });
                     }
@@ -244,18 +224,18 @@ impl Panel for PullsPanel {
                 None
             }
             'm' => {
-                if let Some(pr) = self.selected_pr() {
+                if let Some(pr) = self.selected_pr(selection) {
                     if let (Some(owner), Some(repo)) = (&self.owner, &self.repo) {
                         return Some(Cmd::MergePr { owner: owner.clone(), repo: repo.clone(), pr_number: pr.number as u64 });
                     }
                 }
                 None
             }
-            _ => handle_key_default(self, key),
+            _ => handle_key_default(self, key, selection, detail_pane),
         }
     }
 
-    fn render(&self, frame: &mut Frame, area: Rect, focused: bool, theme: &Theme, tick: u64) {
-        Self::view(frame, area, self, focused, theme, tick);
+    fn render(&self, frame: &mut Frame, area: Rect, selection: &mut SelectionState, detail_pane: &DetailPane, focused: bool, theme: &Theme, tick: u64) {
+        Self::view(frame, area, self, selection, detail_pane, focused, theme, tick);
     }
 }

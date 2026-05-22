@@ -71,19 +71,19 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
             app.search.active = false;
             app.next_tab();
             app.panels.get(&app.active_panel)
-                .map(|p| p.as_panel().fetch_cmd())
+                .map(|entry| entry.panel.as_panel().fetch_cmd())
                 .unwrap_or(Cmd::None)
         }
         Message::PrevTab => {
             app.search.active = false;
             app.prev_tab();
             app.panels.get(&app.active_panel)
-                .map(|p| p.as_panel().fetch_cmd())
+                .map(|entry| entry.panel.as_panel().fetch_cmd())
                 .unwrap_or(Cmd::None)
         }
         Message::Refresh => {
             app.panels.get(&app.active_panel)
-                .map(|p| p.as_panel().fetch_cmd())
+                .map(|entry| entry.panel.as_panel().fetch_cmd())
                 .unwrap_or(Cmd::None)
         }
         Message::SearchActivate => {
@@ -121,14 +121,14 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
             Cmd::None
         }
         Message::DetailScrollUp => {
-            if let Some(panel) = app.panels.get_mut(&app.active_panel) {
-                panel.as_panel_mut().scroll_detail_up();
+            if let Some(entry) = app.panels.get_mut(&app.active_panel) {
+                crate::panels::panel::scroll_detail_up(&mut entry.detail_pane);
             }
             Cmd::None
         }
         Message::DetailScrollDown => {
-            if let Some(panel) = app.panels.get_mut(&app.active_panel) {
-                panel.as_panel_mut().scroll_detail_down();
+            if let Some(entry) = app.panels.get_mut(&app.active_panel) {
+                crate::panels::panel::scroll_detail_down(&mut entry.detail_pane);
             }
             Cmd::None
         }
@@ -139,17 +139,17 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
                 }
                 return Cmd::None;
             }
-            if let Some(panel) = app.panels.get_mut(&app.active_panel) {
-                let cmd = panel.as_panel_mut().handle_key(c).unwrap_or(Cmd::None);
-                match cmd {
-                    Cmd::OpenRepoDetail { owner, repo } => {
-                        app.active_panel = PanelKind::Pulls;
-                        navigation::handle_open_repo_detail(&mut app.panels, owner, repo)
-                    }
-                    other => other,
-                }
+            let cmd = if let Some(entry) = app.panels.get_mut(&app.active_panel) {
+                entry.panel.as_panel_mut().handle_key(c, &mut entry.selection, &mut entry.detail_pane).unwrap_or(Cmd::None)
             } else {
                 Cmd::None
+            };
+            match cmd {
+                Cmd::OpenRepoDetail { owner, repo } => {
+                    app.active_panel = PanelKind::Pulls;
+                    navigation::handle_open_repo_detail(&mut app.panels, owner, repo)
+                }
+                other => other,
             }
         }
         Message::LoginInit(login) => {
@@ -191,8 +191,8 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
                 ApiPayload::Success(_) => None,
             };
             if let Some(kind) = target {
-                if let Some(panel) = app.panels.get_mut(&kind) {
-                    panel.as_panel_mut().load_data(payload);
+                if let Some(entry) = app.panels.get_mut(&kind) {
+                    entry.panel.as_panel_mut().load_data(payload, &mut entry.selection);
                 }
             }
             Cmd::None
@@ -339,11 +339,15 @@ mod tests {
         update(&mut app, Message::ApiLoaded(ApiPayload::Repos(repos)));
 
         // Verify data landed in Repos panel
-        if let Some(crate::app::PanelState::Repos(panel)) = app.panels.get(&PanelKind::Repos) {
-            assert_eq!(panel.repos.len(), 1);
-            assert_eq!(panel.repos[0].name, "test/repo");
+        if let Some(entry) = app.panels.get(&PanelKind::Repos) {
+            if let crate::app::PanelState::Repos(panel) = &entry.panel {
+                assert_eq!(panel.repos.len(), 1);
+                assert_eq!(panel.repos[0].name, "test/repo");
+            } else {
+                panic!("Expected Repos panel");
+            }
         } else {
-            panic!("Expected Repos panel");
+            panic!("Expected PanelEntry for Repos");
         }
     }
 

@@ -6,7 +6,9 @@ use crate::api::client::GitHubClient;
 use crate::config::Config;
 use crate::panels::{ActionsPanel, IssuesPanel, NotificationsPanel, Panel, PullsPanel, ReposPanel};
 use crate::panels::login::LoginState;
+use crate::panels::panel::SelectionState;
 use crate::theme::Theme;
+use crate::widgets::detail_pane::DetailPane;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PanelKind {
@@ -69,6 +71,12 @@ impl PanelState {
     }
 }
 
+pub struct PanelEntry {
+    pub panel: PanelState,
+    pub selection: SelectionState,
+    pub detail_pane: DetailPane,
+}
+
 #[derive(Debug, Default)]
 pub struct SearchState {
     pub active: bool,
@@ -84,7 +92,7 @@ pub struct App {
     pub state: AppState,
     pub login: Option<LoginState>,
     pub active_panel: PanelKind,
-    pub panels: HashMap<PanelKind, PanelState>,
+    pub panels: HashMap<PanelKind, PanelEntry>,
     pub config: Config,
     pub theme: Theme,
     pub search: SearchState,
@@ -109,20 +117,40 @@ impl App {
 
         // Apply config defaults
         let mut panels = HashMap::new();
-        panels.insert(PanelKind::Repos, PanelState::Repos(ReposPanel::default()));
-        panels.insert(PanelKind::Pulls, PanelState::Pulls(PullsPanel {
-            state_filter: config.defaults.pulls_state.clone(),
-            ..Default::default()
-        }));
-        panels.insert(PanelKind::Issues, PanelState::Issues(IssuesPanel {
-            state_filter: config.defaults.issues_state.clone(),
-            ..Default::default()
-        }));
-        panels.insert(PanelKind::Notifications, PanelState::Notifications(NotificationsPanel {
-            show_all: config.defaults.notifications_show_all,
-            ..Default::default()
-        }));
-        panels.insert(PanelKind::Actions, PanelState::Actions(ActionsPanel::default()));
+        panels.insert(PanelKind::Repos, PanelEntry {
+            panel: PanelState::Repos(ReposPanel::default()),
+            selection: SelectionState::table(),
+            detail_pane: DetailPane::new(),
+        });
+        panels.insert(PanelKind::Pulls, PanelEntry {
+            panel: PanelState::Pulls(PullsPanel {
+                state_filter: config.defaults.pulls_state.clone(),
+                ..Default::default()
+            }),
+            selection: SelectionState::table(),
+            detail_pane: DetailPane::new(),
+        });
+        panels.insert(PanelKind::Issues, PanelEntry {
+            panel: PanelState::Issues(IssuesPanel {
+                state_filter: config.defaults.issues_state.clone(),
+                ..Default::default()
+            }),
+            selection: SelectionState::list(),
+            detail_pane: DetailPane::new(),
+        });
+        panels.insert(PanelKind::Notifications, PanelEntry {
+            panel: PanelState::Notifications(NotificationsPanel {
+                show_all: config.defaults.notifications_show_all,
+                ..Default::default()
+            }),
+            selection: SelectionState::list(),
+            detail_pane: DetailPane::new(),
+        });
+        panels.insert(PanelKind::Actions, PanelEntry {
+            panel: PanelState::Actions(ActionsPanel::default()),
+            selection: SelectionState::list(),
+            detail_pane: DetailPane::new(),
+        });
 
         Self {
             state,

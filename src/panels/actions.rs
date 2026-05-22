@@ -8,43 +8,24 @@ use crate::theme::Theme;
 use crate::util::format::relative_time;
 use crate::widgets::detail_pane::DetailPane;
 use crate::widgets::list_view::{render_list_view, LeftContent, ListViewConfig};
-use super::panel::{Panel, handle_key_default};
+use super::panel::{Panel, SelectionState, handle_key_default};
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct ActionsPanel {
     pub runs: Vec<WorkflowRun>,
-    pub list_state: ListState,
     pub loading: bool,
-    pub detail_pane: DetailPane,
     pub expanded_run: Option<usize>,
     pub owner: Option<String>,
     pub repo: Option<String>,
 }
 
-impl Default for ActionsPanel {
-    fn default() -> Self {
-        let mut list_state = ListState::default();
-        list_state.select(Some(0));
-        Self {
-            runs: Vec::new(),
-            list_state,
-            loading: false,
-            detail_pane: DetailPane::new(),
-            expanded_run: None,
-            owner: None,
-            repo: None,
-        }
-    }
-}
-
 impl ActionsPanel {
-    pub fn selected_item(&self) -> Option<&WorkflowRun> {
-        self.list_state.selected().and_then(|i| self.runs.get(i))
+    pub fn selected_item(&self, selection: &SelectionState) -> Option<&WorkflowRun> {
+        selection.selected().and_then(|i| self.runs.get(i))
     }
 
-    pub fn toggle_expand(&mut self) {
-        let selected = self.list_state.selected();
-        if let Some(idx) = selected {
+    pub fn toggle_expand(&mut self, selection: &SelectionState) {
+        if let Some(idx) = selection.selected() {
             if self.expanded_run == Some(idx) {
                 self.expanded_run = None;
             } else {
@@ -86,10 +67,13 @@ impl ActionsPanel {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn view(
         frame: &mut Frame,
         area: Rect,
         state: &ActionsPanel,
+        selection: &mut SelectionState,
+        detail_pane: &DetailPane,
         focused: bool,
         theme: &Theme,
         tick: u64,
@@ -118,7 +102,7 @@ impl ActionsPanel {
             ListItem::new(line)
         }).collect();
 
-        let detail_lines = if let Some(run) = state.selected_item() {
+        let detail_lines = if let Some(run) = state.selected_item(selection) {
             let mut content: Vec<Line> = Vec::new();
 
             let (icon, status_style) = Self::status_icon(run);
@@ -157,7 +141,7 @@ impl ActionsPanel {
                 Span::raw(relative_time(&run.created_at)),
             ]));
 
-            if state.expanded_run == state.list_state.selected() {
+            if state.expanded_run == selection.selected() {
                 content.push(Line::from(""));
                 content.push(Line::from(Span::styled(
                     "Jobs",
@@ -193,32 +177,13 @@ impl ActionsPanel {
             detail_empty_message: "Select a run to view details".to_string(),
         };
 
-        let left = LeftContent::List {
-            items,
-            state: &mut state.list_state.clone(),
-        };
+        let left = LeftContent::List { items };
 
-        render_list_view(frame, area, config, left, &mut state.detail_pane.clone(), detail_lines, theme, tick);
+        render_list_view(frame, area, config, left, selection, detail_pane, detail_lines, theme, tick);
     }
 }
 
 impl Panel for ActionsPanel {
-    fn detail_pane(&mut self) -> &mut DetailPane {
-        &mut self.detail_pane
-    }
-
-    fn list_len(&self) -> usize {
-        self.runs.len()
-    }
-
-    fn selected_index(&self) -> Option<usize> {
-        self.list_state.selected()
-    }
-
-    fn set_selected(&mut self, index: Option<usize>) {
-        self.list_state.select(index);
-    }
-
     fn fetch_cmd(&self) -> Cmd {
         match (&self.owner, &self.repo) {
             (Some(owner), Some(repo)) => Cmd::FetchActions {
@@ -234,18 +199,35 @@ impl Panel for ActionsPanel {
         self.repo = Some(repo.to_string());
     }
 
-    fn load_data(&mut self, payload: ApiPayload) {
+    fn load_data(&mut self, payload: ApiPayload, selection: &mut SelectionState) {
         if let ApiPayload::Actions(runs) = payload {
             self.runs = runs;
             self.loading = false;
+            self.expanded_run = None;
+            let len = self.runs.len();
+            selection.select(if len == 0 { None } else { Some(0) });
+            selection.set_len(len);
         }
     }
 
-    fn handle_key(&mut self, key: char) -> Option<Cmd> {
+    fn handle_key(&mut self, key: char, selection: &mut SelectionState, detail_pane: &mut DetailPane) -> Option<Cmd> {
         match key {
-            '\n' => { self.toggle_expand(); None }
+            '\n' => {
+                self.toggle_expand(selection);
+                None
+            }
+            'o' => {
+                if let Some(run) = self.selected_item(selection) {
+                    if let (Some(owner), Some(repo)) = (&self.owner, &self.repo) {
+                        let _ = std::process::Command::new("gh")
+                            .args(["browse", &format!("{}", run.id), "--repo", &format!("{}/{}", owner, repo)])
+                            .spawn();
+                    }
+                }
+                None
+            }
             'r' => {
-                if let Some(run) = self.selected_item() {
+                if let Some(run) = self.selected_item(selection) {
                     if let (Some(owner), Some(repo)) = (&self.owner, &self.repo) {
                         return Some(Cmd::RerunWorkflow { owner: owner.clone(), repo: repo.clone(), run_id: run.id });
                     }
@@ -253,18 +235,28 @@ impl Panel for ActionsPanel {
                 None
             }
             'c' => {
-                if let Some(run) = self.selected_item() {
+                if let Some(run) = self.selected_item(selection) {
                     if let (Some(owner), Some(repo)) = (&self.owner, &self.repo) {
                         return Some(Cmd::CancelWorkflow { owner: owner.clone(), repo: repo.clone(), run_id: run.id });
                     }
                 }
                 None
             }
-            _ => handle_key_default(self, key),
+            'v' => {
+                if let Some(run) = self.selected_item(selection) {
+                    if let (Some(owner), Some(repo)) = (&self.owner, &self.repo) {
+                        let _ = std::process::Command::new("gh")
+                            .args(["run", "view", &format!("{}", run.id), "--repo", &format!("{}/{}", owner, repo)])
+                            .spawn();
+                    }
+                }
+                None
+            }
+            _ => handle_key_default(self, key, selection, detail_pane),
         }
     }
 
-    fn render(&self, frame: &mut Frame, area: Rect, focused: bool, theme: &Theme, tick: u64) {
-        Self::view(frame, area, self, focused, theme, tick);
+    fn render(&self, frame: &mut Frame, area: Rect, selection: &mut SelectionState, detail_pane: &DetailPane, focused: bool, theme: &Theme, tick: u64) {
+        Self::view(frame, area, self, selection, detail_pane, focused, theme, tick);
     }
 }

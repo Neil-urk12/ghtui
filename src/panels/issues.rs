@@ -10,15 +10,13 @@ use crate::util::format::relative_time;
 use crate::util::markdown::render_markdown;
 use crate::widgets::detail_pane::DetailPane;
 use crate::widgets::list_view::{render_list_view, LeftContent, ListViewConfig};
-use super::panel::{Panel, handle_key_default};
+use super::panel::{Panel, SelectionState, handle_key_default};
 
 #[derive(Debug)]
 pub struct IssuesPanel {
     pub issues: Vec<Issue>,
     pub filtered_indices: Vec<usize>,
-    pub list_state: ListState,
     pub loading: bool,
-    pub detail_pane: DetailPane,
     pub state_filter: String,
     pub owner: Option<String>,
     pub repo: Option<String>,
@@ -26,14 +24,10 @@ pub struct IssuesPanel {
 
 impl Default for IssuesPanel {
     fn default() -> Self {
-        let mut list_state = ListState::default();
-        list_state.select(Some(0));
         Self {
             issues: Vec::new(),
             filtered_indices: Vec::new(),
-            list_state,
             loading: false,
-            detail_pane: DetailPane::new(),
             state_filter: "open".to_string(),
             owner: None,
             repo: None,
@@ -47,19 +41,29 @@ impl IssuesPanel {
         self.repo = Some(repo);
     }
 
-    pub fn set_issues(&mut self, issues: Vec<Issue>) {
+    pub fn set_issues(&mut self, issues: Vec<Issue>, selection: &mut SelectionState) {
         self.issues = issues;
         self.filtered_indices = (0..self.issues.len()).collect();
-        self.list_state.select(if self.filtered_indices.is_empty() { None } else { Some(0) });
-        self.detail_pane.reset_scroll();
+        selection.select(if self.filtered_indices.is_empty() { None } else { Some(0) });
+        selection.set_len(self.filtered_indices.len());
     }
 
-    pub fn selected_item(&self) -> Option<&Issue> {
-        let idx = self.list_state.selected()?;
+    pub fn selected_item(&self, selection: &SelectionState) -> Option<&Issue> {
+        let idx = selection.selected()?;
         self.filtered_indices.get(idx).map(|&i| &self.issues[i])
     }
 
-    pub fn view(frame: &mut Frame, area: Rect, state: &IssuesPanel, focused: bool, theme: &Theme, tick: u64) {
+    #[allow(clippy::too_many_arguments)]
+    pub fn view(
+        frame: &mut Frame,
+        area: Rect,
+        state: &IssuesPanel,
+        selection: &mut SelectionState,
+        detail_pane: &DetailPane,
+        focused: bool,
+        theme: &Theme,
+        tick: u64,
+    ) {
         let items: Vec<ListItem> = state
             .filtered_indices
             .iter()
@@ -95,7 +99,7 @@ impl IssuesPanel {
             })
             .collect();
 
-        let detail_lines: Vec<Line> = if let Some(issue) = state.selected_item() {
+        let detail_lines = if let Some(issue) = state.selected_item(selection) {
             let mut content: Vec<Line> = Vec::new();
             content.push(Line::from(vec![
                 Span::styled(format!("#{} ", issue.number), theme.muted),
@@ -155,32 +159,13 @@ impl IssuesPanel {
             detail_empty_message: "Select an issue to view details".to_string(),
         };
 
-        let left = LeftContent::List {
-            items,
-            state: &mut state.list_state.clone(),
-        };
+        let left = LeftContent::List { items };
 
-        render_list_view(frame, area, config, left, &mut state.detail_pane.clone(), detail_lines, theme, tick);
+        render_list_view(frame, area, config, left, selection, detail_pane, detail_lines, theme, tick);
     }
 }
 
 impl Panel for IssuesPanel {
-    fn detail_pane(&mut self) -> &mut DetailPane {
-        &mut self.detail_pane
-    }
-
-    fn list_len(&self) -> usize {
-        self.filtered_indices.len()
-    }
-
-    fn selected_index(&self) -> Option<usize> {
-        self.list_state.selected()
-    }
-
-    fn set_selected(&mut self, index: Option<usize>) {
-        self.list_state.select(index);
-    }
-
     fn fetch_cmd(&self) -> Cmd {
         match (&self.owner, &self.repo) {
             (Some(owner), Some(repo)) => Cmd::FetchIssues {
@@ -196,13 +181,13 @@ impl Panel for IssuesPanel {
         self.set_repo(owner.to_string(), repo.to_string());
     }
 
-    fn load_data(&mut self, payload: ApiPayload) {
+    fn load_data(&mut self, payload: ApiPayload, selection: &mut SelectionState) {
         if let ApiPayload::Issues(issues) = payload {
-            self.set_issues(issues);
+            self.set_issues(issues, selection);
         }
     }
 
-    fn handle_key(&mut self, key: char) -> Option<Cmd> {
+    fn handle_key(&mut self, key: char, selection: &mut SelectionState, detail_pane: &mut DetailPane) -> Option<Cmd> {
         match key {
             '1' => {
                 self.state_filter = "open".to_string();
@@ -223,7 +208,7 @@ impl Panel for IssuesPanel {
                 } else { None }
             }
             'o' => {
-                if let Some(issue) = self.selected_item() {
+                if let Some(issue) = self.selected_item(selection) {
                     if let (Some(owner), Some(repo)) = (&self.owner, &self.repo) {
                         let _ = std::process::Command::new("gh")
                             .args(["browse", &format!("{}", issue.number), "--repo", &format!("{}/{}", owner, repo)])
@@ -232,21 +217,11 @@ impl Panel for IssuesPanel {
                 }
                 None
             }
-            'c' => {
-                if let Some(issue) = self.selected_item() {
-                    if let (Some(owner), Some(repo)) = (&self.owner, &self.repo) {
-                        let _ = std::process::Command::new("gh")
-                            .args(["browse", &format!("{}", issue.number), "--repo", &format!("{}/{}", owner, repo)])
-                            .spawn();
-                    }
-                }
-                None
-            }
-            _ => handle_key_default(self, key),
+            _ => handle_key_default(self, key, selection, detail_pane),
         }
     }
 
-    fn render(&self, frame: &mut Frame, area: Rect, focused: bool, theme: &Theme, tick: u64) {
-        Self::view(frame, area, self, focused, theme, tick);
+    fn render(&self, frame: &mut Frame, area: Rect, selection: &mut SelectionState, detail_pane: &DetailPane, focused: bool, theme: &Theme, tick: u64) {
+        Self::view(frame, area, self, selection, detail_pane, focused, theme, tick);
     }
 }

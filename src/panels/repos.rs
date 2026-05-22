@@ -8,7 +8,7 @@ use crate::theme::Theme;
 use crate::util::format;
 use crate::widgets::detail_pane::DetailPane;
 use crate::widgets::list_view::{render_list_view, LeftContent, ListViewConfig};
-use super::panel::{Panel, handle_key_default};
+use super::panel::{Panel, SelectionState, handle_key_default};
 
 #[derive(Debug, Default)]
 pub enum RepoSort {
@@ -22,34 +22,28 @@ pub enum RepoSort {
 pub struct ReposPanel {
     pub repos: Vec<Repo>,
     pub filtered_indices: Vec<usize>,
-    pub list_state: ratatui::widgets::TableState,
     pub loading: bool,
-    pub detail_pane: DetailPane,
     pub sort: RepoSort,
 }
 
 impl Default for ReposPanel {
     fn default() -> Self {
-        let mut list_state = ratatui::widgets::TableState::default();
-        list_state.select(Some(0));
         Self {
             repos: Vec::new(),
             filtered_indices: Vec::new(),
-            list_state,
             loading: false,
-            detail_pane: DetailPane::new(),
             sort: RepoSort::Name,
         }
     }
 }
 
 impl ReposPanel {
-    pub fn set_repos(&mut self, repos: Vec<Repo>) {
+    pub fn set_repos(&mut self, repos: Vec<Repo>, selection: &mut SelectionState) {
         self.repos = repos;
         self.filtered_indices = (0..self.repos.len()).collect();
         self.sort_indices();
-        self.list_state.select(if self.filtered_indices.is_empty() { None } else { Some(0) });
-        self.detail_pane.reset_scroll();
+        selection.select(if self.filtered_indices.is_empty() { None } else { Some(0) });
+        selection.set_len(self.filtered_indices.len());
     }
 
     fn sort_indices(&mut self) {
@@ -72,8 +66,8 @@ impl ReposPanel {
         }
     }
 
-    pub fn selected_repo(&self) -> Option<&Repo> {
-        let idx = self.list_state.selected()?;
+    pub fn selected_repo(&self, selection: &SelectionState) -> Option<&Repo> {
+        let idx = selection.selected()?;
         self.filtered_indices.get(idx).map(|&i| &self.repos[i])
     }
 
@@ -86,10 +80,13 @@ impl ReposPanel {
         self.sort_indices();
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn view(
         frame: &mut Frame,
         area: Rect,
         state: &ReposPanel,
+        selection: &mut SelectionState,
+        detail_pane: &DetailPane,
         focused: bool,
         theme: &Theme,
         tick: u64,
@@ -111,7 +108,7 @@ impl ReposPanel {
             })
             .collect();
 
-        let detail_lines = if let Some(repo) = state.selected_repo() {
+        let detail_lines = if let Some(repo) = state.selected_repo(selection) {
             let mut lines = vec![
                 Line::from(Span::styled(
                     repo.name.clone(),
@@ -170,45 +167,28 @@ impl ReposPanel {
                 Constraint::Fill(1),
                 Constraint::Fill(1),
             ],
-            state: &mut state.list_state.clone(),
         };
 
-        render_list_view(frame, area, config, left, &mut state.detail_pane.clone(), detail_lines, theme, tick);
+        render_list_view(frame, area, config, left, selection, detail_pane, detail_lines, theme, tick);
     }
 }
 
 impl Panel for ReposPanel {
-    fn detail_pane(&mut self) -> &mut DetailPane {
-        &mut self.detail_pane
-    }
-
-    fn list_len(&self) -> usize {
-        self.filtered_indices.len()
-    }
-
-    fn selected_index(&self) -> Option<usize> {
-        self.list_state.selected()
-    }
-
-    fn set_selected(&mut self, index: Option<usize>) {
-        self.list_state.select(index);
-    }
-
     fn fetch_cmd(&self) -> Cmd {
         Cmd::FetchRepos
     }
 
-    fn load_data(&mut self, payload: ApiPayload) {
+    fn load_data(&mut self, payload: ApiPayload, selection: &mut SelectionState) {
         if let ApiPayload::Repos(repos) = payload {
-            self.set_repos(repos);
+            self.set_repos(repos, selection);
         }
     }
 
-    fn handle_key(&mut self, key: char) -> Option<Cmd> {
+    fn handle_key(&mut self, key: char, selection: &mut SelectionState, detail_pane: &mut DetailPane) -> Option<Cmd> {
         match key {
             's' => { self.cycle_sort(); None }
             '\n' => {
-                if let Some(repo) = self.selected_repo() {
+                if let Some(repo) = self.selected_repo(selection) {
                     let parts: Vec<&str> = repo.name.splitn(2, '/').collect();
                     if parts.len() == 2 {
                         return Some(Cmd::OpenRepoDetail {
@@ -219,11 +199,11 @@ impl Panel for ReposPanel {
                 }
                 None
             }
-            _ => handle_key_default(self, key),
+            _ => handle_key_default(self, key, selection, detail_pane),
         }
     }
 
-    fn render(&self, frame: &mut Frame, area: Rect, focused: bool, theme: &Theme, tick: u64) {
-        Self::view(frame, area, self, focused, theme, tick);
+    fn render(&self, frame: &mut Frame, area: Rect, selection: &mut SelectionState, detail_pane: &DetailPane, focused: bool, theme: &Theme, tick: u64) {
+        Self::view(frame, area, self, selection, detail_pane, focused, theme, tick);
     }
 }

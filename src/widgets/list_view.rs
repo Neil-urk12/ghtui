@@ -1,6 +1,7 @@
 use ratatui::prelude::*;
-use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Row, Table, TableState};
+use ratatui::widgets::{Block, Borders, List, ListItem, Row, Table};
 
+use crate::panels::panel::SelectionState;
 use super::{detail_pane::DetailPane, empty_state::EmptyStateWidget, loading::LoadingWidget};
 use crate::theme::Theme;
 
@@ -9,11 +10,9 @@ pub enum LeftContent<'a> {
         headers: Vec<&'a str>,
         rows: Vec<Row<'a>>,
         widths: Vec<Constraint>,
-        state: &'a mut TableState,
     },
     List {
         items: Vec<ListItem<'a>>,
-        state: &'a mut ListState,
     },
 }
 
@@ -30,12 +29,14 @@ pub struct ListViewConfig {
     pub detail_empty_message: String,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn render_list_view(
     frame: &mut Frame,
     area: Rect,
     config: ListViewConfig,
     left: LeftContent<'_>,
-    detail_pane: &mut DetailPane,
+    selection: &mut SelectionState,
+    detail_pane: &DetailPane,
     detail_lines: Vec<Line<'_>>,
     theme: &Theme,
     tick: u64,
@@ -73,7 +74,7 @@ pub fn render_list_view(
         .margin(config.margin)
         .split(area);
 
-        render_left(frame, chunks[0], left, theme, &config.highlight_symbol);
+        render_left(frame, chunks[0], left, selection, theme, &config.highlight_symbol);
 
         let detail_block = Block::bordered()
             .title(config.detail_title.as_str())
@@ -108,7 +109,7 @@ pub fn render_list_view(
         if is_empty {
             EmptyStateWidget::render(frame, list_area, &config.empty_message, block);
         } else {
-            render_left_with_block(frame, list_area, left, block, theme, &config.highlight_symbol);
+            render_left_with_block(frame, list_area, left, block, selection, theme, &config.highlight_symbol);
         }
 
         let detail_block = Block::default()
@@ -123,25 +124,24 @@ pub fn render_list_view(
     }
 }
 
-fn render_left(frame: &mut Frame, area: Rect, left: LeftContent<'_>, theme: &Theme, highlight_symbol: &str) {
+fn render_left(frame: &mut Frame, area: Rect, left: LeftContent<'_>, selection: &mut SelectionState, theme: &Theme, highlight_symbol: &str) {
     match left {
-        LeftContent::Table {
-            headers,
-            rows,
-            widths,
-            state,
-        } => {
+        LeftContent::Table { headers, rows, widths } => {
             let header = Row::new(headers).style(theme.muted);
             let table = Table::new(rows, widths)
                 .header(header)
                 .row_highlight_style(theme.highlight);
-            StatefulWidget::render(table, area, frame.buffer_mut(), state);
+            if let SelectionState::Table(inner) = selection {
+                StatefulWidget::render(table, area, frame.buffer_mut(), &mut inner.state);
+            }
         }
-        LeftContent::List { items, state } => {
+        LeftContent::List { items } => {
             let list = List::new(items)
                 .highlight_style(theme.highlight)
                 .highlight_symbol(highlight_symbol);
-            StatefulWidget::render(list, area, frame.buffer_mut(), state);
+            if let SelectionState::List(inner) = selection {
+                StatefulWidget::render(list, area, frame.buffer_mut(), &mut inner.state);
+            }
         }
     }
 }
@@ -151,29 +151,29 @@ fn render_left_with_block(
     area: Rect,
     left: LeftContent<'_>,
     block: Block<'_>,
+    selection: &mut SelectionState,
     theme: &Theme,
     highlight_symbol: &str,
 ) {
     match left {
-        LeftContent::Table {
-            headers,
-            rows,
-            widths,
-            state,
-        } => {
+        LeftContent::Table { headers, rows, widths } => {
             let header = Row::new(headers).style(theme.muted);
             let table = Table::new(rows, widths)
-                .header(header)
                 .block(block)
+                .header(header)
                 .row_highlight_style(theme.highlight);
-            StatefulWidget::render(table, area, frame.buffer_mut(), state);
+            if let SelectionState::Table(inner) = selection {
+                StatefulWidget::render(table, area, frame.buffer_mut(), &mut inner.state);
+            }
         }
-        LeftContent::List { items, state } => {
+        LeftContent::List { items } => {
             let list = List::new(items)
                 .block(block)
                 .highlight_style(theme.highlight)
                 .highlight_symbol(highlight_symbol);
-            StatefulWidget::render(list, area, frame.buffer_mut(), state);
+            if let SelectionState::List(inner) = selection {
+                StatefulWidget::render(list, area, frame.buffer_mut(), &mut inner.state);
+            }
         }
     }
 }
