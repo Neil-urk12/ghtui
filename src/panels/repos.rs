@@ -9,7 +9,7 @@ use crate::util::format;
 use crate::widgets::detail_pane::DetailPane;
 use crate::widgets::empty_state::EmptyState;
 use crate::widgets::list_view::{render_list_view, LeftContent, ListViewConfig};
-use super::panel::{Panel, SelectionState, handle_key_default};
+use super::panel::{Panel, SelectionState, handle_key_default, ListPanelData};
 
 #[derive(Debug, Default)]
 pub enum RepoSort {
@@ -21,55 +21,39 @@ pub enum RepoSort {
 
 #[derive(Debug)]
 pub struct ReposPanel {
-    pub repos: Vec<Repo>,
-    pub filtered_indices: Vec<usize>,
-    pub loading: bool,
+    pub data: ListPanelData<Repo>,
     pub sort: RepoSort,
 }
 
 impl Default for ReposPanel {
     fn default() -> Self {
         Self {
-            repos: Vec::new(),
-            filtered_indices: Vec::new(),
-            loading: false,
+            data: ListPanelData::new(),
             sort: RepoSort::Name,
         }
     }
 }
 
 impl ReposPanel {
-    pub fn set_repos(&mut self, repos: Vec<Repo>, selection: &mut SelectionState) {
-        self.repos = repos;
-        self.filtered_indices = (0..self.repos.len()).collect();
-        self.sort_indices();
-        selection.select(if self.filtered_indices.is_empty() { None } else { Some(0) });
-        selection.set_len(self.filtered_indices.len());
-    }
-
-    fn sort_indices(&mut self) {
+    pub fn sort_indices(&mut self) {
         match self.sort {
             RepoSort::Name => self
+                .data
                 .filtered_indices
-                .sort_by(|&a, &b| self.repos[a].name.cmp(&self.repos[b].name)),
-            RepoSort::Stars => self.filtered_indices.sort_by(|&a, &b| {
-                self.repos[b]
+                .sort_by(|&a, &b| self.data.items[a].name.cmp(&self.data.items[b].name)),
+            RepoSort::Stars => self.data.filtered_indices.sort_by(|&a, &b| {
+                self.data.items[b]
                     .stars
-                    .cmp(&self.repos[a].stars)
-                    .then(self.repos[a].name.cmp(&self.repos[b].name))
+                    .cmp(&self.data.items[a].stars)
+                    .then(self.data.items[a].name.cmp(&self.data.items[b].name))
             }),
-            RepoSort::Updated => self.filtered_indices.sort_by(|&a, &b| {
-                self.repos[b]
+            RepoSort::Updated => self.data.filtered_indices.sort_by(|&a, &b| {
+                self.data.items[b]
                     .updated_at
-                    .cmp(&self.repos[a].updated_at)
-                    .then(self.repos[a].name.cmp(&self.repos[b].name))
+                    .cmp(&self.data.items[a].updated_at)
+                    .then(self.data.items[a].name.cmp(&self.data.items[b].name))
             }),
         }
-    }
-
-    pub fn selected_repo(&self, selection: &SelectionState) -> Option<&Repo> {
-        let idx = selection.selected()?;
-        self.filtered_indices.get(idx).map(|&i| &self.repos[i])
     }
 
     pub fn cycle_sort(&mut self) {
@@ -93,10 +77,11 @@ impl ReposPanel {
         tick: u64,
     ) {
         let rows: Vec<Row> = state
+            .data
             .filtered_indices
             .iter()
             .map(|&i| {
-                let repo = &state.repos[i];
+                let repo = &state.data.items[i];
                 let stars = format::abbreviate_number(repo.stars as u64);
                 let lang = repo.language.as_deref().unwrap_or("-");
                 let updated = format::relative_time(&repo.updated_at);
@@ -109,7 +94,7 @@ impl ReposPanel {
             })
             .collect();
 
-        let detail_lines = if let Some(repo) = state.selected_repo(selection) {
+        let detail_lines = if let Some(repo) = state.data.selected(selection) {
             let mut lines = vec![
                 Line::from(Span::styled(
                     repo.name.clone(),
@@ -152,7 +137,7 @@ impl ReposPanel {
             focused,
             block_title: " Repositories ".to_string(),
             wrap_full: false,
-            loading: state.loading,
+            loading: state.data.loading,
             empty_state: EmptyState::new("No repositories found")
                 .icon(" ")
                 .hint("Press `r` to refresh"),
@@ -185,20 +170,21 @@ impl Panel for ReposPanel {
 
     fn load_data(&mut self, payload: ApiPayload, selection: &mut SelectionState) {
         if let ApiPayload::Repos(repos) = payload {
-            self.loading = false;
-            self.set_repos(repos, selection);
+            self.data.loading = false;
+            self.data.set_items(repos, selection);
+            self.sort_indices();
         }
     }
 
     fn set_loading(&mut self, loading: bool) {
-        self.loading = loading;
+        self.data.loading = loading;
     }
 
     fn handle_key(&mut self, key: char, selection: &mut SelectionState, detail_pane: &mut DetailPane) -> Option<Cmd> {
         match key {
             's' => { self.cycle_sort(); None }
             '\n' => {
-                if let Some(repo) = self.selected_repo(selection) {
+                if let Some(repo) = self.data.selected(selection) {
                     let parts: Vec<&str> = repo.name.splitn(2, '/').collect();
                     if parts.len() == 2 {
                         return Some(Cmd::OpenRepoDetail {

@@ -11,49 +11,24 @@ use crate::util::markdown::render_markdown;
 use crate::widgets::detail_pane::DetailPane;
 use crate::widgets::empty_state::EmptyState;
 use crate::widgets::list_view::{render_list_view, LeftContent, ListViewConfig};
-use super::panel::{Panel, SelectionState, handle_key_default};
+use super::panel::{Panel, SelectionState, handle_key_default, ListPanelData};
 
 #[derive(Debug)]
 pub struct IssuesPanel {
-    pub issues: Vec<Issue>,
-    pub filtered_indices: Vec<usize>,
-    pub loading: bool,
+    pub data: ListPanelData<Issue>,
     pub state_filter: String,
-    pub owner: Option<String>,
-    pub repo: Option<String>,
 }
 
 impl Default for IssuesPanel {
     fn default() -> Self {
         Self {
-            issues: Vec::new(),
-            filtered_indices: Vec::new(),
-            loading: false,
+            data: ListPanelData::new(),
             state_filter: "open".to_string(),
-            owner: None,
-            repo: None,
         }
     }
 }
 
 impl IssuesPanel {
-    pub fn set_repo(&mut self, owner: String, repo: String) {
-        self.owner = Some(owner);
-        self.repo = Some(repo);
-    }
-
-    pub fn set_issues(&mut self, issues: Vec<Issue>, selection: &mut SelectionState) {
-        self.issues = issues;
-        self.filtered_indices = (0..self.issues.len()).collect();
-        selection.select(if self.filtered_indices.is_empty() { None } else { Some(0) });
-        selection.set_len(self.filtered_indices.len());
-    }
-
-    pub fn selected_item(&self, selection: &SelectionState) -> Option<&Issue> {
-        let idx = selection.selected()?;
-        self.filtered_indices.get(idx).map(|&i| &self.issues[i])
-    }
-
     #[allow(clippy::too_many_arguments)]
     pub fn view(
         frame: &mut Frame,
@@ -66,10 +41,11 @@ impl IssuesPanel {
         tick: u64,
     ) {
         let items: Vec<ListItem> = state
+            .data
             .filtered_indices
             .iter()
             .map(|&i| {
-                let issue = &state.issues[i];
+                let issue = &state.data.items[i];
                 let state_icon = if issue.state == "open" {
                     Span::styled("● ", theme.success)
                 } else {
@@ -100,7 +76,7 @@ impl IssuesPanel {
             })
             .collect();
 
-        let detail_lines = if let Some(issue) = state.selected_item(selection) {
+        let detail_lines = if let Some(issue) = state.data.selected(selection) {
             let mut content: Vec<Line> = Vec::new();
             content.push(Line::from(vec![
                 Span::styled(format!("#{} ", issue.number), theme.muted),
@@ -153,7 +129,7 @@ impl IssuesPanel {
             focused,
             block_title: format!(" Issues [{}] ", state.state_filter),
             wrap_full: true,
-            loading: state.loading,
+            loading: state.data.loading,
             empty_state: EmptyState::new("No issues found")
                 .icon(" ")
                 .hint("Press `r` to refresh, 1/2/3 to filter"),
@@ -172,7 +148,7 @@ impl IssuesPanel {
 
 impl Panel for IssuesPanel {
     fn fetch_cmd(&self) -> Cmd {
-        match (&self.owner, &self.repo) {
+        match (&self.data.owner, &self.data.repo) {
             (Some(owner), Some(repo)) => Cmd::FetchIssues {
                 owner: owner.clone(),
                 repo: repo.clone(),
@@ -183,43 +159,42 @@ impl Panel for IssuesPanel {
     }
 
     fn set_repo_context(&mut self, owner: &str, repo: &str) {
-        self.set_repo(owner.to_string(), repo.to_string());
+        self.data.set_repo(owner.to_string(), repo.to_string());
     }
 
     fn load_data(&mut self, payload: ApiPayload, selection: &mut SelectionState) {
         if let ApiPayload::Issues(issues) = payload {
-            self.loading = false;
-            self.set_issues(issues, selection);
+            self.data.load_items(issues, selection);
         }
     }
 
     fn set_loading(&mut self, loading: bool) {
-        self.loading = loading;
+        self.data.loading = loading;
     }
 
     fn handle_key(&mut self, key: char, selection: &mut SelectionState, detail_pane: &mut DetailPane) -> Option<Cmd> {
         match key {
             '1' => {
                 self.state_filter = "open".to_string();
-                if let (Some(owner), Some(repo)) = (&self.owner, &self.repo) {
+                if let (Some(owner), Some(repo)) = (&self.data.owner, &self.data.repo) {
                     Some(Cmd::FetchIssues { owner: owner.clone(), repo: repo.clone(), state: "open".into() })
                 } else { None }
             }
             '2' => {
                 self.state_filter = "closed".to_string();
-                if let (Some(owner), Some(repo)) = (&self.owner, &self.repo) {
+                if let (Some(owner), Some(repo)) = (&self.data.owner, &self.data.repo) {
                     Some(Cmd::FetchIssues { owner: owner.clone(), repo: repo.clone(), state: "closed".into() })
                 } else { None }
             }
             '3' => {
                 self.state_filter = "all".to_string();
-                if let (Some(owner), Some(repo)) = (&self.owner, &self.repo) {
+                if let (Some(owner), Some(repo)) = (&self.data.owner, &self.data.repo) {
                     Some(Cmd::FetchIssues { owner: owner.clone(), repo: repo.clone(), state: "all".into() })
                 } else { None }
             }
             'o' => {
-                if let Some(issue) = self.selected_item(selection) {
-                    if let (Some(owner), Some(repo)) = (&self.owner, &self.repo) {
+                if let Some(issue) = self.data.selected(selection) {
+                    if let (Some(owner), Some(repo)) = (&self.data.owner, &self.data.repo) {
                         let _ = std::process::Command::new("gh")
                             .args(["browse", &format!("{}", issue.number), "--repo", &format!("{}/{}", owner, repo)])
                             .spawn();

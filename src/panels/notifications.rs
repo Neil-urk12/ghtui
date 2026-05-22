@@ -9,29 +9,15 @@ use crate::util::format::relative_time;
 use crate::widgets::detail_pane::DetailPane;
 use crate::widgets::empty_state::EmptyState;
 use crate::widgets::list_view::{render_list_view, LeftContent, ListViewConfig};
-use super::panel::{Panel, SelectionState, handle_key_default};
+use super::panel::{Panel, SelectionState, handle_key_default, ListPanelData};
 
 #[derive(Debug, Default)]
 pub struct NotificationsPanel {
-    pub notifications: Vec<Notification>,
-    pub loading: bool,
+    pub data: ListPanelData<Notification>,
     pub show_all: bool,
 }
 
 impl NotificationsPanel {
-    pub fn selected_item(&self, selection: &SelectionState) -> Option<&Notification> {
-        selection
-            .selected()
-            .and_then(|i| self.notifications.get(i))
-    }
-
-    pub fn set_notifications(&mut self, notifs: Vec<Notification>, selection: &mut SelectionState) {
-        self.notifications = notifs;
-        self.loading = false;
-        selection.select(if self.notifications.is_empty() { None } else { Some(0) });
-        selection.set_len(self.notifications.len());
-    }
-
     #[allow(clippy::too_many_arguments)]
     pub fn view(
         frame: &mut Frame,
@@ -45,7 +31,8 @@ impl NotificationsPanel {
     ) {
         // Build items
         let items: Vec<ListItem> = state
-            .notifications
+            .data
+            .items
             .iter()
             .map(|notif| {
                 let type_icon = match notif.subject_type.as_str() {
@@ -79,7 +66,7 @@ impl NotificationsPanel {
             .collect();
 
         // Build detail lines
-        let detail_lines = if let Some(notif) = state.selected_item(selection) {
+        let detail_lines = if let Some(notif) = state.data.selected(selection) {
             let mut content: Vec<Line> = Vec::new();
             content.push(Line::from(Span::styled(
                 &notif.subject_title,
@@ -126,7 +113,7 @@ impl NotificationsPanel {
             }
             .to_string(),
             wrap_full: true,
-            loading: state.loading,
+            loading: state.data.loading,
             empty_state: EmptyState::new("No notifications")
                 .icon(" ")
                 .hint("Press `a` to show all, `r` to refresh"),
@@ -160,24 +147,24 @@ impl Panel for NotificationsPanel {
 
     fn load_data(&mut self, payload: ApiPayload, selection: &mut SelectionState) {
         if let ApiPayload::Notifications(notifs) = payload {
-            self.set_notifications(notifs, selection);
+            self.data.load_items(notifs, selection);
         }
     }
 
     fn set_loading(&mut self, loading: bool) {
-        self.loading = loading;
+        self.data.loading = loading;
     }
 
     fn handle_key(&mut self, key: char, selection: &mut SelectionState, detail_pane: &mut DetailPane) -> Option<Cmd> {
         match key {
             'a' => {
                 self.show_all = !self.show_all;
-                selection.select(if self.notifications.is_empty() { None } else { Some(0) });
-                selection.set_len(self.notifications.len());
+                selection.select(if self.data.items.is_empty() { None } else { Some(0) });
+                selection.set_len(self.data.items.len());
                 None
             }
             'm' => {
-                if let Some(notif) = self.selected_item(selection) {
+                if let Some(notif) = self.data.selected(selection) {
                     let id = notif.id.clone();
                     Some(Cmd::MarkNotificationRead { id })
                 } else {

@@ -9,22 +9,15 @@ use crate::util::format::relative_time;
 use crate::widgets::detail_pane::DetailPane;
 use crate::widgets::empty_state::EmptyState;
 use crate::widgets::list_view::{render_list_view, LeftContent, ListViewConfig};
-use super::panel::{Panel, SelectionState, handle_key_default};
+use super::panel::{Panel, SelectionState, handle_key_default, ListPanelData};
 
 #[derive(Debug, Default)]
 pub struct ActionsPanel {
-    pub runs: Vec<WorkflowRun>,
-    pub loading: bool,
+    pub data: ListPanelData<WorkflowRun>,
     pub expanded_run: Option<usize>,
-    pub owner: Option<String>,
-    pub repo: Option<String>,
 }
 
 impl ActionsPanel {
-    pub fn selected_item(&self, selection: &SelectionState) -> Option<&WorkflowRun> {
-        selection.selected().and_then(|i| self.runs.get(i))
-    }
-
     pub fn toggle_expand(&mut self, selection: &SelectionState) {
         if let Some(idx) = selection.selected() {
             if self.expanded_run == Some(idx) {
@@ -79,7 +72,7 @@ impl ActionsPanel {
         theme: &Theme,
         tick: u64,
     ) {
-        let items: Vec<ListItem> = state.runs.iter().enumerate().map(|(i, run)| {
+        let items: Vec<ListItem> = state.data.items.iter().enumerate().map(|(i, run)| {
             let (icon, style) = Self::status_icon(run);
             let is_expanded = state.expanded_run == Some(i);
 
@@ -103,7 +96,7 @@ impl ActionsPanel {
             ListItem::new(line)
         }).collect();
 
-        let detail_lines = if let Some(run) = state.selected_item(selection) {
+        let detail_lines = if let Some(run) = state.data.selected(selection) {
             let mut content: Vec<Line> = Vec::new();
 
             let (icon, status_style) = Self::status_icon(run);
@@ -167,11 +160,11 @@ impl ActionsPanel {
             focused,
             block_title: format!(
                 " Actions: {}/{} ",
-                state.owner.as_deref().unwrap_or(""),
-                state.repo.as_deref().unwrap_or("")
+                state.data.owner.as_deref().unwrap_or(""),
+                state.data.repo.as_deref().unwrap_or("")
             ),
             wrap_full: true,
-            loading: state.loading,
+            loading: state.data.loading,
             empty_state: EmptyState::new("No workflow runs")
                 .icon(" ")
                 .hint("Press `r` to refresh"),
@@ -190,7 +183,7 @@ impl ActionsPanel {
 
 impl Panel for ActionsPanel {
     fn fetch_cmd(&self) -> Cmd {
-        match (&self.owner, &self.repo) {
+        match (&self.data.owner, &self.data.repo) {
             (Some(owner), Some(repo)) => Cmd::FetchActions {
                 owner: owner.clone(),
                 repo: repo.clone(),
@@ -200,22 +193,17 @@ impl Panel for ActionsPanel {
     }
 
     fn set_repo_context(&mut self, owner: &str, repo: &str) {
-        self.owner = Some(owner.to_string());
-        self.repo = Some(repo.to_string());
+        self.data.set_repo(owner.to_string(), repo.to_string());
     }
 
     fn set_loading(&mut self, loading: bool) {
-        self.loading = loading;
+        self.data.loading = loading;
     }
 
     fn load_data(&mut self, payload: ApiPayload, selection: &mut SelectionState) {
         if let ApiPayload::Actions(runs) = payload {
-            self.runs = runs;
-            self.loading = false;
+            self.data.load_items(runs, selection);
             self.expanded_run = None;
-            let len = self.runs.len();
-            selection.select(if len == 0 { None } else { Some(0) });
-            selection.set_len(len);
         }
     }
 
@@ -226,8 +214,8 @@ impl Panel for ActionsPanel {
                 None
             }
             'o' => {
-                if let Some(run) = self.selected_item(selection) {
-                    if let (Some(owner), Some(repo)) = (&self.owner, &self.repo) {
+                if let Some(run) = self.data.selected(selection) {
+                    if let (Some(owner), Some(repo)) = (&self.data.owner, &self.data.repo) {
                         let _ = std::process::Command::new("gh")
                             .args(["browse", &format!("{}", run.id), "--repo", &format!("{}/{}", owner, repo)])
                             .spawn();
@@ -236,24 +224,24 @@ impl Panel for ActionsPanel {
                 None
             }
             'r' => {
-                if let Some(run) = self.selected_item(selection) {
-                    if let (Some(owner), Some(repo)) = (&self.owner, &self.repo) {
+                if let Some(run) = self.data.selected(selection) {
+                    if let (Some(owner), Some(repo)) = (&self.data.owner, &self.data.repo) {
                         return Some(Cmd::RerunWorkflow { owner: owner.clone(), repo: repo.clone(), run_id: run.id });
                     }
                 }
                 None
             }
             'c' => {
-                if let Some(run) = self.selected_item(selection) {
-                    if let (Some(owner), Some(repo)) = (&self.owner, &self.repo) {
+                if let Some(run) = self.data.selected(selection) {
+                    if let (Some(owner), Some(repo)) = (&self.data.owner, &self.data.repo) {
                         return Some(Cmd::CancelWorkflow { owner: owner.clone(), repo: repo.clone(), run_id: run.id });
                     }
                 }
                 None
             }
             'v' => {
-                if let Some(run) = self.selected_item(selection) {
-                    if let (Some(owner), Some(repo)) = (&self.owner, &self.repo) {
+                if let Some(run) = self.data.selected(selection) {
+                    if let (Some(owner), Some(repo)) = (&self.data.owner, &self.data.repo) {
                         let _ = std::process::Command::new("gh")
                             .args(["run", "view", &format!("{}", run.id), "--repo", &format!("{}/{}", owner, repo)])
                             .spawn();

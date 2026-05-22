@@ -369,8 +369,8 @@ mod tests {
         // Verify data landed in Repos panel
         if let Some(entry) = app.panels.get(&PanelKind::Repos) {
             if let crate::app::PanelState::Repos(panel) = &entry.panel {
-                assert_eq!(panel.repos.len(), 1);
-                assert_eq!(panel.repos[0].name, "test/repo");
+                assert_eq!(panel.data.items.len(), 1);
+                assert_eq!(panel.data.items[0].name, "test/repo");
             } else {
                 panic!("Expected Repos panel");
             }

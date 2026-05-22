@@ -9,49 +9,24 @@ use crate::util::format;
 use crate::widgets::detail_pane::DetailPane;
 use crate::widgets::empty_state::EmptyState;
 use crate::widgets::list_view::{render_list_view, LeftContent, ListViewConfig};
-use super::panel::{Panel, SelectionState, handle_key_default};
+use super::panel::{Panel, SelectionState, handle_key_default, ListPanelData};
 
 #[derive(Debug)]
 pub struct PullsPanel {
-    pub pulls: Vec<PullRequest>,
-    pub filtered_indices: Vec<usize>,
-    pub loading: bool,
+    pub data: ListPanelData<PullRequest>,
     pub state_filter: String, // "open", "closed", "all"
-    pub owner: Option<String>,
-    pub repo: Option<String>,
 }
 
 impl Default for PullsPanel {
     fn default() -> Self {
         Self {
-            pulls: Vec::new(),
-            filtered_indices: Vec::new(),
-            loading: false,
+            data: ListPanelData::new(),
             state_filter: "open".to_string(),
-            owner: None,
-            repo: None,
         }
     }
 }
 
 impl PullsPanel {
-    pub fn set_pulls(&mut self, pulls: Vec<PullRequest>, selection: &mut SelectionState) {
-        self.pulls = pulls;
-        self.filtered_indices = (0..self.pulls.len()).collect();
-        selection.select(if self.filtered_indices.is_empty() { None } else { Some(0) });
-        selection.set_len(self.filtered_indices.len());
-    }
-
-    pub fn set_repo(&mut self, owner: String, repo: String) {
-        self.owner = Some(owner);
-        self.repo = Some(repo);
-    }
-
-    pub fn selected_pr(&self, selection: &SelectionState) -> Option<&PullRequest> {
-        let idx = selection.selected()?;
-        self.filtered_indices.get(idx).map(|&i| &self.pulls[i])
-    }
-
     #[allow(clippy::too_many_arguments)]
     pub fn view(
         frame: &mut Frame,
@@ -64,10 +39,11 @@ impl PullsPanel {
         tick: u64,
     ) {
         let rows: Vec<Row> = state
+            .data
             .filtered_indices
             .iter()
             .map(|&i| {
-                let pr = &state.pulls[i];
+                let pr = &state.data.items[i];
                 let status_str = if pr.state == "closed" { "closed" } else { "open" };
                 let status_style = if pr.state == "closed" { theme.error } else { theme.success };
                 let updated = format::relative_time(&pr.updated_at);
@@ -81,7 +57,7 @@ impl PullsPanel {
             })
             .collect();
 
-        let detail_lines = if let Some(pr) = state.selected_pr(selection) {
+        let detail_lines = if let Some(pr) = state.data.selected(selection) {
             let mut lines = vec![
                 Line::from(Span::styled(
                     format!("#{} {}", pr.number, pr.title),
@@ -124,12 +100,12 @@ impl PullsPanel {
             vec![]
         };
 
-        let block_title = match (&state.owner, &state.repo) {
+        let block_title = match (&state.data.owner, &state.data.repo) {
             (Some(o), Some(r)) => format!(" PRs: {o}/{r} "),
             _ => " Pull Requests ".to_string(),
         };
 
-        let empty_state = if state.owner.is_some() {
+        let empty_state = if state.data.owner.is_some() {
             EmptyState::new("No pull requests found")
                 .icon(" ")
                 .hint("Press `r` to refresh, 1/2/3 to filter")
@@ -145,7 +121,7 @@ impl PullsPanel {
             focused,
             block_title,
             wrap_full: false,
-            loading: state.loading,
+            loading: state.data.loading,
             empty_state,
             detail_title: " PR Details ".to_string(),
             highlight_symbol: "▸ ".to_string(),
@@ -172,7 +148,7 @@ impl PullsPanel {
 
 impl Panel for PullsPanel {
     fn fetch_cmd(&self) -> Cmd {
-        match (&self.owner, &self.repo) {
+        match (&self.data.owner, &self.data.repo) {
             (Some(owner), Some(repo)) => Cmd::FetchPulls {
                 owner: owner.clone(),
                 repo: repo.clone(),
@@ -183,43 +159,42 @@ impl Panel for PullsPanel {
     }
 
     fn set_repo_context(&mut self, owner: &str, repo: &str) {
-        self.set_repo(owner.to_string(), repo.to_string());
+        self.data.set_repo(owner.to_string(), repo.to_string());
     }
 
     fn load_data(&mut self, payload: ApiPayload, selection: &mut SelectionState) {
         if let ApiPayload::Pulls(pulls) = payload {
-            self.loading = false;
-            self.set_pulls(pulls, selection);
+            self.data.load_items(pulls, selection);
         }
     }
 
     fn set_loading(&mut self, loading: bool) {
-        self.loading = loading;
+        self.data.loading = loading;
     }
 
     fn handle_key(&mut self, key: char, selection: &mut SelectionState, detail_pane: &mut DetailPane) -> Option<Cmd> {
         match key {
             '1' => {
                 self.state_filter = "open".to_string();
-                if let (Some(owner), Some(repo)) = (&self.owner, &self.repo) {
+                if let (Some(owner), Some(repo)) = (&self.data.owner, &self.data.repo) {
                     Some(Cmd::FetchPulls { owner: owner.clone(), repo: repo.clone(), state: "open".into() })
                 } else { None }
             }
             '2' => {
                 self.state_filter = "closed".to_string();
-                if let (Some(owner), Some(repo)) = (&self.owner, &self.repo) {
+                if let (Some(owner), Some(repo)) = (&self.data.owner, &self.data.repo) {
                     Some(Cmd::FetchPulls { owner: owner.clone(), repo: repo.clone(), state: "closed".into() })
                 } else { None }
             }
             '3' => {
                 self.state_filter = "all".to_string();
-                if let (Some(owner), Some(repo)) = (&self.owner, &self.repo) {
+                if let (Some(owner), Some(repo)) = (&self.data.owner, &self.data.repo) {
                     Some(Cmd::FetchPulls { owner: owner.clone(), repo: repo.clone(), state: "all".into() })
                 } else { None }
             }
             'o' => {
-                if let Some(pr) = self.selected_pr(selection) {
-                    if let (Some(owner), Some(repo)) = (&self.owner, &self.repo) {
+                if let Some(pr) = self.data.selected(selection) {
+                    if let (Some(owner), Some(repo)) = (&self.data.owner, &self.data.repo) {
                         let _ = std::process::Command::new("gh")
                             .args(["browse", &format!("{}", pr.number), "--repo", &format!("{}/{}", owner, repo)])
                             .spawn();
@@ -228,16 +203,16 @@ impl Panel for PullsPanel {
                 None
             }
             'a' => {
-                if let Some(pr) = self.selected_pr(selection) {
-                    if let (Some(owner), Some(repo)) = (&self.owner, &self.repo) {
+                if let Some(pr) = self.data.selected(selection) {
+                    if let (Some(owner), Some(repo)) = (&self.data.owner, &self.data.repo) {
                         return Some(Cmd::ApprovePr { owner: owner.clone(), repo: repo.clone(), pr_number: pr.number as u64 });
                     }
                 }
                 None
             }
             'm' => {
-                if let Some(pr) = self.selected_pr(selection) {
-                    if let (Some(owner), Some(repo)) = (&self.owner, &self.repo) {
+                if let Some(pr) = self.data.selected(selection) {
+                    if let (Some(owner), Some(repo)) = (&self.data.owner, &self.data.repo) {
                         return Some(Cmd::MergePr { owner: owner.clone(), repo: repo.clone(), pr_number: pr.number as u64 });
                     }
                 }
