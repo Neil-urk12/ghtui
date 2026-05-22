@@ -70,21 +70,39 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
         Message::NextTab => {
             app.search.active = false;
             app.next_tab();
-            app.panels.get(&app.active_panel)
+            let cmd = app.panels.get(&app.active_panel)
                 .map(|entry| entry.panel.as_panel().fetch_cmd())
-                .unwrap_or(Cmd::None)
+                .unwrap_or(Cmd::None);
+            if !matches!(cmd, Cmd::None) {
+                if let Some(entry) = app.panels.get_mut(&app.active_panel) {
+                    entry.panel.as_panel_mut().set_loading(true);
+                }
+            }
+            cmd
         }
         Message::PrevTab => {
             app.search.active = false;
             app.prev_tab();
-            app.panels.get(&app.active_panel)
+            let cmd = app.panels.get(&app.active_panel)
                 .map(|entry| entry.panel.as_panel().fetch_cmd())
-                .unwrap_or(Cmd::None)
+                .unwrap_or(Cmd::None);
+            if !matches!(cmd, Cmd::None) {
+                if let Some(entry) = app.panels.get_mut(&app.active_panel) {
+                    entry.panel.as_panel_mut().set_loading(true);
+                }
+            }
+            cmd
         }
         Message::Refresh => {
-            app.panels.get(&app.active_panel)
+            let cmd = app.panels.get(&app.active_panel)
                 .map(|entry| entry.panel.as_panel().fetch_cmd())
-                .unwrap_or(Cmd::None)
+                .unwrap_or(Cmd::None);
+            if !matches!(cmd, Cmd::None) {
+                if let Some(entry) = app.panels.get_mut(&app.active_panel) {
+                    entry.panel.as_panel_mut().set_loading(true);
+                }
+            }
+            cmd
         }
         Message::SearchActivate => {
             app.search.active = true;
@@ -147,9 +165,19 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
             match cmd {
                 Cmd::OpenRepoDetail { owner, repo } => {
                     app.active_panel = PanelKind::Pulls;
-                    navigation::handle_open_repo_detail(&mut app.panels, owner, repo)
+                    let cmd = navigation::handle_open_repo_detail(&mut app.panels, owner, repo);
+                    if let Some(entry) = app.panels.get_mut(&PanelKind::Pulls) {
+                        entry.panel.as_panel_mut().set_loading(true);
+                    }
+                    cmd
                 }
-                other => other,
+                Cmd::None => Cmd::None,
+                other => {
+                    if let Some(entry) = app.panels.get_mut(&app.active_panel) {
+                        entry.panel.as_panel_mut().set_loading(true);
+                    }
+                    other
+                }
             }
         }
         Message::LoginInit(login) => {
@@ -162,6 +190,9 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
             app.client = Arc::new(GitHubClient::new(token));
             app.login = None;
             app.state = AppState::Main;
+            if let Some(entry) = app.panels.get_mut(&PanelKind::Repos) {
+                entry.panel.as_panel_mut().set_loading(true);
+            }
             Cmd::FetchRepos
         }
         Message::LoginError(msg) => {
@@ -178,6 +209,7 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
             use crate::event::ApiPayload;
             if let ApiPayload::Success(ref msg) = payload {
                 app.success_toast = Some(msg.clone());
+                app.toast_tick = 0;
             }
             // Route by payload type to the correct panel, not just active panel.
             // This handles the case where a fetch response arrives after the user
@@ -199,6 +231,7 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
         }
         Message::ApiError(msg) => {
             app.error_toast = Some(msg);
+            app.toast_tick = 0;
             Cmd::None
         }
         Message::RateLimitUpdate { remaining, reset_secs } => {
@@ -208,6 +241,14 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
         }
         Message::Tick => {
             app.tick += 1;
+            if app.error_toast.is_some() || app.success_toast.is_some() {
+                app.toast_tick += 1;
+                if app.toast_tick >= crate::widgets::popup::AUTO_DISMISS_TICKS {
+                    app.error_toast = None;
+                    app.success_toast = None;
+                    app.toast_tick = 0;
+                }
+            }
             Cmd::None
         }
     }

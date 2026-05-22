@@ -7,6 +7,7 @@ use crate::event::ApiPayload;
 use crate::theme::Theme;
 use crate::util::format::relative_time;
 use crate::widgets::detail_pane::DetailPane;
+use crate::widgets::empty_state::EmptyState;
 use crate::widgets::list_view::{render_list_view, LeftContent, ListViewConfig};
 use super::panel::{Panel, SelectionState, handle_key_default};
 
@@ -126,10 +127,14 @@ impl NotificationsPanel {
             .to_string(),
             wrap_full: true,
             loading: state.loading,
-            empty_message: "No notifications".to_string(),
+            empty_state: EmptyState::new("No notifications")
+                .icon(" ")
+                .hint("Press `a` to show all, `r` to refresh"),
             detail_title: " Detail ".to_string(),
             highlight_symbol: "▸ ".to_string(),
-            detail_empty_message: "Select a notification to view details".to_string(),
+            detail_empty_state: EmptyState::new("Select a notification")
+                .icon(" ")
+                .hint("j/k to navigate"),
         };
 
         let left = LeftContent::List { items };
@@ -157,6 +162,10 @@ impl Panel for NotificationsPanel {
         if let ApiPayload::Notifications(notifs) = payload {
             self.set_notifications(notifs, selection);
         }
+    }
+
+    fn set_loading(&mut self, loading: bool) {
+        self.loading = loading;
     }
 
     fn handle_key(&mut self, key: char, selection: &mut SelectionState, detail_pane: &mut DetailPane) -> Option<Cmd> {

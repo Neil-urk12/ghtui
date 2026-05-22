@@ -94,6 +94,7 @@ pub trait Panel: std::fmt::Debug {
     #[allow(clippy::too_many_arguments)]
     fn render(&self, frame: &mut Frame, area: Rect, selection: &mut SelectionState, detail_pane: &DetailPane, focused: bool, theme: &Theme, tick: u64);
     fn fetch_cmd(&self) -> Cmd { Cmd::None }
+    fn set_loading(&mut self, _loading: bool) {}
     fn set_repo_context(&mut self, _owner: &str, _repo: &str) {}
     fn load_data(&mut self, payload: ApiPayload, selection: &mut SelectionState);
 }

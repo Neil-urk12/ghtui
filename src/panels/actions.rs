@@ -7,6 +7,7 @@ use crate::event::ApiPayload;
 use crate::theme::Theme;
 use crate::util::format::relative_time;
 use crate::widgets::detail_pane::DetailPane;
+use crate::widgets::empty_state::EmptyState;
 use crate::widgets::list_view::{render_list_view, LeftContent, ListViewConfig};
 use super::panel::{Panel, SelectionState, handle_key_default};
 
@@ -171,10 +172,14 @@ impl ActionsPanel {
             ),
             wrap_full: true,
             loading: state.loading,
-            empty_message: "No workflow runs".to_string(),
+            empty_state: EmptyState::new("No workflow runs")
+                .icon(" ")
+                .hint("Press `r` to refresh"),
             detail_title: " Detail ".to_string(),
             highlight_symbol: "  ".to_string(),
-            detail_empty_message: "Select a run to view details".to_string(),
+            detail_empty_state: EmptyState::new("Select a run")
+                .icon(" ")
+                .hint("j/k to navigate, Enter to expand"),
         };
 
         let left = LeftContent::List { items };
@@ -197,6 +202,10 @@ impl Panel for ActionsPanel {
     fn set_repo_context(&mut self, owner: &str, repo: &str) {
         self.owner = Some(owner.to_string());
         self.repo = Some(repo.to_string());
+    }
+
+    fn set_loading(&mut self, loading: bool) {
+        self.loading = loading;
     }
 
     fn load_data(&mut self, payload: ApiPayload, selection: &mut SelectionState) {

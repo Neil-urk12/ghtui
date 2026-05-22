@@ -2,7 +2,7 @@ use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, List, ListItem, Row, Table};
 
 use crate::panels::panel::SelectionState;
-use super::{detail_pane::DetailPane, empty_state::EmptyStateWidget, loading::LoadingWidget};
+use super::{detail_pane::DetailPane, empty_state::{EmptyState, EmptyStateWidget}, loading::LoadingWidget};
 use crate::theme::Theme;
 
 pub enum LeftContent<'a> {
@@ -23,10 +23,10 @@ pub struct ListViewConfig {
     pub block_title: String,
     pub wrap_full: bool,
     pub loading: bool,
-    pub empty_message: String,
+    pub empty_state: EmptyState,
     pub detail_title: String,
     pub highlight_symbol: String,
-    pub detail_empty_message: String,
+    pub detail_empty_state: EmptyState,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -63,7 +63,7 @@ pub fn render_list_view(
             LeftContent::List { items, .. } => items.is_empty(),
         };
         if is_empty {
-            EmptyStateWidget::render(frame, area, &config.empty_message, block);
+            EmptyStateWidget::render(frame, area, &config.empty_state, block);
             return;
         }
 
@@ -80,7 +80,7 @@ pub fn render_list_view(
             .title(config.detail_title.as_str())
             .border_style(border_style);
         if detail_lines.is_empty() {
-            EmptyStateWidget::render(frame, chunks[1], &config.detail_empty_message, detail_block);
+            EmptyStateWidget::render(frame, chunks[1], &config.detail_empty_state, detail_block);
         } else {
             detail_pane.render(frame, chunks[1], &config.detail_title, detail_lines, detail_block);
         }
@@ -107,7 +107,7 @@ pub fn render_list_view(
             LeftContent::List { items, .. } => items.is_empty(),
         };
         if is_empty {
-            EmptyStateWidget::render(frame, list_area, &config.empty_message, block);
+            EmptyStateWidget::render(frame, list_area, &config.empty_state, block);
         } else {
             render_left_with_block(frame, list_area, left, block, selection, theme, &config.highlight_symbol);
         }
@@ -117,7 +117,7 @@ pub fn render_list_view(
             .borders(Borders::ALL)
             .border_style(border_style);
         if detail_lines.is_empty() {
-            EmptyStateWidget::render(frame, detail_area, &config.detail_empty_message, detail_block);
+            EmptyStateWidget::render(frame, detail_area, &config.detail_empty_state, detail_block);
         } else {
             detail_pane.render(frame, detail_area, &config.detail_title, detail_lines, detail_block);
         }

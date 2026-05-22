@@ -46,11 +46,18 @@ pub fn process_event(event: Event, app: &App) -> Vec<Message> {
                 };
             }
 
-            if app.error_toast.is_some() {
-                return vec![Message::DismissError];
-            }
-            if app.success_toast.is_some() {
-                return vec![Message::DismissSuccess];
+            if app.error_toast.is_some() || app.success_toast.is_some() {
+                if matches!(key.code, KeyCode::Esc | KeyCode::Char('x')) {
+                    let mut msgs = Vec::new();
+                    if app.error_toast.is_some() {
+                        msgs.push(Message::DismissError);
+                    }
+                    if app.success_toast.is_some() {
+                        msgs.push(Message::DismissSuccess);
+                    }
+                    return msgs;
+                }
+                return vec![Message::Noop];
             }
 
             let bindings = &app.config.keybindings;
@@ -168,6 +175,14 @@ mod tests {
         app.error_toast = Some("err".into());
         let msgs = process_event(Event::Input(key_event(KeyCode::Char('x'))), &app);
         assert!(matches!(msgs[0], Message::DismissError));
+
+        // Esc also dismisses
+        let msgs = process_event(Event::Input(key_event(KeyCode::Esc)), &app);
+        assert!(matches!(msgs[0], Message::DismissError));
+
+        // Other keys blocked while toast visible
+        let msgs = process_event(Event::Input(key_event(KeyCode::Char('j'))), &app);
+        assert!(matches!(msgs[0], Message::Noop));
 
         app.error_toast = None;
         app.success_toast = Some("ok".into());

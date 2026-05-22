@@ -7,6 +7,7 @@ use crate::event::ApiPayload;
 use crate::theme::Theme;
 use crate::util::format;
 use crate::widgets::detail_pane::DetailPane;
+use crate::widgets::empty_state::EmptyState;
 use crate::widgets::list_view::{render_list_view, LeftContent, ListViewConfig};
 use super::panel::{Panel, SelectionState, handle_key_default};
 
@@ -128,10 +129,14 @@ impl PullsPanel {
             _ => " Pull Requests ".to_string(),
         };
 
-        let empty_message = if state.owner.is_some() {
-            "No pull requests found".to_string()
+        let empty_state = if state.owner.is_some() {
+            EmptyState::new("No pull requests found")
+                .icon(" ")
+                .hint("Press `r` to refresh, 1/2/3 to filter")
         } else {
-            "Select a repository first (Enter on a repo)".to_string()
+            EmptyState::new("Select a repository first")
+                .icon(" ")
+                .hint("Switch to Repos tab, press Enter on a repo")
         };
 
         let config = ListViewConfig {
@@ -141,10 +146,12 @@ impl PullsPanel {
             block_title,
             wrap_full: false,
             loading: state.loading,
-            empty_message,
+            empty_state,
             detail_title: " PR Details ".to_string(),
             highlight_symbol: "▸ ".to_string(),
-            detail_empty_message: "Select a pull request".to_string(),
+            detail_empty_state: EmptyState::new("Select a pull request")
+                .icon(" ")
+                .hint("j/k to navigate"),
         };
 
         let left = LeftContent::Table {
@@ -181,8 +188,13 @@ impl Panel for PullsPanel {
 
     fn load_data(&mut self, payload: ApiPayload, selection: &mut SelectionState) {
         if let ApiPayload::Pulls(pulls) = payload {
+            self.loading = false;
             self.set_pulls(pulls, selection);
         }
+    }
+
+    fn set_loading(&mut self, loading: bool) {
+        self.loading = loading;
     }
 
     fn handle_key(&mut self, key: char, selection: &mut SelectionState, detail_pane: &mut DetailPane) -> Option<Cmd> {

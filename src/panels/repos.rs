@@ -7,6 +7,7 @@ use crate::event::ApiPayload;
 use crate::theme::Theme;
 use crate::util::format;
 use crate::widgets::detail_pane::DetailPane;
+use crate::widgets::empty_state::EmptyState;
 use crate::widgets::list_view::{render_list_view, LeftContent, ListViewConfig};
 use super::panel::{Panel, SelectionState, handle_key_default};
 
@@ -152,10 +153,14 @@ impl ReposPanel {
             block_title: " Repositories ".to_string(),
             wrap_full: false,
             loading: state.loading,
-            empty_message: "No repositories found".to_string(),
+            empty_state: EmptyState::new("No repositories found")
+                .icon(" ")
+                .hint("Press `r` to refresh"),
             detail_title: " Details ".to_string(),
             highlight_symbol: "▸ ".to_string(),
-            detail_empty_message: "Select a repository".to_string(),
+            detail_empty_state: EmptyState::new("Select a repository")
+                .icon(" ")
+                .hint("j/k to navigate, Enter to open"),
         };
 
         let left = LeftContent::Table {
@@ -180,8 +185,13 @@ impl Panel for ReposPanel {
 
     fn load_data(&mut self, payload: ApiPayload, selection: &mut SelectionState) {
         if let ApiPayload::Repos(repos) = payload {
+            self.loading = false;
             self.set_repos(repos, selection);
         }
+    }
+
+    fn set_loading(&mut self, loading: bool) {
+        self.loading = loading;
     }
 
     fn handle_key(&mut self, key: char, selection: &mut SelectionState, detail_pane: &mut DetailPane) -> Option<Cmd> {

@@ -9,6 +9,7 @@ use crate::util::format;
 use crate::util::format::relative_time;
 use crate::util::markdown::render_markdown;
 use crate::widgets::detail_pane::DetailPane;
+use crate::widgets::empty_state::EmptyState;
 use crate::widgets::list_view::{render_list_view, LeftContent, ListViewConfig};
 use super::panel::{Panel, SelectionState, handle_key_default};
 
@@ -153,10 +154,14 @@ impl IssuesPanel {
             block_title: format!(" Issues [{}] ", state.state_filter),
             wrap_full: true,
             loading: state.loading,
-            empty_message: "No issues found".to_string(),
+            empty_state: EmptyState::new("No issues found")
+                .icon(" ")
+                .hint("Press `r` to refresh, 1/2/3 to filter"),
             detail_title: " Detail ".to_string(),
             highlight_symbol: "▸ ".to_string(),
-            detail_empty_message: "Select an issue to view details".to_string(),
+            detail_empty_state: EmptyState::new("Select an issue")
+                .icon(" ")
+                .hint("j/k to navigate"),
         };
 
         let left = LeftContent::List { items };
@@ -183,8 +188,13 @@ impl Panel for IssuesPanel {
 
     fn load_data(&mut self, payload: ApiPayload, selection: &mut SelectionState) {
         if let ApiPayload::Issues(issues) = payload {
+            self.loading = false;
             self.set_issues(issues, selection);
         }
+    }
+
+    fn set_loading(&mut self, loading: bool) {
+        self.loading = loading;
     }
 
     fn handle_key(&mut self, key: char, selection: &mut SelectionState, detail_pane: &mut DetailPane) -> Option<Cmd> {
