@@ -12,6 +12,7 @@ pub enum Cmd {
     RerunWorkflow { owner: String, repo: String, run_id: u64 },
     CancelWorkflow { owner: String, repo: String, run_id: u64 },
     OpenRepoDetail { owner: String, repo: String },
+    CycleRepoSort,
 }
 
 impl std::fmt::Debug for Cmd {
@@ -30,6 +31,7 @@ impl std::fmt::Debug for Cmd {
             Cmd::RerunWorkflow { owner, repo, run_id } => write!(f, "RerunWorkflow({}/{}/{})", owner, repo, run_id),
             Cmd::CancelWorkflow { owner, repo, run_id } => write!(f, "CancelWorkflow({}/{}/{})", owner, repo, run_id),
             Cmd::OpenRepoDetail { owner, repo } => write!(f, "OpenRepoDetail({}/{})", owner, repo),
+            Cmd::CycleRepoSort => write!(f, "CycleRepoSort"),
         }
     }
 }

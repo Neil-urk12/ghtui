@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
+use std::cell::RefCell;
 
 use crate::api::client::GitHubClient;
 use crate::config::Config;
-use crate::panels::{ActionsPanel, IssuesPanel, NotificationsPanel, Panel, PullsPanel, ReposPanel};
+use crate::panels::{ActionsPanelItem, IssuesPanelItem, NotificationsPanelItem, Panel, PullsPanelItem, ReposPanelItem};
 use crate::panels::login::LoginState;
-use crate::panels::panel::SelectionState;
+use crate::panels::panel::{ListPanel, ListPanelData, SelectionState};
 use crate::theme::Theme;
 use crate::widgets::detail_pane::DetailPane;
 
@@ -42,11 +43,11 @@ impl fmt::Display for PanelKind {
 }
 
 pub enum PanelState {
-    Repos(ReposPanel),
-    Pulls(PullsPanel),
-    Issues(IssuesPanel),
-    Notifications(NotificationsPanel),
-    Actions(ActionsPanel),
+    Repos(ListPanel<ReposPanelItem>),
+    Pulls(ListPanel<PullsPanelItem>),
+    Issues(ListPanel<IssuesPanelItem>),
+    Notifications(ListPanel<NotificationsPanelItem>),
+    Actions(ListPanel<ActionsPanelItem>),
 }
 
 impl PanelState {
@@ -73,8 +74,6 @@ impl PanelState {
 
 pub struct PanelEntry {
     pub panel: PanelState,
-    pub selection: SelectionState,
-    pub detail_pane: DetailPane,
 }
 
 #[derive(Debug, Default)]
@@ -119,38 +118,34 @@ impl App {
         // Apply config defaults
         let mut panels = HashMap::new();
         panels.insert(PanelKind::Repos, PanelEntry {
-            panel: PanelState::Repos(ReposPanel::default()),
-            selection: SelectionState::table(),
-            detail_pane: DetailPane::new(),
+            panel: PanelState::Repos(ListPanel::default()),
         });
         panels.insert(PanelKind::Pulls, PanelEntry {
-            panel: PanelState::Pulls(PullsPanel {
-                state_filter: config.defaults.pulls_state.clone(),
-                ..Default::default()
+            panel: PanelState::Pulls(ListPanel {
+                data: ListPanelData::new(),
+                selection: RefCell::new(SelectionState::table()),
+                detail_pane: DetailPane::new(),
+                item: PullsPanelItem { state_filter: config.defaults.pulls_state.clone() },
             }),
-            selection: SelectionState::table(),
-            detail_pane: DetailPane::new(),
         });
         panels.insert(PanelKind::Issues, PanelEntry {
-            panel: PanelState::Issues(IssuesPanel {
-                state_filter: config.defaults.issues_state.clone(),
-                ..Default::default()
+            panel: PanelState::Issues(ListPanel {
+                data: ListPanelData::new(),
+                selection: RefCell::new(SelectionState::list()),
+                detail_pane: DetailPane::new(),
+                item: IssuesPanelItem { state_filter: config.defaults.issues_state.clone() },
             }),
-            selection: SelectionState::list(),
-            detail_pane: DetailPane::new(),
         });
         panels.insert(PanelKind::Notifications, PanelEntry {
-            panel: PanelState::Notifications(NotificationsPanel {
-                show_all: config.defaults.notifications_show_all,
-                ..Default::default()
+            panel: PanelState::Notifications(ListPanel {
+                data: ListPanelData::new(),
+                selection: RefCell::new(SelectionState::list()),
+                detail_pane: DetailPane::new(),
+                item: NotificationsPanelItem { show_all: config.defaults.notifications_show_all },
             }),
-            selection: SelectionState::list(),
-            detail_pane: DetailPane::new(),
         });
         panels.insert(PanelKind::Actions, PanelEntry {
-            panel: PanelState::Actions(ActionsPanel::default()),
-            selection: SelectionState::list(),
-            detail_pane: DetailPane::new(),
+            panel: PanelState::Actions(ListPanel::default()),
         });
 
         Self {

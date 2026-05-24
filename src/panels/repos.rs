@@ -1,15 +1,14 @@
 use ratatui::prelude::*;
 use ratatui::widgets::{Cell, Row};
 
-use crate::domain::Repo;
 use crate::cmd::Cmd;
+use crate::domain::Repo;
 use crate::event::ApiPayload;
 use crate::theme::Theme;
 use crate::util::format;
-use crate::widgets::detail_pane::DetailPane;
 use crate::widgets::empty_state::EmptyState;
-use crate::widgets::list_view::{render_list_view, LeftContent, ListViewConfig};
-use super::panel::{Panel, SelectionState, handle_key_default, ListPanelData};
+use crate::widgets::list_view::LeftContent;
+use super::panel::{ListPanelData, PanelItem, SelectionState};
 
 #[derive(Debug, Default)]
 pub enum RepoSort {
@@ -19,187 +18,168 @@ pub enum RepoSort {
     Updated,
 }
 
-#[derive(Debug)]
-pub struct ReposPanel {
-    pub data: ListPanelData<Repo>,
+impl RepoSort {
+    pub fn sort_indices(&self, items: &[Repo], filtered_indices: &mut [usize]) {
+        match self {
+            RepoSort::Name => {
+                filtered_indices.sort_by(|&a, &b| items[a].name.cmp(&items[b].name))
+            }
+            RepoSort::Stars => filtered_indices.sort_by(|&a, &b| {
+                items[b]
+                    .stars
+                    .cmp(&items[a].stars)
+                    .then(items[a].name.cmp(&items[b].name))
+            }),
+            RepoSort::Updated => filtered_indices.sort_by(|&a, &b| {
+                items[b]
+                    .updated_at
+                    .cmp(&items[a].updated_at)
+                    .then(items[a].name.cmp(&items[b].name))
+            }),
+        }
+    }
+}
+
+fn repo_to_row(repo: &Repo) -> Row<'static> {
+    let stars = format::abbreviate_number(repo.stars as u64);
+    let updated = format::relative_time(&repo.updated_at);
+    Row::new(vec![
+        Cell::from(repo.name.clone()),
+        Cell::from(stars),
+        Cell::from(updated),
+    ])
+}
+
+fn repo_to_detail(repo: &Repo, theme: &Theme) -> Vec<Line<'static>> {
+    let mut lines = vec![
+        Line::from(Span::styled(
+            repo.name.clone(),
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+    ];
+    if let Some(desc) = &repo.description {
+        lines.push(Line::from(desc.clone()));
+        lines.push(Line::from(""));
+    }
+    lines.push(Line::from(format!(
+        "Language: {}",
+        repo.language.as_deref().unwrap_or("N/A")
+    )));
+    lines.push(Line::from(format!("Stars: {}", repo.stars)));
+    lines.push(Line::from(format!("Forks: {}", repo.forks)));
+    lines.push(Line::from(format!(
+        "Default branch: {}",
+        repo.default_branch
+    )));
+    lines.push(Line::from(format!("Visibility: {}", repo.visibility)));
+    lines.push(Line::from(format!(
+        "Updated: {}",
+        format::relative_time(&repo.updated_at)
+    )));
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "Enter: view PRs | r: refresh | s: sort",
+        theme.muted,
+    )));
+    lines
+}
+
+#[derive(Debug, Default)]
+pub struct ReposPanelItem {
     pub sort: RepoSort,
 }
 
-impl Default for ReposPanel {
-    fn default() -> Self {
-        Self {
-            data: ListPanelData::new(),
-            sort: RepoSort::Name,
-        }
-    }
-}
-
-impl ReposPanel {
-    pub fn sort_indices(&mut self) {
-        match self.sort {
-            RepoSort::Name => self
-                .data
-                .filtered_indices
-                .sort_by(|&a, &b| self.data.items[a].name.cmp(&self.data.items[b].name)),
-            RepoSort::Stars => self.data.filtered_indices.sort_by(|&a, &b| {
-                self.data.items[b]
-                    .stars
-                    .cmp(&self.data.items[a].stars)
-                    .then(self.data.items[a].name.cmp(&self.data.items[b].name))
-            }),
-            RepoSort::Updated => self.data.filtered_indices.sort_by(|&a, &b| {
-                self.data.items[b]
-                    .updated_at
-                    .cmp(&self.data.items[a].updated_at)
-                    .then(self.data.items[a].name.cmp(&self.data.items[b].name))
-            }),
-        }
-    }
-
-    pub fn cycle_sort(&mut self) {
+impl ReposPanelItem {
+    pub fn cycle_sort(&mut self, data: &mut ListPanelData<Repo>, selection: &mut SelectionState) {
         self.sort = match self.sort {
             RepoSort::Name => RepoSort::Stars,
             RepoSort::Stars => RepoSort::Updated,
             RepoSort::Updated => RepoSort::Name,
         };
-        self.sort_indices();
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn view(
-        frame: &mut Frame,
-        area: Rect,
-        state: &ReposPanel,
-        selection: &mut SelectionState,
-        detail_pane: &DetailPane,
-        focused: bool,
-        theme: &Theme,
-        tick: u64,
-    ) {
-        let rows: Vec<Row> = state
-            .data
-            .filtered_indices
-            .iter()
-            .map(|&i| {
-                let repo = &state.data.items[i];
-                let stars = format::abbreviate_number(repo.stars as u64);
-                let lang = repo.language.as_deref().unwrap_or("-");
-                let updated = format::relative_time(&repo.updated_at);
-                Row::new(vec![
-                    Cell::from(repo.name.clone()),
-                    Cell::from(lang),
-                    Cell::from(stars),
-                    Cell::from(updated),
-                ])
-            })
-            .collect();
-
-        let detail_lines = if let Some(repo) = state.data.selected(selection) {
-            let mut lines = vec![
-                Line::from(Span::styled(
-                    repo.name.clone(),
-                    Style::default().add_modifier(Modifier::BOLD),
-                )),
-                Line::from(""),
-            ];
-            if let Some(desc) = &repo.description {
-                lines.push(Line::from(desc.as_str()));
-                lines.push(Line::from(""));
-            }
-            lines.push(Line::from(format!(
-                "Language: {}",
-                repo.language.as_deref().unwrap_or("N/A")
-            )));
-            lines.push(Line::from(format!("Stars: {}", repo.stars)));
-            lines.push(Line::from(format!("Forks: {}", repo.forks)));
-            lines.push(Line::from(format!(
-                "Default branch: {}",
-                repo.default_branch
-            )));
-            lines.push(Line::from(format!("Visibility: {}", repo.visibility)));
-            lines.push(Line::from(format!(
-                "Updated: {}",
-                format::relative_time(&repo.updated_at)
-            )));
-            lines.push(Line::from(""));
-            lines.push(Line::from(Span::styled(
-                "Enter: view PRs | r: refresh | s: sort",
-                theme.muted,
-            )));
-            lines
-        } else {
-            vec![]
-        };
-
-        let config = ListViewConfig {
-            split_ratio: (45, 55),
-            margin: 0,
-            focused,
-            block_title: " Repositories ".to_string(),
-            wrap_full: false,
-            loading: state.data.loading,
-            empty_state: EmptyState::new("No repositories found")
-                .icon(" ")
-                .hint("Press `r` to refresh"),
-            detail_title: " Details ".to_string(),
-            highlight_symbol: "▸ ".to_string(),
-            detail_empty_state: EmptyState::new("Select a repository")
-                .icon(" ")
-                .hint("j/k to navigate, Enter to open"),
-        };
-
-        let left = LeftContent::Table {
-            headers: vec!["Name", "Lang", "Stars", "Updated"],
-            rows,
-            widths: vec![
-                Constraint::Fill(3),
-                Constraint::Fill(1),
-                Constraint::Fill(1),
-                Constraint::Fill(1),
-            ],
-        };
-
-        render_list_view(frame, area, config, left, selection, detail_pane, detail_lines, theme, tick);
+        self.sort.sort_indices(&data.items, &mut data.filtered_indices);
+        selection.set_len(data.filtered_indices.len());
     }
 }
 
-impl Panel for ReposPanel {
-    fn fetch_cmd(&self) -> Cmd {
-        Cmd::FetchRepos
-    }
+impl PanelItem for ReposPanelItem {
+    type Item = Repo;
 
-    fn load_data(&mut self, payload: ApiPayload, selection: &mut SelectionState) {
-        if let ApiPayload::Repos(repos) = payload {
-            self.data.loading = false;
-            self.data.set_items(repos, selection);
-            self.sort_indices();
+    fn left_content<'a>(
+        &'a self,
+        data: &'a ListPanelData<Self::Item>,
+        _theme: &'a Theme,
+    ) -> LeftContent<'a> {
+        let rows: Vec<Row> = data
+            .filtered_indices
+            .iter()
+            .map(|&i| repo_to_row(&data.items[i]))
+            .collect();
+        LeftContent::Table {
+            headers: vec!["Name", "Stars", "Updated"],
+            rows,
+            widths: vec![
+                Constraint::Percentage(50),
+                Constraint::Length(10),
+                Constraint::Percentage(20),
+            ],
         }
     }
 
-    fn set_loading(&mut self, loading: bool) {
-        self.data.loading = loading;
+    fn detail_lines(&self, item: &Self::Item, theme: &Theme) -> Vec<Line<'static>> {
+        repo_to_detail(item, theme)
     }
 
-    fn handle_key(&mut self, key: char, selection: &mut SelectionState, detail_pane: &mut DetailPane) -> Option<Cmd> {
+    fn handle_key(
+        &mut self,
+        key: char,
+        selected: Option<&Self::Item>,
+        _data: &ListPanelData<Self::Item>,
+    ) -> Option<Cmd> {
         match key {
-            's' => { self.cycle_sort(); None }
+            's' => Some(Cmd::CycleRepoSort),
             '\n' => {
-                if let Some(repo) = self.data.selected(selection) {
-                    let parts: Vec<&str> = repo.name.splitn(2, '/').collect();
-                    if parts.len() == 2 {
+                if let Some(repo) = selected {
+                    if let Some((owner, repo_name)) = repo.name.split_once('/') {
                         return Some(Cmd::OpenRepoDetail {
-                            owner: parts[0].to_string(),
-                            repo: parts[1].to_string(),
+                            owner: owner.to_string(),
+                            repo: repo_name.to_string(),
                         });
                     }
                 }
                 None
             }
-            _ => handle_key_default(self, key, selection, detail_pane),
+            _ => None,
         }
     }
 
-    fn render(&self, frame: &mut Frame, area: Rect, selection: &mut SelectionState, detail_pane: &DetailPane, focused: bool, theme: &Theme, tick: u64) {
-        Self::view(frame, area, self, selection, detail_pane, focused, theme, tick);
+    fn fetch_cmd(&self, _data: &ListPanelData<Self::Item>) -> Cmd {
+        Cmd::FetchRepos
+    }
+
+    fn initial_selection(&self) -> SelectionState {
+        SelectionState::table()
+    }
+
+    fn block_title(&self, _data: &ListPanelData<Self::Item>) -> String {
+        format!(" Repos ({:?}) ", self.sort)
+    }
+
+    fn empty_state(&self, _data: &ListPanelData<Self::Item>) -> EmptyState {
+        EmptyState::new("No Repos Found")
+            .icon(" ")
+            .hint("Press 'r' to refresh")
+    }
+
+    fn extract_items(payload: ApiPayload) -> Option<Vec<Self::Item>> {
+        if let ApiPayload::Repos(repos) = payload {
+            Some(repos)
+        } else {
+            None
+        }
+    }
+
+    fn on_loaded(&mut self, data: &mut ListPanelData<Self::Item>) {
+        self.sort.sort_indices(&data.items, &mut data.filtered_indices);
     }
 }

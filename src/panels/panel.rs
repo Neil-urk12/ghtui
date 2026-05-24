@@ -5,6 +5,9 @@ use crate::cmd::Cmd;
 use crate::event::ApiPayload;
 use crate::theme::Theme;
 use crate::widgets::detail_pane::DetailPane;
+use crate::widgets::empty_state::EmptyState;
+use crate::widgets::list_view::{LeftContent, ListViewConfig, render_list_view};
+use std::cell::RefCell;
 
 // --- SelectionState ---
 
@@ -207,6 +210,90 @@ mod tests {
         assert_eq!(data.owner.as_deref(), Some("octocat"));
         assert_eq!(data.repo.as_deref(), Some("hello-world"));
     }
+
+    #[derive(Debug, Default)]
+    struct DummyItem;
+
+    impl PanelItem for DummyItem {
+        type Item = String;
+
+        fn left_content<'a>(&'a self, _data: &'a ListPanelData<Self::Item>, _theme: &'a Theme) -> LeftContent<'a> {
+            LeftContent::List { items: vec![] }
+        }
+
+        fn detail_lines(&self, _item: &Self::Item, _theme: &Theme) -> Vec<Line<'static>> {
+            vec![]
+        }
+
+        fn handle_key(&mut self, _key: char, _selected: Option<&Self::Item>, _data: &ListPanelData<Self::Item>) -> Option<Cmd> {
+            None
+        }
+
+        fn fetch_cmd(&self, _data: &ListPanelData<Self::Item>) -> Cmd {
+            Cmd::None
+        }
+
+        fn block_title(&self, _data: &ListPanelData<Self::Item>) -> String {
+            "Dummy".into()
+        }
+
+        fn empty_state(&self, _data: &ListPanelData<Self::Item>) -> EmptyState {
+            EmptyState::new("Nothing")
+        }
+
+        fn extract_items(_payload: ApiPayload) -> Option<Vec<Self::Item>> {
+            None
+        }
+    }
+
+    #[test]
+    fn list_panel_default_construction() {
+        let panel: ListPanel<DummyItem> = ListPanel::default();
+        assert!(panel.data.items.is_empty());
+        assert!(!panel.data.loading);
+        assert!(panel.data.owner.is_none());
+        assert!(panel.data.repo.is_none());
+    }
+
+    #[test]
+    fn list_panel_set_loading() {
+        let mut panel: ListPanel<DummyItem> = ListPanel::default();
+        Panel::set_loading(&mut panel, true);
+        assert!(panel.data.loading);
+        Panel::set_loading(&mut panel, false);
+        assert!(!panel.data.loading);
+    }
+
+    #[test]
+    fn list_panel_set_repo_context() {
+        let mut panel: ListPanel<DummyItem> = ListPanel::default();
+        Panel::set_repo_context(&mut panel, "owner", "repo");
+        assert_eq!(panel.data.owner.as_deref(), Some("owner"));
+        assert_eq!(panel.data.repo.as_deref(), Some("repo"));
+    }
+
+    #[test]
+    fn list_panel_fetch_cmd_delegates() {
+        let panel: ListPanel<DummyItem> = ListPanel::default();
+        assert!(matches!(Panel::fetch_cmd(&panel), Cmd::None));
+    }
+
+    #[test]
+    fn list_panel_handle_key_navigation() {
+        let mut panel: ListPanel<DummyItem> = ListPanel::default();
+        // Populate via set_items which also sets selection len.
+        let mut borrow = panel.selection.borrow_mut();
+        panel.data.set_items(vec!["a".into(), "b".into(), "c".into()], &mut borrow);
+        drop(borrow);
+
+        // j should move down.
+        let result = Panel::handle_key(&mut panel, 'j');
+        assert!(result.is_none());
+
+        // k should move up.
+        let result = Panel::handle_key(&mut panel, 'k');
+        assert!(result.is_none());
+    }
 }
 
 // --- Free navigation functions ---
@@ -227,39 +314,190 @@ pub fn navigate_down(selection: &mut SelectionState, detail_pane: &mut DetailPan
     }
 }
 
-pub fn scroll_detail_up(detail_pane: &mut DetailPane) {
-    detail_pane.scroll_up();
-}
-
-pub fn scroll_detail_down(detail_pane: &mut DetailPane) {
-    detail_pane.scroll_down();
-}
-
 // --- Panel trait ---
 
 /// Common interface for all panels.
 pub trait Panel: std::fmt::Debug {
-    fn handle_key(&mut self, key: char, selection: &mut SelectionState, detail_pane: &mut DetailPane) -> Option<Cmd>;
+    fn handle_key(&mut self, key: char) -> Option<Cmd>;
     #[allow(clippy::too_many_arguments)]
-    fn render(&self, frame: &mut Frame, area: Rect, selection: &mut SelectionState, detail_pane: &DetailPane, focused: bool, theme: &Theme, tick: u64);
+    fn render(&self, frame: &mut Frame, area: Rect, focused: bool, theme: &Theme, tick: u64);
     fn fetch_cmd(&self) -> Cmd { Cmd::None }
     fn set_loading(&mut self, _loading: bool) {}
     fn set_repo_context(&mut self, _owner: &str, _repo: &str) {}
-    fn load_data(&mut self, payload: ApiPayload, selection: &mut SelectionState);
+    fn load_data(&mut self, payload: ApiPayload);
+    fn scroll_detail_up(&mut self) {}
+    fn scroll_detail_down(&mut self) {}
 }
 
-/// Default key handling for panels. Call this from panel `handle_key` impls
-/// to delegate unhandled keys (j/k navigation). Avoids UFCS recursion.
-pub fn handle_key_default(_panel: &mut dyn Panel, key: char, selection: &mut SelectionState, detail_pane: &mut DetailPane) -> Option<Cmd> {
-    match key {
-        'j' => {
-            navigate_down(selection, detail_pane);
-            None
+// --- PanelItem trait + ListPanel<T> ---
+
+/// Deeper panel trait that owns its own `ListPanelData`, `SelectionState`,
+/// and `DetailPane` internally.  Implementors only need to describe content
+/// and key-handling; boilerplate (j/k nav, loading, repo context, render)
+/// is handled by the generic `ListPanel<T>` wrapper.
+///
+/// During Phase 1 the old `Panel` trait and `ListPanel<T>` coexist.
+pub trait PanelItem: std::fmt::Debug + Default {
+    type Item: std::fmt::Debug;
+
+    // --- Required ----------------------------------------------------------
+
+    /// Build the left-side content (list or table rows) from data.
+    fn left_content<'a>(&'a self, data: &'a ListPanelData<Self::Item>, theme: &'a Theme) -> LeftContent<'a>;
+
+    /// Build detail lines for the selected item.
+    fn detail_lines(&self, item: &Self::Item, theme: &Theme) -> Vec<Line<'static>>;
+
+    /// Handle a key press.  Return `Some(Cmd)` if consumed, `None` to fall
+    /// through to default j/k navigation.
+    fn handle_key(&mut self, key: char, selected: Option<&Self::Item>, data: &ListPanelData<Self::Item>) -> Option<Cmd>;
+
+    /// Return the fetch command for this panel (e.g. `Cmd::FetchIssues`).
+    fn fetch_cmd(&self, data: &ListPanelData<Self::Item>) -> Cmd;
+
+    /// Block title shown around the list area.
+    fn block_title(&self, data: &ListPanelData<Self::Item>) -> String;
+
+    /// Empty state shown when the item list is empty.
+    fn empty_state(&self, data: &ListPanelData<Self::Item>) -> EmptyState;
+
+    /// Try to extract items of this panel's type from an `ApiPayload`.
+    /// Return `None` if the payload variant doesn't match.
+    fn extract_items(payload: ApiPayload) -> Option<Vec<Self::Item>>;
+
+    // --- Optional (with defaults) -----------------------------------------
+
+    /// Called after items are loaded.  Override to post-process.
+    fn on_loaded(&mut self, _data: &mut ListPanelData<Self::Item>) {}
+
+    /// Left/right split ratio.  Default `(50, 50)`.
+    fn split_ratio(&self) -> (u16, u16) { (50, 50) }
+
+    /// Detail pane title.  Default `" Details "`.
+    fn detail_title(&self) -> String { " Details ".into() }
+
+    /// Wrap full (block wraps entire area, split inside). Default `true`.
+    fn wrap_full(&self) -> bool { true }
+
+    /// Highlight symbol for selected row. Default `"▸ "`.
+    fn highlight_symbol(&self) -> String { "▸ ".into() }
+
+    /// Initial selection state. Override for table-based panels.
+    /// Default: `SelectionState::list()`.
+    fn initial_selection(&self) -> SelectionState { SelectionState::list() }
+
+    /// Empty state for the detail pane when nothing is selected.
+    fn detail_empty_state(&self) -> EmptyState {
+        EmptyState::new("Select an item")
+            .hint("j/k to navigate")
+    }
+}
+
+/// Generic list panel that owns selection + detail pane internally.
+/// Wraps any `PanelItem` implementation and delegates the old `Panel` trait
+/// to the inner item's methods plus boilerplate navigation.
+///
+/// `selection` is `RefCell`-wrapped so that `Panel::render(&self, ...)` can
+/// hand a `&mut SelectionState` to `render_list_view`.  This is a Phase 1
+/// compromise; Phase 2 will change `Panel::render` to `&mut self`.
+pub struct ListPanel<T: PanelItem> {
+    pub data: ListPanelData<T::Item>,
+    pub selection: RefCell<SelectionState>,
+    pub detail_pane: DetailPane,
+    pub item: T,
+}
+
+impl<T: PanelItem> std::fmt::Debug for ListPanel<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ListPanel")
+            .field("data", &self.data)
+            .field("item", &self.item)
+            .field("loading", &self.data.loading)
+            .finish_non_exhaustive()
+    }
+}
+
+impl<T: PanelItem> Default for ListPanel<T> {
+    fn default() -> Self {
+        let item = T::default();
+        let selection = RefCell::new(item.initial_selection());
+        Self {
+            data: ListPanelData::default(),
+            selection,
+            detail_pane: DetailPane::new(),
+            item,
         }
-        'k' => {
-            navigate_up(selection, detail_pane);
-            None
+    }
+}
+
+impl<T: PanelItem + 'static> Panel for ListPanel<T> {
+    fn set_loading(&mut self, loading: bool) {
+        self.data.loading = loading;
+    }
+
+    fn set_repo_context(&mut self, owner: &str, repo: &str) {
+        self.data.set_repo(owner.to_string(), repo.to_string());
+    }
+
+    fn load_data(&mut self, payload: ApiPayload) {
+        if let Some(items) = T::extract_items(payload) {
+            self.data.load_items(items, &mut self.selection.borrow_mut());
+            self.item.on_loaded(&mut self.data);
         }
-        _ => None,
+    }
+
+    fn handle_key(&mut self, key: char) -> Option<Cmd> {
+        // Try the PanelItem's custom key handler first.
+        let selected = self.data.selected(&self.selection.borrow());
+        if let Some(cmd) = self.item.handle_key(key, selected, &self.data) {
+            return Some(cmd);
+        }
+        // Fall through to default j/k navigation.
+        let mut sel = self.selection.borrow_mut();
+        match key {
+            'j' => { navigate_down(&mut sel, &mut self.detail_pane); None }
+            'k' => { navigate_up(&mut sel, &mut self.detail_pane); None }
+            _ => None,
+        }
+    }
+
+    fn fetch_cmd(&self) -> Cmd {
+        self.item.fetch_cmd(&self.data)
+    }
+
+    fn render(&self, frame: &mut Frame, area: Rect, focused: bool, theme: &Theme, tick: u64) {
+        let left = self.item.left_content(&self.data, theme);
+        let (sr_left, sr_right) = self.item.split_ratio();
+
+        let mut detail_lines: Vec<Line<'static>> = Vec::new();
+        {
+            let sel = self.selection.borrow();
+            if let Some(item) = self.data.selected(&sel) {
+                detail_lines = self.item.detail_lines(item, theme);
+            }
+        }
+
+        let config = ListViewConfig {
+            split_ratio: (sr_left, sr_right),
+            margin: 1,
+            focused,
+            block_title: self.item.block_title(&self.data),
+            wrap_full: self.item.wrap_full(),
+            loading: self.data.loading,
+            empty_state: self.item.empty_state(&self.data),
+            detail_title: self.item.detail_title(),
+            highlight_symbol: self.item.highlight_symbol(),
+            detail_empty_state: self.item.detail_empty_state(),
+        };
+
+        render_list_view(frame, area, config, left, &mut self.selection.borrow_mut(), &self.detail_pane, detail_lines, theme, tick);
+    }
+
+    fn scroll_detail_up(&mut self) {
+        self.detail_pane.scroll_up();
+    }
+
+    fn scroll_detail_down(&mut self) {
+        self.detail_pane.scroll_down();
     }
 }

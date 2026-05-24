@@ -16,6 +16,16 @@ use crate::update::{update, Message};
 use crate::cmd::Cmd;
 use crate::event::{self, ApiPayload, Event};
 
+fn pull_cache_keys(owner: &str, repo: &str) -> Vec<CacheKey> {
+    ["open", "closed", "all"]
+        .iter()
+        .map(|state| CacheKey::Pulls {
+            owner: owner.to_string(),
+            repo: repo.to_string(),
+            state: state.to_string(),
+        })
+        .collect()
+}
 pub async fn run(app: &mut App, terminal: &mut DefaultTerminal) -> Result<()> {
     eprintln!("ghtui: entering run loop");
     let mut event_stream = EventStream::new();
@@ -174,8 +184,8 @@ fn spawn_cmd(cmd: Cmd, client: &Arc<GitHubClient>, tx: mpsc::Sender<Result<ApiPa
                     .approve_pr(&owner, &repo, pr_number)
                     .await;
                 if result.is_ok() {
-                    for state in ["open", "closed", "all"] {
-                        client.invalidate_cache(&CacheKey::Pulls { owner: owner.clone(), repo: repo.clone(), state: state.into() });
+                    for key in pull_cache_keys(&owner, &repo) {
+                        client.invalidate_cache(&key);
                     }
                 }
                 let _ = tx.send(result.map(|_| ApiPayload::Success(format!("PR #{} approved", pr_number)))).await;
@@ -187,8 +197,8 @@ fn spawn_cmd(cmd: Cmd, client: &Arc<GitHubClient>, tx: mpsc::Sender<Result<ApiPa
                     .merge_pr(&owner, &repo, pr_number)
                     .await;
                 if result.is_ok() {
-                    for state in ["open", "closed", "all"] {
-                        client.invalidate_cache(&CacheKey::Pulls { owner: owner.clone(), repo: repo.clone(), state: state.into() });
+                    for key in pull_cache_keys(&owner, &repo) {
+                        client.invalidate_cache(&key);
                     }
                 }
                 let _ = tx.send(result.map(|_| ApiPayload::Success(format!("PR #{} merged", pr_number)))).await;
@@ -217,6 +227,9 @@ fn spawn_cmd(cmd: Cmd, client: &Arc<GitHubClient>, tx: mpsc::Sender<Result<ApiPa
             });
         }
         Cmd::OpenRepoDetail { .. } => {
+            // Handled in update(), should not reach spawn_cmd
+        }
+        Cmd::CycleRepoSort => {
             // Handled in update(), should not reach spawn_cmd
         }
     }

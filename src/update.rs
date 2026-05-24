@@ -4,7 +4,6 @@ use std::sync::Arc;
 use crate::api::client::GitHubClient;
 use crate::app::{App, AppState, PanelKind};
 use crate::cmd::Cmd;
-use crate::navigation;
 use crate::panels::login::LoginState;
 
 pub enum Message {
@@ -115,13 +114,13 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
         }
         Message::DetailScrollUp => {
             if let Some(entry) = app.panels.get_mut(&app.active_panel) {
-                crate::panels::panel::scroll_detail_up(&mut entry.detail_pane);
+                entry.panel.as_panel_mut().scroll_detail_up();
             }
             Cmd::None
         }
         Message::DetailScrollDown => {
             if let Some(entry) = app.panels.get_mut(&app.active_panel) {
-                crate::panels::panel::scroll_detail_down(&mut entry.detail_pane);
+                entry.panel.as_panel_mut().scroll_detail_down();
             }
             Cmd::None
         }
@@ -133,20 +132,35 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
                 return Cmd::None;
             }
             let cmd = if let Some(entry) = app.panels.get_mut(&app.active_panel) {
-                entry.panel.as_panel_mut().handle_key(c, &mut entry.selection, &mut entry.detail_pane).unwrap_or(Cmd::None)
+                entry.panel.as_panel_mut().handle_key(c).unwrap_or(Cmd::None)
             } else {
                 Cmd::None
             };
             match cmd {
                 Cmd::OpenRepoDetail { owner, repo } => {
                     app.active_panel = PanelKind::Pulls;
-                    let cmd = navigation::handle_open_repo_detail(&mut app.panels, owner, repo);
+                    for entry in app.panels.values_mut() {
+                        entry.panel.as_panel_mut().set_repo_context(&owner, &repo);
+                    }
+                    let cmd = Cmd::FetchPulls {
+                        owner,
+                        repo,
+                        state: "open".to_string(),
+                    };
                     if let Some(entry) = app.panels.get_mut(&PanelKind::Pulls) {
                         entry.panel.as_panel_mut().set_loading(true);
                     }
                     cmd
                 }
                 Cmd::None => Cmd::None,
+                Cmd::CycleRepoSort => {
+                    if let Some(entry) = app.panels.get_mut(&PanelKind::Repos) {
+                        if let crate::app::PanelState::Repos(ref mut p) = entry.panel {
+                            p.item.cycle_sort(&mut p.data, &mut p.selection.borrow_mut());
+                        }
+                    }
+                    Cmd::None
+                }
                 other => {
                     if let Some(entry) = app.panels.get_mut(&app.active_panel) {
                         entry.panel.as_panel_mut().set_loading(true);
@@ -199,7 +213,7 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
             };
             if let Some(kind) = target {
                 if let Some(entry) = app.panels.get_mut(&kind) {
-                    entry.panel.as_panel_mut().load_data(payload, &mut entry.selection);
+                    entry.panel.as_panel_mut().load_data(payload);
                 }
             }
             Cmd::None

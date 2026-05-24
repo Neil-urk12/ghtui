@@ -6,9 +6,9 @@ pub mod panel;
 pub mod pulls;
 pub mod repos;
 
-pub use actions::ActionsPanel;
-pub use issues::IssuesPanel;
-pub use notifications::NotificationsPanel;
+pub use actions::ActionsPanelItem;
+pub use issues::IssuesPanelItem;
+pub use notifications::NotificationsPanelItem;
 pub use panel::Panel;
-pub use pulls::PullsPanel;
-pub use repos::ReposPanel;
+pub use pulls::PullsPanelItem;
+pub use repos::ReposPanelItem;
