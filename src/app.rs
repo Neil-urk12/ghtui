@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
-use std::cell::RefCell;
 
 use crate::api::client::GitHubClient;
 use crate::config::Config;
@@ -72,9 +71,6 @@ impl PanelState {
     }
 }
 
-pub struct PanelEntry {
-    pub panel: PanelState,
-}
 
 #[derive(Debug, Default)]
 pub struct SearchState {
@@ -91,7 +87,7 @@ pub struct App {
     pub state: AppState,
     pub login: Option<LoginState>,
     pub active_panel: PanelKind,
-    pub panels: HashMap<PanelKind, PanelEntry>,
+    pub panels: HashMap<PanelKind, PanelState>,
     pub config: Config,
     pub theme: Theme,
     pub search: SearchState,
@@ -117,36 +113,26 @@ impl App {
 
         // Apply config defaults
         let mut panels = HashMap::new();
-        panels.insert(PanelKind::Repos, PanelEntry {
-            panel: PanelState::Repos(ListPanel::default()),
-        });
-        panels.insert(PanelKind::Pulls, PanelEntry {
-            panel: PanelState::Pulls(ListPanel {
+        panels.insert(PanelKind::Repos, PanelState::Repos(ListPanel::default()));
+        panels.insert(PanelKind::Pulls, PanelState::Pulls(ListPanel {
                 data: ListPanelData::new(),
-                selection: RefCell::new(SelectionState::table()),
+                selection: SelectionState::table(),
                 detail_pane: DetailPane::new(),
                 item: PullsPanelItem { state_filter: config.defaults.pulls_state.clone() },
-            }),
-        });
-        panels.insert(PanelKind::Issues, PanelEntry {
-            panel: PanelState::Issues(ListPanel {
+            }));
+        panels.insert(PanelKind::Issues, PanelState::Issues(ListPanel {
                 data: ListPanelData::new(),
-                selection: RefCell::new(SelectionState::list()),
+                selection: SelectionState::list(),
                 detail_pane: DetailPane::new(),
                 item: IssuesPanelItem { state_filter: config.defaults.issues_state.clone() },
-            }),
-        });
-        panels.insert(PanelKind::Notifications, PanelEntry {
-            panel: PanelState::Notifications(ListPanel {
+            }));
+        panels.insert(PanelKind::Notifications, PanelState::Notifications(ListPanel {
                 data: ListPanelData::new(),
-                selection: RefCell::new(SelectionState::list()),
+                selection: SelectionState::list(),
                 detail_pane: DetailPane::new(),
                 item: NotificationsPanelItem { show_all: config.defaults.notifications_show_all },
-            }),
-        });
-        panels.insert(PanelKind::Actions, PanelEntry {
-            panel: PanelState::Actions(ListPanel::default()),
-        });
+            }));
+        panels.insert(PanelKind::Actions, PanelState::Actions(ListPanel::default()));
 
         Self {
             state,

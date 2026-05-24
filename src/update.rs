@@ -114,13 +114,13 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
         }
         Message::DetailScrollUp => {
             if let Some(entry) = app.panels.get_mut(&app.active_panel) {
-                entry.panel.as_panel_mut().scroll_detail_up();
+                entry.as_panel_mut().scroll_detail_up();
             }
             Cmd::None
         }
         Message::DetailScrollDown => {
             if let Some(entry) = app.panels.get_mut(&app.active_panel) {
-                entry.panel.as_panel_mut().scroll_detail_down();
+                entry.as_panel_mut().scroll_detail_down();
             }
             Cmd::None
         }
@@ -132,7 +132,7 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
                 return Cmd::None;
             }
             let cmd = if let Some(entry) = app.panels.get_mut(&app.active_panel) {
-                entry.panel.as_panel_mut().handle_key(c).unwrap_or(Cmd::None)
+                entry.as_panel_mut().handle_key(c).unwrap_or(Cmd::None)
             } else {
                 Cmd::None
             };
@@ -140,7 +140,7 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
                 Cmd::OpenRepoDetail { owner, repo } => {
                     app.active_panel = PanelKind::Pulls;
                     for entry in app.panels.values_mut() {
-                        entry.panel.as_panel_mut().set_repo_context(&owner, &repo);
+                        entry.as_panel_mut().set_repo_context(&owner, &repo);
                     }
                     let cmd = Cmd::FetchPulls {
                         owner,
@@ -148,22 +148,22 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
                         state: "open".to_string(),
                     };
                     if let Some(entry) = app.panels.get_mut(&PanelKind::Pulls) {
-                        entry.panel.as_panel_mut().set_loading(true);
+                        entry.as_panel_mut().set_loading(true);
                     }
                     cmd
                 }
                 Cmd::None => Cmd::None,
                 Cmd::CycleRepoSort => {
                     if let Some(entry) = app.panels.get_mut(&PanelKind::Repos) {
-                        if let crate::app::PanelState::Repos(ref mut p) = entry.panel {
-                            p.item.cycle_sort(&mut p.data, &mut p.selection.borrow_mut());
+                        if let crate::app::PanelState::Repos(ref mut p) = entry {
+                            p.item.cycle_sort(&mut p.data, &mut p.selection);
                         }
                     }
                     Cmd::None
                 }
                 other => {
                     if let Some(entry) = app.panels.get_mut(&app.active_panel) {
-                        entry.panel.as_panel_mut().set_loading(true);
+                        entry.as_panel_mut().set_loading(true);
                     }
                     other
                 }
@@ -180,7 +180,7 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
             app.login = None;
             app.state = AppState::Main;
             if let Some(entry) = app.panels.get_mut(&PanelKind::Repos) {
-                entry.panel.as_panel_mut().set_loading(true);
+                entry.as_panel_mut().set_loading(true);
             }
             Cmd::FetchRepos
         }
@@ -213,7 +213,7 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
             };
             if let Some(kind) = target {
                 if let Some(entry) = app.panels.get_mut(&kind) {
-                    entry.panel.as_panel_mut().load_data(payload);
+                    entry.as_panel_mut().load_data(payload);
                 }
             }
             Cmd::None
@@ -245,11 +245,11 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
 
 fn fetch_and_set_loading(app: &mut App) -> Cmd {
     let cmd = app.panels.get(&app.active_panel)
-        .map(|entry| entry.panel.as_panel().fetch_cmd())
+        .map(|entry| entry.as_panel().fetch_cmd())
         .unwrap_or(Cmd::None);
     if !matches!(cmd, Cmd::None) {
         if let Some(entry) = app.panels.get_mut(&app.active_panel) {
-            entry.panel.as_panel_mut().set_loading(true);
+            entry.as_panel_mut().set_loading(true);
         }
     }
     cmd
@@ -382,14 +382,14 @@ mod tests {
 
         // Verify data landed in Repos panel
         if let Some(entry) = app.panels.get(&PanelKind::Repos) {
-            if let crate::app::PanelState::Repos(panel) = &entry.panel {
+            if let crate::app::PanelState::Repos(panel) = entry {
                 assert_eq!(panel.data.items.len(), 1);
                 assert_eq!(panel.data.items[0].name, "test/repo");
             } else {
                 panic!("Expected Repos panel");
             }
         } else {
-            panic!("Expected PanelEntry for Repos");
+            panic!("Expected PanelState for Repos");
         }
     }
 

@@ -7,7 +7,6 @@ use crate::theme::Theme;
 use crate::widgets::detail_pane::DetailPane;
 use crate::widgets::empty_state::EmptyState;
 use crate::widgets::list_view::{LeftContent, ListViewConfig, render_list_view};
-use std::cell::RefCell;
 
 // --- SelectionState ---
 
@@ -282,9 +281,7 @@ mod tests {
     fn list_panel_handle_key_navigation() {
         let mut panel: ListPanel<DummyItem> = ListPanel::default();
         // Populate via set_items which also sets selection len.
-        let mut borrow = panel.selection.borrow_mut();
-        panel.data.set_items(vec!["a".into(), "b".into(), "c".into()], &mut borrow);
-        drop(borrow);
+        panel.data.set_items(vec!["a".into(), "b".into(), "c".into()], &mut panel.selection);
 
         // j should move down.
         let result = Panel::handle_key(&mut panel, 'j');
@@ -320,7 +317,7 @@ pub fn navigate_down(selection: &mut SelectionState, detail_pane: &mut DetailPan
 pub trait Panel: std::fmt::Debug {
     fn handle_key(&mut self, key: char) -> Option<Cmd>;
     #[allow(clippy::too_many_arguments)]
-    fn render(&self, frame: &mut Frame, area: Rect, focused: bool, theme: &Theme, tick: u64);
+    fn render(&mut self, frame: &mut Frame, area: Rect, focused: bool, theme: &Theme, tick: u64);
     fn fetch_cmd(&self) -> Cmd { Cmd::None }
     fn set_loading(&mut self, _loading: bool) {}
     fn set_repo_context(&mut self, _owner: &str, _repo: &str) {}
@@ -396,13 +393,9 @@ pub trait PanelItem: std::fmt::Debug + Default {
 /// Generic list panel that owns selection + detail pane internally.
 /// Wraps any `PanelItem` implementation and delegates the old `Panel` trait
 /// to the inner item's methods plus boilerplate navigation.
-///
-/// `selection` is `RefCell`-wrapped so that `Panel::render(&self, ...)` can
-/// hand a `&mut SelectionState` to `render_list_view`.  This is a Phase 1
-/// compromise; Phase 2 will change `Panel::render` to `&mut self`.
 pub struct ListPanel<T: PanelItem> {
     pub data: ListPanelData<T::Item>,
-    pub selection: RefCell<SelectionState>,
+    pub selection: SelectionState,
     pub detail_pane: DetailPane,
     pub item: T,
 }
@@ -420,7 +413,7 @@ impl<T: PanelItem> std::fmt::Debug for ListPanel<T> {
 impl<T: PanelItem> Default for ListPanel<T> {
     fn default() -> Self {
         let item = T::default();
-        let selection = RefCell::new(item.initial_selection());
+        let selection = item.initial_selection();
         Self {
             data: ListPanelData::default(),
             selection,
@@ -441,22 +434,21 @@ impl<T: PanelItem + 'static> Panel for ListPanel<T> {
 
     fn load_data(&mut self, payload: ApiPayload) {
         if let Some(items) = T::extract_items(payload) {
-            self.data.load_items(items, &mut self.selection.borrow_mut());
+            self.data.load_items(items, &mut self.selection);
             self.item.on_loaded(&mut self.data);
         }
     }
 
     fn handle_key(&mut self, key: char) -> Option<Cmd> {
         // Try the PanelItem's custom key handler first.
-        let selected = self.data.selected(&self.selection.borrow());
+        let selected = self.data.selected(&self.selection);
         if let Some(cmd) = self.item.handle_key(key, selected, &self.data) {
             return Some(cmd);
         }
         // Fall through to default j/k navigation.
-        let mut sel = self.selection.borrow_mut();
         match key {
-            'j' => { navigate_down(&mut sel, &mut self.detail_pane); None }
-            'k' => { navigate_up(&mut sel, &mut self.detail_pane); None }
+            'j' => { navigate_down(&mut self.selection, &mut self.detail_pane); None }
+            'k' => { navigate_up(&mut self.selection, &mut self.detail_pane); None }
             _ => None,
         }
     }
@@ -465,16 +457,13 @@ impl<T: PanelItem + 'static> Panel for ListPanel<T> {
         self.item.fetch_cmd(&self.data)
     }
 
-    fn render(&self, frame: &mut Frame, area: Rect, focused: bool, theme: &Theme, tick: u64) {
+    fn render(&mut self, frame: &mut Frame, area: Rect, focused: bool, theme: &Theme, tick: u64) {
         let left = self.item.left_content(&self.data, theme);
         let (sr_left, sr_right) = self.item.split_ratio();
 
         let mut detail_lines: Vec<Line<'static>> = Vec::new();
-        {
-            let sel = self.selection.borrow();
-            if let Some(item) = self.data.selected(&sel) {
-                detail_lines = self.item.detail_lines(item, theme);
-            }
+        if let Some(item) = self.data.selected(&self.selection) {
+            detail_lines = self.item.detail_lines(item, theme);
         }
 
         let config = ListViewConfig {
@@ -490,7 +479,7 @@ impl<T: PanelItem + 'static> Panel for ListPanel<T> {
             detail_empty_state: self.item.detail_empty_state(),
         };
 
-        render_list_view(frame, area, config, left, &mut self.selection.borrow_mut(), &self.detail_pane, detail_lines, theme, tick);
+        render_list_view(frame, area, config, left, &mut self.selection, &self.detail_pane, detail_lines, theme, tick);
     }
 
     fn scroll_detail_up(&mut self) {
