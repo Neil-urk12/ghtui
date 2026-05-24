@@ -120,178 +120,6 @@ impl<T> ListPanelData<T> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn set_items_populates_and_resets_selection() {
-        let mut data = ListPanelData::<String>::new();
-        let mut selection = SelectionState::list();
-
-        data.set_items(vec!["a".into(), "b".into(), "c".into()], &mut selection);
-
-        assert_eq!(data.items.len(), 3);
-        assert_eq!(data.filtered_indices, vec![0, 1, 2]);
-        assert_eq!(selection.selected(), Some(0));
-        assert_eq!(selection.len(), 3);
-    }
-
-    #[test]
-    fn set_items_empty_clears_selection() {
-        let mut data = ListPanelData::<String>::new();
-        let mut selection = SelectionState::list();
-
-        data.set_items(vec!["a".into()], &mut selection);
-        assert_eq!(selection.selected(), Some(0));
-
-        data.set_items(vec![], &mut selection);
-        assert_eq!(selection.selected(), None);
-        assert_eq!(selection.len(), 0);
-    }
-
-    #[test]
-    fn selected_returns_correct_item() {
-        let mut data = ListPanelData::<String>::new();
-        let mut selection = SelectionState::list();
-
-        data.set_items(vec!["first".into(), "second".into(), "third".into()], &mut selection);
-
-        assert_eq!(data.selected(&selection), Some(&"first".to_string()));
-
-        selection.select(Some(2));
-        assert_eq!(data.selected(&selection), Some(&"third".to_string()));
-    }
-
-    #[test]
-    fn selected_returns_none_out_of_bounds() {
-        let mut data = ListPanelData::<String>::new();
-        let mut selection = SelectionState::list();
-
-        data.set_items(vec![], &mut selection);
-        assert_eq!(data.selected(&selection), None);
-    }
-
-    #[test]
-    fn selected_through_filtered_indices() {
-        let mut data = ListPanelData::<String>::new();
-        let mut selection = SelectionState::list();
-
-        data.set_items(vec!["a".into(), "b".into(), "c".into()], &mut selection);
-        // Manually set filtered_indices to only show items 0 and 2
-        data.filtered_indices = vec![0, 2];
-        selection.set_len(2);
-        selection.select(Some(1));
-
-        // Should return "c" (index 2 in items)
-        assert_eq!(data.selected(&selection), Some(&"c".to_string()));
-    }
-
-    #[test]
-    fn load_items_sets_loading_false() {
-        let mut data = ListPanelData::<String>::new();
-        let mut selection = SelectionState::list();
-        data.loading = true;
-
-        data.load_items(vec!["a".into()], &mut selection);
-
-        assert!(!data.loading);
-        assert_eq!(data.items.len(), 1);
-    }
-
-    #[test]
-    fn set_repo_stores_context() {
-        let mut data = ListPanelData::<String>::new();
-        assert!(data.owner.is_none());
-        assert!(data.repo.is_none());
-
-        data.set_repo("octocat".to_string(), "hello-world".to_string());
-        assert_eq!(data.owner.as_deref(), Some("octocat"));
-        assert_eq!(data.repo.as_deref(), Some("hello-world"));
-    }
-
-    #[derive(Debug, Default)]
-    struct DummyItem;
-
-    impl PanelItem for DummyItem {
-        type Item = String;
-
-        fn left_content<'a>(&'a self, _data: &'a ListPanelData<Self::Item>, _theme: &'a Theme) -> LeftContent<'a> {
-            LeftContent::List { items: vec![] }
-        }
-
-        fn detail_lines(&self, _item: &Self::Item, _theme: &Theme) -> Vec<Line<'static>> {
-            vec![]
-        }
-
-        fn handle_key(&mut self, _key: char, _selected: Option<&Self::Item>, _data: &ListPanelData<Self::Item>) -> Option<Cmd> {
-            None
-        }
-
-        fn fetch_cmd(&self, _data: &ListPanelData<Self::Item>) -> Cmd {
-            Cmd::None
-        }
-
-        fn block_title(&self, _data: &ListPanelData<Self::Item>) -> String {
-            "Dummy".into()
-        }
-
-        fn empty_state(&self, _data: &ListPanelData<Self::Item>) -> EmptyState {
-            EmptyState::new("Nothing")
-        }
-
-        fn extract_items(_payload: ApiPayload) -> Option<Vec<Self::Item>> {
-            None
-        }
-    }
-
-    #[test]
-    fn list_panel_default_construction() {
-        let panel: ListPanel<DummyItem> = ListPanel::default();
-        assert!(panel.data.items.is_empty());
-        assert!(!panel.data.loading);
-        assert!(panel.data.owner.is_none());
-        assert!(panel.data.repo.is_none());
-    }
-
-    #[test]
-    fn list_panel_set_loading() {
-        let mut panel: ListPanel<DummyItem> = ListPanel::default();
-        Panel::set_loading(&mut panel, true);
-        assert!(panel.data.loading);
-        Panel::set_loading(&mut panel, false);
-        assert!(!panel.data.loading);
-    }
-
-    #[test]
-    fn list_panel_set_repo_context() {
-        let mut panel: ListPanel<DummyItem> = ListPanel::default();
-        Panel::set_repo_context(&mut panel, "owner", "repo");
-        assert_eq!(panel.data.owner.as_deref(), Some("owner"));
-        assert_eq!(panel.data.repo.as_deref(), Some("repo"));
-    }
-
-    #[test]
-    fn list_panel_fetch_cmd_delegates() {
-        let panel: ListPanel<DummyItem> = ListPanel::default();
-        assert!(matches!(Panel::fetch_cmd(&panel), Cmd::None));
-    }
-
-    #[test]
-    fn list_panel_handle_key_navigation() {
-        let mut panel: ListPanel<DummyItem> = ListPanel::default();
-        // Populate via set_items which also sets selection len.
-        panel.data.set_items(vec!["a".into(), "b".into(), "c".into()], &mut panel.selection);
-
-        // j should move down.
-        let result = Panel::handle_key(&mut panel, 'j');
-        assert!(result.is_none());
-
-        // k should move up.
-        let result = Panel::handle_key(&mut panel, 'k');
-        assert!(result.is_none());
-    }
-}
 
 // --- Free navigation functions ---
 
@@ -488,5 +316,177 @@ impl<T: PanelItem + 'static> Panel for ListPanel<T> {
 
     fn scroll_detail_down(&mut self) {
         self.detail_pane.scroll_down();
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn set_items_populates_and_resets_selection() {
+        let mut data = ListPanelData::<String>::new();
+        let mut selection = SelectionState::list();
+
+        data.set_items(vec!["a".into(), "b".into(), "c".into()], &mut selection);
+
+        assert_eq!(data.items.len(), 3);
+        assert_eq!(data.filtered_indices, vec![0, 1, 2]);
+        assert_eq!(selection.selected(), Some(0));
+        assert_eq!(selection.len(), 3);
+    }
+
+    #[test]
+    fn set_items_empty_clears_selection() {
+        let mut data = ListPanelData::<String>::new();
+        let mut selection = SelectionState::list();
+
+        data.set_items(vec!["a".into()], &mut selection);
+        assert_eq!(selection.selected(), Some(0));
+
+        data.set_items(vec![], &mut selection);
+        assert_eq!(selection.selected(), None);
+        assert_eq!(selection.len(), 0);
+    }
+
+    #[test]
+    fn selected_returns_correct_item() {
+        let mut data = ListPanelData::<String>::new();
+        let mut selection = SelectionState::list();
+
+        data.set_items(vec!["first".into(), "second".into(), "third".into()], &mut selection);
+
+        assert_eq!(data.selected(&selection), Some(&"first".to_string()));
+
+        selection.select(Some(2));
+        assert_eq!(data.selected(&selection), Some(&"third".to_string()));
+    }
+
+    #[test]
+    fn selected_returns_none_out_of_bounds() {
+        let mut data = ListPanelData::<String>::new();
+        let mut selection = SelectionState::list();
+
+        data.set_items(vec![], &mut selection);
+        assert_eq!(data.selected(&selection), None);
+    }
+
+    #[test]
+    fn selected_through_filtered_indices() {
+        let mut data = ListPanelData::<String>::new();
+        let mut selection = SelectionState::list();
+
+        data.set_items(vec!["a".into(), "b".into(), "c".into()], &mut selection);
+        // Manually set filtered_indices to only show items 0 and 2
+        data.filtered_indices = vec![0, 2];
+        selection.set_len(2);
+        selection.select(Some(1));
+
+        // Should return "c" (index 2 in items)
+        assert_eq!(data.selected(&selection), Some(&"c".to_string()));
+    }
+
+    #[test]
+    fn load_items_sets_loading_false() {
+        let mut data = ListPanelData::<String>::new();
+        let mut selection = SelectionState::list();
+        data.loading = true;
+
+        data.load_items(vec!["a".into()], &mut selection);
+
+        assert!(!data.loading);
+        assert_eq!(data.items.len(), 1);
+    }
+
+    #[test]
+    fn set_repo_stores_context() {
+        let mut data = ListPanelData::<String>::new();
+        assert!(data.owner.is_none());
+        assert!(data.repo.is_none());
+
+        data.set_repo("octocat".to_string(), "hello-world".to_string());
+        assert_eq!(data.owner.as_deref(), Some("octocat"));
+        assert_eq!(data.repo.as_deref(), Some("hello-world"));
+    }
+
+    #[derive(Debug, Default)]
+    struct DummyItem;
+
+    impl PanelItem for DummyItem {
+        type Item = String;
+
+        fn left_content<'a>(&'a self, _data: &'a ListPanelData<Self::Item>, _theme: &'a Theme) -> LeftContent<'a> {
+            LeftContent::List { items: vec![] }
+        }
+
+        fn detail_lines(&self, _item: &Self::Item, _theme: &Theme) -> Vec<Line<'static>> {
+            vec![]
+        }
+
+        fn handle_key(&mut self, _key: char, _selected: Option<&Self::Item>, _data: &ListPanelData<Self::Item>) -> Option<Cmd> {
+            None
+        }
+
+        fn fetch_cmd(&self, _data: &ListPanelData<Self::Item>) -> Cmd {
+            Cmd::None
+        }
+
+        fn block_title(&self, _data: &ListPanelData<Self::Item>) -> String {
+            "Dummy".into()
+        }
+
+        fn empty_state(&self, _data: &ListPanelData<Self::Item>) -> EmptyState {
+            EmptyState::new("Nothing")
+        }
+
+        fn extract_items(_payload: ApiPayload) -> Option<Vec<Self::Item>> {
+            None
+        }
+    }
+
+    #[test]
+    fn list_panel_default_construction() {
+        let panel: ListPanel<DummyItem> = ListPanel::default();
+        assert!(panel.data.items.is_empty());
+        assert!(!panel.data.loading);
+        assert!(panel.data.owner.is_none());
+        assert!(panel.data.repo.is_none());
+    }
+
+    #[test]
+    fn list_panel_set_loading() {
+        let mut panel: ListPanel<DummyItem> = ListPanel::default();
+        Panel::set_loading(&mut panel, true);
+        assert!(panel.data.loading);
+        Panel::set_loading(&mut panel, false);
+        assert!(!panel.data.loading);
+    }
+
+    #[test]
+    fn list_panel_set_repo_context() {
+        let mut panel: ListPanel<DummyItem> = ListPanel::default();
+        Panel::set_repo_context(&mut panel, "owner", "repo");
+        assert_eq!(panel.data.owner.as_deref(), Some("owner"));
+        assert_eq!(panel.data.repo.as_deref(), Some("repo"));
+    }
+
+    #[test]
+    fn list_panel_fetch_cmd_delegates() {
+        let panel: ListPanel<DummyItem> = ListPanel::default();
+        assert!(matches!(Panel::fetch_cmd(&panel), Cmd::None));
+    }
+
+    #[test]
+    fn list_panel_handle_key_navigation() {
+        let mut panel: ListPanel<DummyItem> = ListPanel::default();
+        // Populate via set_items which also sets selection len.
+        panel.data.set_items(vec!["a".into(), "b".into(), "c".into()], &mut panel.selection);
+
+        // j should move down.
+        let result = Panel::handle_key(&mut panel, 'j');
+        assert!(result.is_none());
+
+        // k should move up.
+        let result = Panel::handle_key(&mut panel, 'k');
+        assert!(result.is_none());
     }
 }

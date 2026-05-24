@@ -241,3 +241,226 @@ impl PanelItem for PullsPanelItem {
         SelectionState::table()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_pr() -> PullRequest {
+        PullRequest {
+            number: 42,
+            title: "Fix login bug".into(),
+            author: "octocat".into(),
+            state: "open".into(),
+            labels: vec!["bug".into(), "security".into()],
+            created_at: "2024-01-15T10:30:00Z".into(),
+            updated_at: "2024-01-16T14:00:00Z".into(),
+            body: Some("This fixes the login redirect issue.".into()),
+        }
+    }
+
+    fn make_data(pr: PullRequest) -> ListPanelData<PullRequest> {
+        let mut data = ListPanelData::<PullRequest>::new();
+        data.items = vec![pr];
+        data.filtered_indices = vec![0];
+        data.owner = Some("octocat".into());
+        data.repo = Some("hello-world".into());
+        data
+    }
+
+    // --- left_content ---
+
+    #[test]
+    fn left_content_returns_table_with_pr_info() {
+        let pr = test_pr();
+        let data = make_data(pr);
+        let item = PullsPanelItem::default();
+        let theme = Theme::default();
+
+        let content = item.left_content(&data, &theme);
+
+        match content {
+            LeftContent::Table { headers, rows, widths } => {
+                assert_eq!(headers, vec!["#", "Title", "Author", "Status", "Updated"]);
+                assert_eq!(rows.len(), 1);
+                assert_eq!(widths.len(), 5);
+            }
+            _ => panic!("expected Table variant"),
+        }
+    }
+
+    // --- detail_lines ---
+
+    #[test]
+    fn detail_lines_includes_title_author_labels_body() {
+        let pr = test_pr();
+        let item = PullsPanelItem::default();
+        let theme = Theme::default();
+
+        let lines = item.detail_lines(&pr, &theme);
+
+        let text: String = lines.iter().map(|l| l.to_string()).collect::<Vec<_>>().join("\n");
+        assert!(text.contains("#42"), "should contain PR number");
+        assert!(text.contains("Fix login bug"), "should contain title");
+        assert!(text.contains("octocat"), "should contain author");
+        assert!(text.contains("bug"), "should contain label");
+        assert!(text.contains("security"), "should contain label");
+        assert!(text.contains("login redirect"), "should contain body");
+    }
+
+    #[test]
+    fn detail_lines_no_body_shows_placeholder() {
+        let pr = PullRequest {
+            number: 1,
+            title: "Empty PR".into(),
+            author: "dev".into(),
+            state: "open".into(),
+            labels: vec![],
+            created_at: "2024-01-15T10:30:00Z".into(),
+            updated_at: "2024-01-15T10:30:00Z".into(),
+            body: None,
+        };
+        let item = PullsPanelItem::default();
+        let theme = Theme::default();
+
+        let lines = item.detail_lines(&pr, &theme);
+
+        let has_placeholder = lines.iter().any(|l| l.to_string().contains("(no description)"));
+        assert!(has_placeholder);
+    }
+
+    // --- handle_key ---
+
+    #[test]
+    fn handle_key_a_returns_approve_cmd() {
+        let pr = test_pr();
+        let data = make_data(pr);
+        let mut item = PullsPanelItem::default();
+
+        let selected = data.items.first();
+        let cmd = item.handle_key('a', selected, &data);
+
+        assert!(cmd.is_some());
+        assert!(matches!(
+            cmd.unwrap(),
+            Cmd::ApprovePr { owner, repo, pr_number }
+                if owner == "octocat" && repo == "hello-world" && pr_number == 42
+        ));
+    }
+
+    #[test]
+    fn handle_key_m_returns_merge_cmd() {
+        let pr = test_pr();
+        let data = make_data(pr);
+        let mut item = PullsPanelItem::default();
+
+        let selected = data.items.first();
+        let cmd = item.handle_key('m', selected, &data);
+
+        assert!(cmd.is_some());
+        assert!(matches!(
+            cmd.unwrap(),
+            Cmd::MergePr { owner, repo, pr_number }
+                if owner == "octocat" && repo == "hello-world" && pr_number == 42
+        ));
+    }
+
+    #[test]
+    fn handle_key_a_no_owner_returns_none() {
+        let pr = test_pr();
+        let mut data = make_data(pr);
+        data.owner = None;
+        data.repo = None;
+        let mut item = PullsPanelItem::default();
+
+        let selected = data.items.first();
+        let cmd = item.handle_key('a', selected, &data);
+
+        assert!(cmd.is_none());
+    }
+
+    #[test]
+    fn handle_key_no_selection_returns_none() {
+        let pr = test_pr();
+        let data = make_data(pr);
+        let mut item = PullsPanelItem::default();
+
+        let cmd = item.handle_key('a', None, &data);
+
+        assert!(cmd.is_none());
+    }
+
+    #[test]
+    fn handle_key_filter_1_sets_open_state() {
+        let data = ListPanelData::<PullRequest>::new();
+        let mut item = PullsPanelItem::default();
+
+        let cmd = item.handle_key('1', None, &data);
+
+        // Without owner/repo, returns None but sets the filter
+        assert_eq!(item.state_filter, "open");
+        assert!(cmd.is_none());
+    }
+
+    #[test]
+    fn handle_key_filter_1_with_repo_returns_fetch_cmd() {
+        let pr = test_pr();
+        let data = make_data(pr);
+        let mut item = PullsPanelItem::default();
+
+        let cmd = item.handle_key('1', None, &data);
+
+        assert_eq!(item.state_filter, "open");
+        assert!(matches!(
+            cmd.unwrap(),
+            Cmd::FetchPulls { owner, repo, state }
+                if owner == "octocat" && repo == "hello-world" && state == "open"
+        ));
+    }
+
+    // --- extract_items ---
+
+    #[test]
+    fn extract_items_pulls_returns_some() {
+        let pr = test_pr();
+        let payload = ApiPayload::Pulls(vec![pr]);
+
+        let result = PullsPanelItem::extract_items(payload);
+
+        assert!(result.is_some());
+        let pulls = result.unwrap();
+        assert_eq!(pulls.len(), 1);
+        assert_eq!(pulls[0].number, 42);
+    }
+
+    #[test]
+    fn extract_items_issues_returns_none() {
+        let payload = ApiPayload::Issues(vec![]);
+
+        let result = PullsPanelItem::extract_items(payload);
+
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn extract_items_empty_pulls_returns_some_empty_vec() {
+        let payload = ApiPayload::Pulls(vec![]);
+
+        let result = PullsPanelItem::extract_items(payload);
+
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().len(), 0);
+    }
+}
+
+    #[test]
+    fn left_content_empty_items() {
+        let data = ListPanelData::<PullRequest>::new();
+        let item: PullsPanelItem = Default::default();
+        let theme = Theme::default();
+        let content = item.left_content(&data, &theme);
+        match content {
+            LeftContent::Table { rows, .. } => assert!(rows.is_empty()),
+            LeftContent::List { items, .. } => assert!(items.is_empty()),
+        }
+    }

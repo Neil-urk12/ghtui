@@ -251,3 +251,292 @@ impl PanelItem for ActionsPanelItem {
             .hint("j/k to navigate, Enter to expand")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_workflow_run() -> WorkflowRun {
+        WorkflowRun {
+            id: 1234567890,
+            name: "CI".into(),
+            status: "completed".into(),
+            conclusion: Some("success".into()),
+            branch: "main".into(),
+            event: "push".into(),
+            created_at: "2024-01-15T10:30:00Z".into(),
+            run_number: 42,
+        }
+    }
+
+    fn make_data() -> ListPanelData<WorkflowRun> {
+        let mut data = ListPanelData::<WorkflowRun>::new();
+        data.items = vec![test_workflow_run()];
+        data.filtered_indices = vec![0];
+        data.owner = Some("octocat".into());
+        data.repo = Some("hello-world".into());
+        data
+    }
+
+    fn make_data_no_repo() -> ListPanelData<WorkflowRun> {
+        let mut data = ListPanelData::<WorkflowRun>::new();
+        data.items = vec![test_workflow_run()];
+        data.filtered_indices = vec![0];
+        data
+    }
+
+    // --- left_content ---
+
+    #[test]
+    fn left_content_builds_correct_list_items() {
+        let data = make_data();
+        let item = ActionsPanelItem::default();
+        let theme = Theme::default();
+
+        let content = item.left_content(&data, &theme);
+
+        match content {
+            LeftContent::List { items } => {
+                assert_eq!(items.len(), 1);
+                // First list item should contain status icon + name + branch
+                let debug = format!("{:?}", &items[0]);
+                assert!(debug.contains("CI"));
+                assert!(debug.contains("#42"));
+                assert!(debug.contains("main"));
+            }
+            _ => panic!("expected List variant"),
+        }
+    }
+
+    #[test]
+    fn left_content_with_expanded_run_shows_expand_marker() {
+        let data = make_data();
+        let item = ActionsPanelItem { expanded_run: Some(0) };
+        let theme = Theme::default();
+
+        let content = item.left_content(&data, &theme);
+
+        match content {
+            LeftContent::List { items } => {
+                let debug = format!("{:?}", &items[0]);
+                assert!(debug.contains("▾"));
+            }
+            _ => panic!("expected List variant"),
+        }
+    }
+
+    #[test]
+    fn left_content_without_expanded_run_shows_collapsed_marker() {
+        let data = make_data();
+        let item = ActionsPanelItem::default();
+        let theme = Theme::default();
+
+        let content = item.left_content(&data, &theme);
+
+        match content {
+            LeftContent::List { items } => {
+                let debug = format!("{:?}", &items[0]);
+                assert!(debug.contains("▸"));
+            }
+            _ => panic!("expected List variant"),
+        }
+    }
+
+    // --- detail_lines ---
+
+    #[test]
+    fn detail_lines_includes_expanded_run_details() {
+        let run = test_workflow_run();
+        let item = ActionsPanelItem::default();
+        let theme = Theme::default();
+
+        let lines = item.detail_lines(&run, &theme);
+
+        let text: String = lines.iter().map(|l| l.to_string()).collect::<Vec<_>>().join("\n");
+        assert!(text.contains("CI"), "should contain run name");
+        assert!(text.contains("Status:"), "should contain status label");
+        assert!(text.contains("success"), "should contain conclusion");
+        assert!(text.contains("Branch:"), "should contain branch label");
+        assert!(text.contains("main"), "should contain branch");
+        assert!(text.contains("Event:"), "should contain event label");
+        assert!(text.contains("push"), "should contain event");
+        assert!(text.contains("Run:"), "should contain run label");
+        assert!(text.contains("#42"), "should contain run number");
+        assert!(text.contains("Started:"), "should contain started label");
+    }
+
+    // --- handle_key ---
+
+    #[test]
+    fn handle_key_r_returns_rerun_workflow() {
+        let data = make_data();
+        let mut item = ActionsPanelItem::default();
+
+        let selected = data.items.first();
+        let cmd = item.handle_key('r', selected, &data);
+
+        assert!(cmd.is_some());
+        assert!(matches!(
+            cmd.unwrap(),
+            Cmd::RerunWorkflow { owner, repo, run_id }
+                if owner == "octocat" && repo == "hello-world" && run_id == 1234567890
+        ));
+    }
+
+    #[test]
+    fn handle_key_c_returns_cancel_workflow() {
+        let data = make_data();
+        let mut item = ActionsPanelItem::default();
+
+        let selected = data.items.first();
+        let cmd = item.handle_key('c', selected, &data);
+
+        assert!(cmd.is_some());
+        assert!(matches!(
+            cmd.unwrap(),
+            Cmd::CancelWorkflow { owner, repo, run_id }
+                if owner == "octocat" && repo == "hello-world" && run_id == 1234567890
+        ));
+    }
+
+    #[test]
+    fn handle_key_r_no_owner_returns_none() {
+        let data = make_data_no_repo();
+        let mut item = ActionsPanelItem::default();
+
+        let selected = data.items.first();
+        let cmd = item.handle_key('r', selected, &data);
+
+        assert!(cmd.is_none());
+    }
+
+    #[test]
+    fn handle_key_c_no_owner_returns_none() {
+        let data = make_data_no_repo();
+        let mut item = ActionsPanelItem::default();
+
+        let selected = data.items.first();
+        let cmd = item.handle_key('c', selected, &data);
+
+        assert!(cmd.is_none());
+    }
+
+    #[test]
+    fn handle_key_no_selection_returns_none() {
+        let data = make_data();
+        let mut item = ActionsPanelItem::default();
+
+        let cmd = item.handle_key('r', None, &data);
+        assert!(cmd.is_none());
+
+        let cmd = item.handle_key('c', None, &data);
+        assert!(cmd.is_none());
+    }
+
+    #[test]
+    fn handle_key_enter_toggles_expand() {
+        let data = make_data();
+        let mut item = ActionsPanelItem::default();
+
+        // Initially not expanded
+        assert!(item.expanded_run.is_none());
+
+        // Press enter on item 0 -> expand
+        let selected = data.items.first();
+        let cmd = item.handle_key('\n', selected, &data);
+        assert!(cmd.is_none());
+        assert_eq!(item.expanded_run, Some(0));
+
+        // Press enter again -> collapse
+        let cmd = item.handle_key('\n', selected, &data);
+        assert!(cmd.is_none());
+        assert_eq!(item.expanded_run, None);
+    }
+
+    // --- on_loaded ---
+
+    #[test]
+    fn on_loaded_resets_expanded_run() {
+        let mut item = ActionsPanelItem { expanded_run: Some(5) };
+        let mut data = ListPanelData::<WorkflowRun>::new();
+
+        item.on_loaded(&mut data);
+
+        assert_eq!(item.expanded_run, None);
+    }
+
+    // --- extract_items ---
+
+    #[test]
+    fn extract_items_actions_returns_some() {
+        let run = test_workflow_run();
+        let payload = ApiPayload::Actions(vec![run]);
+
+        let result = ActionsPanelItem::extract_items(payload);
+
+        assert!(result.is_some());
+        let runs = result.unwrap();
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].id, 1234567890);
+    }
+
+    #[test]
+    fn extract_items_repos_returns_none() {
+        let payload = ApiPayload::Repos(vec![]);
+
+        let result = ActionsPanelItem::extract_items(payload);
+
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn extract_items_empty_actions_returns_some_empty() {
+        let payload = ApiPayload::Actions(vec![]);
+
+        let result = ActionsPanelItem::extract_items(payload);
+
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().len(), 0);
+    }
+
+    // --- toggle_expand ---
+
+    #[test]
+    fn toggle_expand_sets_and_clears() {
+        let mut item = ActionsPanelItem::default();
+        assert!(item.expanded_run.is_none());
+
+        // Toggle on
+        item.toggle_expand(Some(0));
+        assert_eq!(item.expanded_run, Some(0));
+
+        // Toggle off (same index)
+        item.toggle_expand(Some(0));
+        assert_eq!(item.expanded_run, None);
+
+        // Toggle on different index switches
+        item.toggle_expand(Some(0));
+        assert_eq!(item.expanded_run, Some(0));
+        item.toggle_expand(Some(1));
+        assert_eq!(item.expanded_run, Some(1));
+    }
+
+    #[test]
+    fn toggle_expand_none_ignored() {
+        let mut item = ActionsPanelItem { expanded_run: Some(0) };
+        item.toggle_expand(None);
+        assert_eq!(item.expanded_run, Some(0));
+    }
+}
+
+    #[test]
+    fn left_content_empty_items() {
+        let data = ListPanelData::<WorkflowRun>::new();
+        let item: ActionsPanelItem = Default::default();
+        let theme = Theme::default();
+        let content = item.left_content(&data, &theme);
+        match content {
+            LeftContent::Table { rows, .. } => assert!(rows.is_empty()),
+            LeftContent::List { items, .. } => assert!(items.is_empty()),
+        }
+    }

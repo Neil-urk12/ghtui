@@ -183,3 +183,182 @@ impl PanelItem for ReposPanelItem {
         self.sort.sort_indices(&data.items, &mut data.filtered_indices);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cmd::Cmd;
+    use crate::domain::Repo;
+    use crate::event::ApiPayload;
+    use crate::theme::Theme;
+    use crate::widgets::list_view::LeftContent;
+    use crate::panels::panel::ListPanelData;
+
+    fn test_repo() -> Repo {
+        Repo {
+            name: "octocat/hello-world".to_string(),
+            description: Some("A test repository".to_string()),
+            language: Some("Rust".to_string()),
+            stars: 42,
+            forks: 10,
+            updated_at: "2024-01-15T10:30:00Z".to_string(),
+            visibility: "public".to_string(),
+            default_branch: "main".to_string(),
+        }
+    }
+
+    #[test]
+    fn left_content_builds_table_structure() {
+        let item = ReposPanelItem::default();
+        let theme = Theme::default();
+        let mut data = ListPanelData::<Repo>::new();
+        data.items = vec![
+            test_repo(),
+            Repo {
+                name: "other/lib".to_string(),
+                stars: 1500,
+                updated_at: "2024-06-01T00:00:00Z".to_string(),
+                ..Default::default()
+            },
+        ];
+        data.filtered_indices = vec![0, 1];
+
+        let content = item.left_content(&data, &theme);
+
+        match content {
+            LeftContent::Table { headers, rows, widths } => {
+                assert_eq!(headers, vec!["Name", "Stars", "Updated"]);
+                assert_eq!(rows.len(), 2);
+                assert_eq!(widths.len(), 3);
+            }
+            _ => panic!("Expected LeftContent::Table"),
+        }
+    }
+
+    #[test]
+    fn detail_lines_includes_all_fields() {
+        let item = ReposPanelItem::default();
+        let repo = test_repo();
+        let theme = Theme::default();
+
+        let lines = item.detail_lines(&repo, &theme);
+
+        // Collect all text content from all spans in all lines
+        let all_text: String = lines
+            .iter()
+            .flat_map(|line| line.spans.iter().map(|span| span.content.as_ref()))
+            .collect::<Vec<&str>>()
+            .join(" ");
+
+        assert!(all_text.contains("octocat/hello-world"), "should contain name");
+        assert!(all_text.contains("A test repository"), "should contain description");
+        assert!(all_text.contains("Rust"), "should contain language");
+        assert!(all_text.contains("42"), "should contain stars");
+        assert!(all_text.contains("Forks: 10"), "should contain forks");
+        assert!(all_text.contains("main"), "should contain default branch");
+        assert!(all_text.contains("public"), "should contain visibility");
+    }
+
+    #[test]
+    fn handle_key_s_returns_cycle_repo_sort() {
+        let mut item = ReposPanelItem::default();
+        let data = ListPanelData::<Repo>::new();
+
+        let cmd = item.handle_key('s', None, &data);
+
+        assert!(matches!(cmd, Some(Cmd::CycleRepoSort)));
+    }
+
+    #[test]
+    fn handle_key_enter_with_owner_repo_returns_open_repo_detail() {
+        let mut item = ReposPanelItem::default();
+        let data = ListPanelData::<Repo>::new();
+        let repo = test_repo();
+
+        let cmd = item.handle_key('\n', Some(&repo), &data);
+
+        match cmd {
+            Some(Cmd::OpenRepoDetail { owner, repo: repo_name }) => {
+                assert_eq!(owner, "octocat");
+                assert_eq!(repo_name, "hello-world");
+            }
+            other => panic!("Expected OpenRepoDetail, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn handle_key_enter_with_malformed_name_returns_none() {
+        let mut item = ReposPanelItem::default();
+        let data = ListPanelData::<Repo>::new();
+        let repo = Repo {
+            name: "no-slash-here".to_string(),
+            ..Default::default()
+        };
+
+        let cmd = item.handle_key('\n', Some(&repo), &data);
+
+        assert!(cmd.is_none());
+    }
+
+    #[test]
+    fn on_loaded_sorts_by_stars_descending() {
+        let mut item = ReposPanelItem { sort: RepoSort::Stars };
+
+        let mut data = ListPanelData::<Repo>::new();
+        data.items = vec![
+            Repo { name: "a/repo-a".to_string(), stars: 10, ..Default::default() },
+            Repo { name: "b/repo-b".to_string(), stars: 50, ..Default::default() },
+            Repo { name: "c/repo-c".to_string(), stars: 30, ..Default::default() },
+        ];
+        data.filtered_indices = vec![0, 1, 2];
+
+        item.on_loaded(&mut data);
+
+        // Should be sorted by stars descending: repo-b (50), repo-c (30), repo-a (10)
+        assert_eq!(data.filtered_indices.len(), 3);
+        assert_eq!(data.items[data.filtered_indices[0]].name, "b/repo-b");
+        assert_eq!(data.items[data.filtered_indices[1]].name, "c/repo-c");
+        assert_eq!(data.items[data.filtered_indices[2]].name, "a/repo-a");
+    }
+
+    #[test]
+    fn extract_items_repos_returns_some() {
+        let repos = vec![test_repo()];
+        let payload = ApiPayload::Repos(repos);
+
+        let result = ReposPanelItem::extract_items(payload);
+
+        assert!(result.is_some());
+        let items = result.unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].name, "octocat/hello-world");
+    }
+
+    #[test]
+    fn extract_items_pulls_returns_none() {
+        let payload = ApiPayload::Pulls(vec![]);
+
+        let result = ReposPanelItem::extract_items(payload);
+
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn extract_items_empty_repos_returns_some_empty() {
+        let result = ReposPanelItem::extract_items(ApiPayload::Repos(vec![]));
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().len(), 0);
+    }
+
+    #[test]
+    fn left_content_empty_items() {
+        let data = ListPanelData::<Repo>::new();
+        let item: ReposPanelItem = Default::default();
+        let theme = Theme::default();
+        let content = item.left_content(&data, &theme);
+        match content {
+            LeftContent::Table { rows, .. } => assert!(rows.is_empty()),
+            LeftContent::List { items, .. } => assert!(items.is_empty()),
+        }
+    }
+}

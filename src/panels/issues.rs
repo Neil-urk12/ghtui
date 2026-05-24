@@ -221,3 +221,133 @@ impl PanelItem for IssuesPanelItem {
             .hint("j/k to navigate")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::panels::panel::SelectionState;
+
+    fn test_issue() -> Issue {
+        Issue {
+            number: 42,
+            title: "Fix memory leak in parser".into(),
+            author: "octocat".into(),
+            state: "open".into(),
+            labels: vec!["bug".into(), "high-priority".into()],
+            assignees: vec!["dev1".into(), "dev2".into()],
+            created_at: "2024-01-15T10:30:00Z".into(),
+            updated_at: "2024-01-16T14:20:00Z".into(),
+            body: Some("This is a test issue body\nwith multiple lines.".into()),
+        }
+    }
+
+    #[test]
+    fn left_content_builds_list_items() {
+        let issue = test_issue();
+        let mut data = ListPanelData::<Issue>::new();
+        let mut selection = SelectionState::list();
+        data.set_items(vec![issue], &mut selection);
+        let panel = IssuesPanelItem::default();
+        let theme = Theme::default();
+
+        let content = panel.left_content(&data, &theme);
+        assert!(matches!(content, LeftContent::List { .. }));
+    }
+
+    #[test]
+    fn detail_lines_includes_all_fields() {
+        let issue = test_issue();
+        let panel = IssuesPanelItem::default();
+        let theme = Theme::default();
+
+        let lines = panel.detail_lines(&issue, &theme);
+
+        let text: String = lines.iter().flat_map(|l| l.spans.iter().map(|s| s.content.as_ref())).collect::<Vec<&str>>().join(" ");
+        assert!(text.contains("#42"), "should contain issue number");
+        assert!(text.contains("Fix memory leak"), "should contain title");
+        assert!(text.contains("octocat"), "should contain author");
+        assert!(text.contains("open"), "should contain state");
+        assert!(text.contains("bug"), "should contain bug label");
+        assert!(text.contains("high-priority"), "should contain high-priority label");
+        assert!(text.contains("dev1"), "should contain assignee dev1");
+        assert!(text.contains("dev2"), "should contain assignee dev2");
+    }
+
+    #[test]
+    fn handle_key_1_fetches_open_issues() {
+        let mut panel = IssuesPanelItem::default();
+        let mut data = ListPanelData::<Issue>::new();
+        data.set_repo("owner".into(), "repo".into());
+
+        let cmd = panel.handle_key('1', None, &data);
+        assert!(matches!(cmd, Some(Cmd::FetchIssues { state, .. }) if state.as_str() == "open"));
+        assert_eq!(panel.state_filter, "open");
+    }
+
+    #[test]
+    fn handle_key_2_fetches_closed_issues() {
+        let mut panel = IssuesPanelItem::default();
+        let mut data = ListPanelData::<Issue>::new();
+        data.set_repo("owner".into(), "repo".into());
+
+        let cmd = panel.handle_key('2', None, &data);
+        assert!(matches!(cmd, Some(Cmd::FetchIssues { state, .. }) if state.as_str() == "closed"));
+        assert_eq!(panel.state_filter, "closed");
+    }
+
+    #[test]
+    fn handle_key_3_fetches_all_issues() {
+        let mut panel = IssuesPanelItem::default();
+        let mut data = ListPanelData::<Issue>::new();
+        data.set_repo("owner".into(), "repo".into());
+
+        let cmd = panel.handle_key('3', None, &data);
+        assert!(matches!(cmd, Some(Cmd::FetchIssues { state, .. }) if state.as_str() == "all"));
+        assert_eq!(panel.state_filter, "all");
+    }
+
+    #[test]
+    fn handle_key_filter_returns_none_when_no_repo() {
+        let mut panel = IssuesPanelItem::default();
+        let data = ListPanelData::<Issue>::new(); // owner and repo are None
+
+        assert!(panel.handle_key('1', None, &data).is_none());
+        assert!(panel.handle_key('2', None, &data).is_none());
+        assert!(panel.handle_key('3', None, &data).is_none());
+    }
+
+    #[test]
+    fn extract_items_issues_returns_some() {
+        let issue = test_issue();
+        let payload = ApiPayload::Issues(vec![issue]);
+        let result = IssuesPanelItem::extract_items(payload);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn extract_items_pulls_returns_none() {
+        let payload = ApiPayload::Pulls(vec![]);
+        let result = IssuesPanelItem::extract_items(payload);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn extract_items_empty_issues_returns_some_empty() {
+        let result = IssuesPanelItem::extract_items(ApiPayload::Issues(vec![]));
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().len(), 0);
+    }
+
+    #[test]
+    fn left_content_empty_items() {
+        let data = ListPanelData::<Issue>::new();
+        let item: IssuesPanelItem = Default::default();
+        let theme = Theme::default();
+        let content = item.left_content(&data, &theme);
+        match content {
+            LeftContent::Table { rows, .. } => assert!(rows.is_empty()),
+            LeftContent::List { items, .. } => assert!(items.is_empty()),
+        }
+    }
+}

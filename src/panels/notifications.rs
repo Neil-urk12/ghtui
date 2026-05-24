@@ -154,3 +154,157 @@ impl PanelItem for NotificationsPanelItem {
             .hint("j/k to navigate")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::Notification;
+    use crate::event::ApiPayload;
+    use crate::cmd::Cmd;
+    use crate::theme::Theme;
+    use crate::panels::panel::ListPanelData;
+
+    fn test_notification() -> Notification {
+        Notification {
+            id: "notif-1".into(),
+            repo_name: "owner/repo".into(),
+            subject_title: "Fix login bug".into(),
+            subject_type: "Issue".into(),
+            reason: "mention".into(),
+            unread: true,
+            updated_at: "2024-01-15T10:30:00Z".into(),
+        }
+    }
+
+    #[test]
+    fn left_content_builds_list_items() {
+        let notif = test_notification();
+        let data = ListPanelData {
+            items: vec![notif],
+            filtered_indices: vec![0],
+            ..Default::default()
+        };
+        let panel = NotificationsPanelItem::default();
+        let theme = Theme::default();
+
+        let content = panel.left_content(&data, &theme);
+
+        assert!(
+            matches!(content, LeftContent::List { ref items } if items.len() == 1),
+            "expected List with 1 item, got {:?}",
+            std::mem::discriminant(&content)
+        );
+    }
+
+    #[test]
+    fn detail_lines_includes_fields() {
+        let notif = test_notification();
+        let panel = NotificationsPanelItem::default();
+        let theme = Theme::default();
+
+        let lines = panel.detail_lines(&notif, &theme);
+
+        assert!(!lines.is_empty(), "detail_lines should return non-empty Vec");
+        let text: String = lines.iter().map(|l| l.to_string()).collect::<Vec<_>>().join("\n");
+        assert!(text.contains("Fix login bug"), "should contain subject title");
+        assert!(text.contains("owner/repo"), "should contain repo name");
+        assert!(text.contains("mention"), "should contain reason");
+        assert!(text.contains("unread"), "should contain read status");
+    }
+
+    #[test]
+    fn handle_key_m_marks_notification_read() {
+        let notif = test_notification();
+        let mut panel = NotificationsPanelItem::default();
+        let data: ListPanelData<Notification> = ListPanelData::default();
+
+        let result = panel.handle_key('m', Some(&notif), &data);
+
+        assert!(
+            matches!(result, Some(Cmd::MarkNotificationRead { ref id }) if id == "notif-1"),
+            "expected MarkNotificationRead with id 'notif-1', got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn handle_key_m_returns_none_when_no_selection() {
+        let mut panel = NotificationsPanelItem::default();
+        let data: ListPanelData<Notification> = ListPanelData::default();
+
+        let result = panel.handle_key('m', None, &data);
+
+        assert!(result.is_none(), "expected None when nothing selected, got {:?}", result);
+    }
+
+    #[test]
+    fn handle_key_shift_m_marks_all_read() {
+        let mut panel = NotificationsPanelItem::default();
+        let data: ListPanelData<Notification> = ListPanelData::default();
+
+        let result = panel.handle_key('M', None, &data);
+
+        assert!(
+            matches!(result, Some(Cmd::MarkAllNotificationsRead)),
+            "expected MarkAllNotificationsRead, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn handle_key_a_toggles_show_all_and_fetches() {
+        let mut panel = NotificationsPanelItem::default();
+        let data: ListPanelData<Notification> = ListPanelData::default();
+
+        assert!(!panel.show_all, "show_all should default to false");
+
+        let result = panel.handle_key('a', None, &data);
+
+        assert!(panel.show_all, "show_all should be toggled to true");
+        assert!(
+            matches!(result, Some(Cmd::FetchNotifications { all: true })),
+            "expected FetchNotifications with all=true, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn extract_items_returns_notifications() {
+        let notif = test_notification();
+        let payload = ApiPayload::Notifications(vec![notif]);
+
+        let result = NotificationsPanelItem::extract_items(payload);
+
+        assert!(
+            matches!(result, Some(ref v) if v.len() == 1),
+            "expected Some with 1 notification, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn extract_items_returns_none_for_repos() {
+        let result = NotificationsPanelItem::extract_items(ApiPayload::Repos(vec![]));
+
+        assert!(result.is_none(), "expected None for Repos payload, got {:?}", result);
+    }
+
+    #[test]
+    fn extract_items_empty_notifications_returns_some_empty() {
+        let result = NotificationsPanelItem::extract_items(ApiPayload::Notifications(vec![]));
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().len(), 0);
+    }
+}
+
+    #[test]
+    fn left_content_empty_items() {
+        let data = ListPanelData::<Notification>::new();
+        let item: NotificationsPanelItem = Default::default();
+        let theme = Theme::default();
+        let content = item.left_content(&data, &theme);
+        match content {
+            LeftContent::Table { rows, .. } => assert!(rows.is_empty()),
+            LeftContent::List { items, .. } => assert!(items.is_empty()),
+        }
+    }
