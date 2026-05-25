@@ -157,9 +157,7 @@ impl PanelItem for ActionsPanelItem {
             'o' => {
                 if let Some(run) = selected {
                     if let (Some(owner), Some(repo)) = (&data.owner, &data.repo) {
-                        let _ = std::process::Command::new("gh")
-                            .args(["browse", &format!("{}", run.id), "--repo", &format!("{}/{}", owner, repo)])
-                            .spawn();
+                        crate::util::open_in_browser(run.id, owner, repo);
                     }
                 }
                 None
@@ -191,9 +189,13 @@ impl PanelItem for ActionsPanelItem {
             'v' => {
                 if let Some(run) = selected {
                     if let (Some(owner), Some(repo)) = (&data.owner, &data.repo) {
-                        let _ = std::process::Command::new("gh")
+                        match std::process::Command::new("gh")
                             .args(["run", "view", &format!("{}", run.id), "--repo", &format!("{}/{}", owner, repo)])
-                            .spawn();
+                            .spawn()
+                        {
+                            Ok(_) => {}
+                            Err(e) => tracing::warn!("failed to run gh: {e}"),
+                        }
                     }
                 }
                 None
@@ -569,8 +571,6 @@ mod tests {
         panel.apply_filter(&mut data, "main", &mut selection);
         assert_eq!(data.filtered_indices, vec![0, 2]);
     }
-}
-
     #[test]
     fn left_content_empty_items() {
         let data = ListPanelData::<WorkflowRun>::new();
@@ -582,3 +582,4 @@ mod tests {
             LeftContent::List { items, .. } => assert!(items.is_empty()),
         }
     }
+}

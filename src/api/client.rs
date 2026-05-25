@@ -10,6 +10,11 @@ use crate::domain;
 
 const BASE_URL: &str = "https://api.github.com";
 const USER_AGENT: &str = "ghtui";
+const REPO_CACHE_TTL_SECS: u64 = 60;
+const PULLS_CACHE_TTL_SECS: u64 = 30;
+const ISSUES_CACHE_TTL_SECS: u64 = 30;
+const NOTIFICATIONS_CACHE_TTL_SECS: u64 = 15;
+const ACTIONS_CACHE_TTL_SECS: u64 = 30;
 
 pub struct GitHubClient {
     http: Client,
@@ -46,7 +51,7 @@ impl GitHubClient {
         if let Some(remaining) = headers.get("x-ratelimit-remaining") {
             if let Ok(val) = remaining.to_str() {
                 if let Ok(n) = val.parse::<u32>() {
-                    *self.rate_remaining.lock().unwrap() = Some(n);
+                    *self.rate_remaining.lock().unwrap_or_else(|e| e.into_inner()) = Some(n);
                 }
             }
         }
@@ -55,10 +60,10 @@ impl GitHubClient {
                 if let Ok(ts) = val.parse::<u64>() {
                     let now = SystemTime::now()
                         .duration_since(UNIX_EPOCH)
-                        .unwrap()
+                        .unwrap_or_default()
                         .as_secs();
                     if ts > now {
-                        *self.rate_reset.lock().unwrap() =
+                        *self.rate_reset.lock().unwrap_or_else(|e| e.into_inner()) =
                             Some(Instant::now() + Duration::from_secs(ts - now));
                     }
                 }
@@ -115,14 +120,14 @@ impl GitHubClient {
 
     pub async fn get_repos(&self) -> Result<Vec<domain::Repo>> {
         let models: Vec<Repo> = self
-            .get("/user/repos?sort=updated&per_page=100", Some(CacheKey::UserRepos), Duration::from_secs(60))
+            .get("/user/repos?sort=updated&per_page=100", Some(CacheKey::UserRepos), Duration::from_secs(REPO_CACHE_TTL_SECS))
             .await?;
         Ok(models.into_iter().map(|r| domain::Repo {
             name: r.full_name,
             description: r.description,
             language: r.language,
-            stars: r.stargazers_count as u32,
-            forks: r.forks_count as u32,
+            stars: safe_u32(r.stargazers_count),
+            forks: safe_u32(r.forks_count),
             updated_at: r.updated_at,
             visibility: r.visibility.unwrap_or_default(),
             default_branch: r.default_branch,
@@ -137,10 +142,10 @@ impl GitHubClient {
     ) -> Result<Vec<domain::PullRequest>> {
         let path = format!("/repos/{owner}/{repo}/pulls?state={state}&per_page=100");
         let models: Vec<PullRequest> = self
-            .get(&path, Some(CacheKey::Pulls { owner: owner.to_string(), repo: repo.to_string(), state: state.to_string() }), Duration::from_secs(30))
+            .get(&path, Some(CacheKey::Pulls { owner: owner.to_string(), repo: repo.to_string(), state: state.to_string() }), Duration::from_secs(PULLS_CACHE_TTL_SECS))
             .await?;
         Ok(models.into_iter().map(|pr| domain::PullRequest {
-            number: pr.number as u32,
+            number: safe_u32(pr.number),
             title: pr.title,
             author: pr.user.login,
             state: pr.state,
@@ -159,14 +164,14 @@ impl GitHubClient {
     ) -> Result<Vec<domain::Issue>> {
         let path = format!("/repos/{owner}/{repo}/issues?state={state}&per_page=100");
         let models: Vec<Issue> = self
-            .get(&path, Some(CacheKey::Issues { owner: owner.to_string(), repo: repo.to_string(), state: state.to_string() }), Duration::from_secs(30))
+            .get(&path, Some(CacheKey::Issues { owner: owner.to_string(), repo: repo.to_string(), state: state.to_string() }), Duration::from_secs(ISSUES_CACHE_TTL_SECS))
             .await?;
         // Filter out pull requests (GitHub returns them as issues too)
         Ok(models
             .into_iter()
             .filter(|i| i.pull_request.is_none())
             .map(|i| domain::Issue {
-                number: i.number as u32,
+                number: safe_u32(i.number),
                 title: i.title,
                 author: i.user.login,
                 state: i.state,
@@ -186,7 +191,7 @@ impl GitHubClient {
             "/notifications?per_page=100"
         };
         let models: Vec<Notification> = self
-            .get(path, Some(CacheKey::Notifications), Duration::from_secs(15))
+            .get(path, Some(CacheKey::Notifications), Duration::from_secs(NOTIFICATIONS_CACHE_TTL_SECS))
             .await?;
         Ok(models.into_iter().map(|n| domain::Notification {
             id: n.id,
@@ -206,7 +211,7 @@ impl GitHubClient {
     ) -> Result<Vec<domain::WorkflowRun>> {
         let path = format!("/repos/{owner}/{repo}/actions/runs?per_page=50");
         let resp: WorkflowRunsResponse = self
-            .get(&path, Some(CacheKey::Actions { owner: owner.to_string(), repo: repo.to_string() }), Duration::from_secs(30))
+            .get(&path, Some(CacheKey::Actions { owner: owner.to_string(), repo: repo.to_string() }), Duration::from_secs(ACTIONS_CACHE_TTL_SECS))
             .await?;
         Ok(resp.workflow_runs.into_iter().map(|w| domain::WorkflowRun {
             id: w.id,
@@ -216,7 +221,7 @@ impl GitHubClient {
             branch: w.head_branch,
             event: w.event,
             created_at: w.created_at,
-            run_number: w.run_number as u32,
+            run_number: safe_u32(w.run_number),
         }).collect())
     }
 
@@ -281,5 +286,42 @@ impl GitHubClient {
             return Err(color_eyre::eyre::eyre!("GitHub API error {}: {}", status, body));
         }
         Ok(resp)
+    }
+}
+
+fn safe_u32(value: u64) -> u32 {
+    u32::try_from(value).unwrap_or_else(|_| {
+        tracing::warn!("integer overflow converting {value} to u32, clamping to u32::MAX");
+        u32::MAX
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn safe_u32_positive_value() {
+        assert_eq!(safe_u32(42u64), 42);
+    }
+
+    #[test]
+    fn safe_u32_zero() {
+        assert_eq!(safe_u32(0u64), 0);
+    }
+
+    #[test]
+    fn safe_u32_max_u32() {
+        assert_eq!(safe_u32(u32::MAX as u64), u32::MAX);
+    }
+
+    #[test]
+    fn safe_u32_overflow_returns_max() {
+        assert_eq!(safe_u32(u32::MAX as u64 + 1), u32::MAX);
+    }
+
+    #[test]
+    fn safe_u32_large_overflow() {
+        assert_eq!(safe_u32(u64::MAX), u32::MAX);
     }
 }

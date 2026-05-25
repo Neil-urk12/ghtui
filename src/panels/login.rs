@@ -123,7 +123,7 @@ impl LoginState {
             Ok(resp) => {
                 match apply_token_response(resp.access_token, resp.interval, resp.scope) {
                     TokenEffect::Success(token, scopes) => {
-                        let _ = auth::save_token(&token, &scopes);
+                        if let Err(e) = auth::save_token(&token, &scopes) { tracing::warn!("failed to persist token: {e}"); }
                         self.status = LoginStatus::Success(token);
                     }
                     TokenEffect::UpdateInterval(interval) => {

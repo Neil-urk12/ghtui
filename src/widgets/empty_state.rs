@@ -42,6 +42,7 @@ impl EmptyStateWidget {
 
         // Vertical centering: pad top by ~1/3 of available space
         let content_lines = if state.hint.is_some() { 3 } else { 1 };
+        // content_lines is always 1 or 3 — safe to cast
         let pad_top = (inner.height.saturating_sub(content_lines as u16)) / 3;
         for _ in 0..pad_top {
             lines.push(Line::from(""));

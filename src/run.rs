@@ -16,6 +16,9 @@ use crate::update::{update, Message};
 use crate::cmd::Cmd;
 use crate::event::{self, ApiPayload, Event};
 
+const TICK_INTERVAL_MS: u64 = 250;
+const CHANNEL_BUFFER_SIZE: usize = 128;
+
 fn pull_cache_keys(owner: &str, repo: &str) -> Vec<CacheKey> {
     ["open", "closed", "all"]
         .iter()
@@ -27,10 +30,10 @@ fn pull_cache_keys(owner: &str, repo: &str) -> Vec<CacheKey> {
         .collect()
 }
 pub async fn run(app: &mut App, terminal: &mut DefaultTerminal) -> Result<()> {
-    eprintln!("ghtui: entering run loop");
+    tracing::debug!("entering run loop");
     let mut event_stream = EventStream::new();
-    let mut tick_interval = time::interval(Duration::from_millis(250));
-    let (tx, mut rx) = mpsc::channel::<Result<ApiPayload>>(128);
+    let mut tick_interval = time::interval(Duration::from_millis(TICK_INTERVAL_MS));
+    let (tx, mut rx) = mpsc::channel::<Result<ApiPayload>>(CHANNEL_BUFFER_SIZE);
 
     // Initialize login if no token found
     if matches!(app.state, AppState::Login) {
@@ -56,7 +59,7 @@ pub async fn run(app: &mut App, terminal: &mut DefaultTerminal) -> Result<()> {
                 match crossterm_event {
                     Some(Ok(event)) => Event::Input(event),
                     Some(Err(e)) => {
-                        eprintln!("crossterm error: {e}");
+                        tracing::error!("crossterm error: {e}");
                         Event::Tick
                     }
                     None => break,

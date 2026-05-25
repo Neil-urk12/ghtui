@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use crate::api::client::GitHubClient;
 use crate::config::Config;
+use crate::domain::FilterState;
 use crate::panels::{ActionsPanelItem, IssuesPanelItem, NotificationsPanelItem, Panel, PullsPanelItem, ReposPanelItem};
 use crate::panels::login::LoginState;
 use crate::panels::panel::{ListPanel, ListPanelData, PanelItem, SelectionState};
@@ -128,13 +129,13 @@ impl App {
                 data: ListPanelData::new(),
                 selection: SelectionState::table(),
                 detail_pane: DetailPane::new(),
-                item: PullsPanelItem { state_filter: config.defaults.pulls_state.clone() },
+                item: PullsPanelItem { state_filter: FilterState::from(config.defaults.pulls_state.as_str()) },
             }));
         panels.insert(PanelKind::Issues, PanelState::Issues(ListPanel {
                 data: ListPanelData::new(),
                 selection: SelectionState::list(),
                 detail_pane: DetailPane::new(),
-                item: IssuesPanelItem { state_filter: config.defaults.issues_state.clone() },
+                item: IssuesPanelItem { state_filter: FilterState::from(config.defaults.issues_state.as_str()) },
             }));
         panels.insert(PanelKind::Notifications, PanelState::Notifications(ListPanel {
                 data: ListPanelData::new(),

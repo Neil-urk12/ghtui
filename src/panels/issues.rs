@@ -2,7 +2,7 @@ use ratatui::prelude::*;
 use ratatui::widgets::*;
 
 use crate::cmd::Cmd;
-use crate::domain::Issue;
+use crate::domain::{FilterState, Issue};
 use crate::event::ApiPayload;
 use crate::theme::Theme;
 use crate::util::format;
@@ -89,7 +89,7 @@ fn issue_to_detail(issue: &Issue, theme: &Theme) -> Vec<Line<'static>> {
 
 #[derive(Debug, Default)]
 pub struct IssuesPanelItem {
-    pub state_filter: String,
+    pub state_filter: FilterState,
 }
 
 impl PanelItem for IssuesPanelItem {
@@ -120,36 +120,36 @@ impl PanelItem for IssuesPanelItem {
     ) -> Option<Cmd> {
         match key {
             '1' => {
-                self.state_filter = "open".to_string();
+                self.state_filter = FilterState::Open;
                 if let (Some(owner), Some(repo)) = (&data.owner, &data.repo) {
                     Some(Cmd::FetchIssues {
                         owner: owner.clone(),
                         repo: repo.clone(),
-                        state: "open".into(),
+                        state: self.state_filter.as_str().to_string(),
                     })
                 } else {
                     None
                 }
             }
             '2' => {
-                self.state_filter = "closed".to_string();
+                self.state_filter = FilterState::Closed;
                 if let (Some(owner), Some(repo)) = (&data.owner, &data.repo) {
                     Some(Cmd::FetchIssues {
                         owner: owner.clone(),
                         repo: repo.clone(),
-                        state: "closed".into(),
+                        state: self.state_filter.as_str().to_string(),
                     })
                 } else {
                     None
                 }
             }
             '3' => {
-                self.state_filter = "all".to_string();
+                self.state_filter = FilterState::All;
                 if let (Some(owner), Some(repo)) = (&data.owner, &data.repo) {
                     Some(Cmd::FetchIssues {
                         owner: owner.clone(),
                         repo: repo.clone(),
-                        state: "all".into(),
+                        state: self.state_filter.as_str().to_string(),
                     })
                 } else {
                     None
@@ -158,9 +158,7 @@ impl PanelItem for IssuesPanelItem {
             'o' => {
                 if let Some(issue) = selected {
                     if let (Some(owner), Some(repo)) = (&data.owner, &data.repo) {
-                        let _ = std::process::Command::new("gh")
-                            .args(["browse", &format!("{}", issue.number), "--repo", &format!("{}/{}", owner, repo)])
-                            .spawn();
+                        crate::util::open_in_browser(issue.number, owner, repo);
                     }
                 }
                 None
@@ -174,7 +172,7 @@ impl PanelItem for IssuesPanelItem {
             (Some(owner), Some(repo)) => Cmd::FetchIssues {
                 owner: owner.clone(),
                 repo: repo.clone(),
-                state: self.state_filter.clone(),
+                state: self.state_filter.as_str().to_string(),
             },
             _ => Cmd::None,
         }
@@ -182,8 +180,8 @@ impl PanelItem for IssuesPanelItem {
 
     fn block_title(&self, data: &ListPanelData<Self::Item>) -> String {
         match (&data.owner, &data.repo) {
-            (Some(o), Some(r)) => format!(" Issues: {o}/{r} ({}) ", self.state_filter),
-            _ => format!(" Issues ({}) ", self.state_filter),
+            (Some(o), Some(r)) => format!(" Issues: {o}/{r} ({}) ", self.state_filter.as_str()),
+            _ => format!(" Issues ({}) ", self.state_filter.as_str()),
         }
     }
 
@@ -290,7 +288,7 @@ mod tests {
 
         let cmd = panel.handle_key('1', None, &data);
         assert!(matches!(cmd, Some(Cmd::FetchIssues { state, .. }) if state.as_str() == "open"));
-        assert_eq!(panel.state_filter, "open");
+        assert_eq!(panel.state_filter, FilterState::Open);
     }
 
     #[test]
@@ -301,7 +299,7 @@ mod tests {
 
         let cmd = panel.handle_key('2', None, &data);
         assert!(matches!(cmd, Some(Cmd::FetchIssues { state, .. }) if state.as_str() == "closed"));
-        assert_eq!(panel.state_filter, "closed");
+        assert_eq!(panel.state_filter, FilterState::Closed);
     }
 
     #[test]
@@ -312,7 +310,7 @@ mod tests {
 
         let cmd = panel.handle_key('3', None, &data);
         assert!(matches!(cmd, Some(Cmd::FetchIssues { state, .. }) if state.as_str() == "all"));
-        assert_eq!(panel.state_filter, "all");
+        assert_eq!(panel.state_filter, FilterState::All);
     }
 
     #[test]

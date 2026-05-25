@@ -44,7 +44,7 @@ fn main() -> color_eyre::Result<()> {
     if cli.logout {
         match auth::delete_token() {
             Ok(()) => println!("Stored token deleted."),
-            Err(e) => eprintln!("No stored token to delete: {}", e),
+            Err(e) => tracing::warn!("no stored token to delete: {e}"),
         }
         return Ok(());
     }

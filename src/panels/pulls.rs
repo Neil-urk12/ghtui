@@ -2,7 +2,7 @@ use ratatui::prelude::*;
 use ratatui::widgets::{Cell, Row};
 
 use crate::cmd::Cmd;
-use crate::domain::PullRequest;
+use crate::domain::{FilterState, PullRequest};
 use crate::event::ApiPayload;
 use crate::theme::Theme;
 use crate::util::format;
@@ -71,7 +71,7 @@ fn pr_to_detail(pr: &PullRequest, theme: &Theme) -> Vec<Line<'static>> {
 
 #[derive(Debug, Default)]
 pub struct PullsPanelItem {
-    pub state_filter: String, // "open", "closed", "all"
+    pub state_filter: FilterState,
 }
 
 impl PanelItem for PullsPanelItem {
@@ -112,36 +112,36 @@ impl PanelItem for PullsPanelItem {
     ) -> Option<Cmd> {
         match key {
             '1' => {
-                self.state_filter = "open".to_string();
+                self.state_filter = FilterState::Open;
                 if let (Some(owner), Some(repo)) = (&data.owner, &data.repo) {
                     Some(Cmd::FetchPulls {
                         owner: owner.clone(),
                         repo: repo.clone(),
-                        state: "open".into(),
+                        state: self.state_filter.as_str().to_string(),
                     })
                 } else {
                     None
                 }
             }
             '2' => {
-                self.state_filter = "closed".to_string();
+                self.state_filter = FilterState::Closed;
                 if let (Some(owner), Some(repo)) = (&data.owner, &data.repo) {
                     Some(Cmd::FetchPulls {
                         owner: owner.clone(),
                         repo: repo.clone(),
-                        state: "closed".into(),
+                        state: self.state_filter.as_str().to_string(),
                     })
                 } else {
                     None
                 }
             }
             '3' => {
-                self.state_filter = "all".to_string();
+                self.state_filter = FilterState::All;
                 if let (Some(owner), Some(repo)) = (&data.owner, &data.repo) {
                     Some(Cmd::FetchPulls {
                         owner: owner.clone(),
                         repo: repo.clone(),
-                        state: "all".into(),
+                        state: self.state_filter.as_str().to_string(),
                     })
                 } else {
                     None
@@ -150,9 +150,7 @@ impl PanelItem for PullsPanelItem {
             'o' => {
                 if let Some(pr) = selected {
                     if let (Some(owner), Some(repo)) = (&data.owner, &data.repo) {
-                        let _ = std::process::Command::new("gh")
-                            .args(["browse", &format!("{}", pr.number), "--repo", &format!("{}/{}", owner, repo)])
-                            .spawn();
+                        crate::util::open_in_browser(pr.number, owner, repo);
                     }
                 }
                 None
@@ -190,7 +188,7 @@ impl PanelItem for PullsPanelItem {
             (Some(owner), Some(repo)) => Cmd::FetchPulls {
                 owner: owner.clone(),
                 repo: repo.clone(),
-                state: self.state_filter.clone(),
+                state: self.state_filter.as_str().to_string(),
             },
             _ => Cmd::None,
         }
@@ -198,8 +196,8 @@ impl PanelItem for PullsPanelItem {
 
     fn block_title(&self, data: &ListPanelData<Self::Item>) -> String {
         match (&data.owner, &data.repo) {
-            (Some(o), Some(r)) => format!(" PRs: {o}/{r} ({}) ", self.state_filter),
-            _ => format!(" Pull Requests ({}) ", self.state_filter),
+            (Some(o), Some(r)) => format!(" PRs: {o}/{r} ({}) ", self.state_filter.as_str()),
+            _ => format!(" Pull Requests ({}) ", self.state_filter.as_str()),
         }
     }
 
@@ -406,7 +404,7 @@ mod tests {
         let cmd = item.handle_key('1', None, &data);
 
         // Without owner/repo, returns None but sets the filter
-        assert_eq!(item.state_filter, "open");
+        assert_eq!(item.state_filter, FilterState::Open);
         assert!(cmd.is_none());
     }
 
@@ -418,7 +416,7 @@ mod tests {
 
         let cmd = item.handle_key('1', None, &data);
 
-        assert_eq!(item.state_filter, "open");
+        assert_eq!(item.state_filter, FilterState::Open);
         assert!(matches!(
             cmd.unwrap(),
             Cmd::FetchPulls { owner, repo, state }
@@ -489,8 +487,6 @@ mod tests {
         panel.apply_filter(&mut data, "octocat", &mut selection);
         assert_eq!(data.filtered_indices, vec![0, 2]);
     }
-}
-
     #[test]
     fn left_content_empty_items() {
         let data = ListPanelData::<PullRequest>::new();
@@ -502,3 +498,4 @@ mod tests {
             LeftContent::List { items, .. } => assert!(items.is_empty()),
         }
     }
+}

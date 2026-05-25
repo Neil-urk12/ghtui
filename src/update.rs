@@ -161,10 +161,8 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
                 }
                 Cmd::None => Cmd::None,
                 Cmd::CycleRepoSort => {
-                    if let Some(entry) = app.panels.get_mut(&PanelKind::Repos) {
-                        if let crate::app::PanelState::Repos(ref mut p) = entry {
-                            p.item.cycle_sort(&mut p.data, &mut p.selection);
-                        }
+                    if let Some(crate::app::PanelState::Repos(ref mut p)) = app.panels.get_mut(&PanelKind::Repos) {
+                        p.item.cycle_sort(&mut p.data, &mut p.selection);
                     }
                     Cmd::None
                 }
@@ -182,7 +180,7 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
             Cmd::None
         }
         Message::LoginSuccess(token) => {
-            let _ = crate::api::auth::save_token(&token, crate::api::auth::GHTUI_SCOPES);
+            if let Err(e) = crate::api::auth::save_token(&token, crate::api::auth::GHTUI_SCOPES) { tracing::warn!("failed to persist token: {e}"); }
             app.client = Arc::new(GitHubClient::new(token));
             app.login = None;
             app.state = AppState::Main;
@@ -566,10 +564,8 @@ mod tests {
         update(&mut app, Message::SearchSubmit);
 
         // Verify filtered
-        if let Some(entry) = app.panels.get(&PanelKind::Repos) {
-            if let crate::app::PanelState::Repos(panel) = entry {
-                assert_eq!(panel.data.filtered_indices.len(), 1);
-            }
+        if let Some(crate::app::PanelState::Repos(panel)) = app.panels.get(&PanelKind::Repos) {
+            assert_eq!(panel.data.filtered_indices.len(), 1);
         }
 
         // Clear search
