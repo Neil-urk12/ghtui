@@ -189,15 +189,17 @@ impl PanelItem for ActionsPanelItem {
             'v' => {
                 if let Some(run) = selected {
                     if let (Some(owner), Some(repo)) = (&data.owner, &data.repo) {
-                        match std::process::Command::new("gh")
-                            .args(["run", "view", &format!("{}", run.id), "--repo", &format!("{}/{}", owner, repo), "--web"])
-                            .stdout(std::process::Stdio::null())
-                            .stderr(std::process::Stdio::null())
-                            .spawn()
-                        {
-                            Ok(_) => {}
-                            Err(e) => tracing::warn!("failed to run gh: {e}"),
-                        }
+                        crate::util::spawn_background(
+                            "gh",
+                            &[
+                                "run",
+                                "view",
+                                &format!("{}", run.id),
+                                "--repo",
+                                &format!("{}/{}", owner, repo),
+                                "--web",
+                            ],
+                        );
                     }
                 }
                 None
