@@ -190,7 +190,9 @@ impl PanelItem for ActionsPanelItem {
                 if let Some(run) = selected {
                     if let (Some(owner), Some(repo)) = (&data.owner, &data.repo) {
                         match std::process::Command::new("gh")
-                            .args(["run", "view", &format!("{}", run.id), "--repo", &format!("{}/{}", owner, repo)])
+                            .args(["run", "view", &format!("{}", run.id), "--repo", &format!("{}/{}", owner, repo), "--web"])
+                            .stdout(std::process::Stdio::null())
+                            .stderr(std::process::Stdio::null())
                             .spawn()
                         {
                             Ok(_) => {}
