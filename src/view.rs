@@ -80,4 +80,10 @@ pub fn view(frame: &mut Frame, app: &mut App) {
     if app.show_help {
         popup::render_help(frame, area, &app.active_panel.to_string());
     }
+
+
+    // Confirmation modal overlay
+    if let Some(ref confirm) = app.confirmation {
+        popup::render_confirmation(frame, area, &confirm.action_label, &confirm.detail);
+    }
 }

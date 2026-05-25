@@ -227,6 +227,11 @@ impl PanelItem for IssuesPanelItem {
                 || item.assignees.iter().any(|a| a.to_lowercase().contains(q))
         }, selection);
     }
+
+
+    fn item_display(&self, item: &Self::Item) -> Option<String> {
+        Some(format!("#{} {}", item.number, item.title))
+    }
 }
 
 #[cfg(test)]

@@ -60,6 +60,15 @@ pub fn process_event(event: Event, app: &App) -> Vec<Message> {
                 return vec![Message::Noop];
             }
 
+
+            if app.confirmation.is_some() {
+                return match key.code {
+                    KeyCode::Char('y') => vec![Message::ConfirmYes],
+                    KeyCode::Char('n') | KeyCode::Esc => vec![Message::ConfirmNo],
+                    _ => vec![Message::Noop],
+                };
+            }
+
             let bindings = &app.config.keybindings;
             if keys::matches_key(key, &bindings.quit) {
                 vec![Message::Quit]

@@ -174,6 +174,7 @@ pub trait Panel: std::fmt::Debug {
     fn load_data(&mut self, payload: ApiPayload);
     fn scroll_detail_up(&mut self) {}
     fn scroll_detail_down(&mut self) {}
+    fn selected_display(&self) -> Option<String> { None }
 }
 
 // --- PanelItem trait + ListPanel<T> ---
@@ -232,6 +233,11 @@ pub trait PanelItem: std::fmt::Debug + Default {
     /// Initial selection state. Override for table-based panels.
     /// Default: `SelectionState::list()`.
     fn initial_selection(&self) -> SelectionState { SelectionState::list() }
+
+
+    /// Display title for the selected item. Used in confirmation dialogs.
+    /// Default returns `None`.
+    fn item_display(&self, _item: &Self::Item) -> Option<String> { None }
 
     /// Empty state for the detail pane when nothing is selected.
     fn detail_empty_state(&self) -> EmptyState {
@@ -344,6 +350,12 @@ impl<T: PanelItem + 'static> Panel for ListPanel<T> {
 
     fn scroll_detail_down(&mut self) {
         self.detail_pane.scroll_down();
+    }
+
+
+    fn selected_display(&self) -> Option<String> {
+        let item = self.data.selected(&self.selection)?;
+        self.item.item_display(item)
     }
 }
 #[cfg(test)]

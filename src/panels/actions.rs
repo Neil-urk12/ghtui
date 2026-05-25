@@ -267,6 +267,11 @@ impl PanelItem for ActionsPanelItem {
                 || item.conclusion.as_deref().unwrap_or("").to_lowercase().contains(q)
         }, selection);
     }
+
+
+    fn item_display(&self, item: &Self::Item) -> Option<String> {
+        Some(format!("#{} {}", item.run_number, item.name))
+    }
 }
 
 #[cfg(test)]

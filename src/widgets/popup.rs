@@ -75,6 +75,42 @@ pub fn render_help(frame: &mut Frame, area: Rect, panel: &str) {
     );
 }
 
+
+pub fn render_confirmation(frame: &mut Frame, area: Rect, action_label: &str, detail: &str) {
+    let modal_area = centered_rect(50, 20, area);
+    frame.render_widget(Clear, modal_area);
+
+    let block = Block::default()
+        .title(" Confirm ")
+        .title_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow));
+
+    let mut lines = vec![
+        Line::from(action_label.to_string())
+            .style(Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+    ];
+
+    if !detail.is_empty() {
+        lines.push(Line::from(detail.to_string()).style(Style::default().fg(Color::Gray)));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(
+        Line::from(vec![
+            Span::styled(" y ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::raw(" Yes    "),
+            Span::styled(" n ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            Span::raw(" No"),
+        ]),
+    );
+
+    let text = Paragraph::new(lines)
+        .block(block)
+        .wrap(Wrap { trim: true });
+    frame.render_widget(text, modal_area);
+}
+
 fn bottom_right_rect(percent_x: u16, height: u16, r: Rect) -> Rect {
     let popup_layout = Layout::default()
         .direction(Direction::Vertical)

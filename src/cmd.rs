@@ -35,3 +35,30 @@ impl std::fmt::Debug for Cmd {
         }
     }
 }
+
+
+impl Cmd {
+    /// Returns true if this command is destructive and requires confirmation.
+    pub fn is_destructive(&self) -> bool {
+        matches!(
+            self,
+            Cmd::MergePr { .. }
+                | Cmd::ApprovePr { .. }
+                | Cmd::CancelWorkflow { .. }
+                | Cmd::RerunWorkflow { .. }
+                | Cmd::MarkAllNotificationsRead
+        )
+    }
+
+    /// Human-readable action label for confirmation dialogs.
+    pub fn action_label(&self) -> &'static str {
+        match self {
+            Cmd::MergePr { .. } => "Merge Pull Request",
+            Cmd::ApprovePr { .. } => "Approve Pull Request",
+            Cmd::CancelWorkflow { .. } => "Cancel Workflow",
+            Cmd::RerunWorkflow { .. } => "Rerun Workflow",
+            Cmd::MarkAllNotificationsRead => "Mark All Notifications as Read",
+            _ => "",
+        }
+    }
+}

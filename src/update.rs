@@ -30,6 +30,8 @@ pub enum Message {
     ApiError(String),
     RateLimitUpdate { remaining: Option<u32>, reset_secs: Option<u64> },
     Tick,
+    ConfirmYes,
+    ConfirmNo,
 }
 
 impl fmt::Debug for Message {
@@ -60,6 +62,8 @@ impl fmt::Debug for Message {
                 write!(f, "RateLimitUpdate(remaining={:?}, reset={:?})", remaining, reset_secs)
             }
             Message::Tick => write!(f, "Tick"),
+            Message::ConfirmYes => write!(f, "ConfirmYes"),
+            Message::ConfirmNo => write!(f, "ConfirmNo"),
         }
     }
 }
@@ -167,10 +171,23 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
                     Cmd::None
                 }
                 other => {
-                    if let Some(entry) = app.panels.get_mut(&app.active_panel) {
-                        entry.as_panel_mut().set_loading(true);
+                    if other.is_destructive() {
+                        let detail = app.panels.get(&app.active_panel)
+                            .and_then(|e| e.as_panel().selected_display())
+                            .unwrap_or_default();
+                        let action_label = other.action_label().to_string();
+                        app.confirmation = Some(crate::app::ConfirmState {
+                            pending_cmd: other,
+                            action_label,
+                            detail,
+                        });
+                        Cmd::None
+                    } else {
+                        if let Some(entry) = app.panels.get_mut(&app.active_panel) {
+                            entry.as_panel_mut().set_loading(true);
+                        }
+                        other
                     }
-                    other
                 }
             }
         }
@@ -198,6 +215,22 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
             Cmd::None
         }
         Message::Noop => Cmd::None,
+
+        Message::ConfirmYes => {
+            if let Some(confirm) = app.confirmation.take() {
+                let cmd = confirm.pending_cmd;
+                if let Some(entry) = app.panels.get_mut(&app.active_panel) {
+                    entry.as_panel_mut().set_loading(true);
+                }
+                cmd
+            } else {
+                Cmd::None
+            }
+        }
+        Message::ConfirmNo => {
+            app.confirmation = None;
+            Cmd::None
+        }
 
         Message::ApiLoaded(payload) => {
             use crate::event::ApiPayload;

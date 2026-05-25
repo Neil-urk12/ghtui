@@ -246,6 +246,11 @@ impl PanelItem for PullsPanelItem {
     fn initial_selection(&self) -> SelectionState {
         SelectionState::table()
     }
+
+
+    fn item_display(&self, item: &Self::Item) -> Option<String> {
+        Some(format!("#{} {}", item.number, item.title))
+    }
 }
 
 #[cfg(test)]

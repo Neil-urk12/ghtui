@@ -162,6 +162,11 @@ impl PanelItem for NotificationsPanelItem {
                 || item.reason.to_lowercase().contains(q)
         }, selection);
     }
+
+
+    fn item_display(&self, _item: &Self::Item) -> Option<String> {
+        None // MarkAllNotificationsRead doesn't have a specific item context
+    }
 }
 
 #[cfg(test)]

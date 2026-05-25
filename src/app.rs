@@ -89,6 +89,24 @@ pub struct SearchState {
     pub query: String,
 }
 
+
+/// State for the confirmation dialog. Holds the pending destructive command
+/// and display information for the confirmation modal.
+pub struct ConfirmState {
+    pub pending_cmd: crate::cmd::Cmd,
+    pub action_label: String,
+    pub detail: String,
+}
+
+impl std::fmt::Debug for ConfirmState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ConfirmState")
+            .field("action_label", &self.action_label)
+            .field("detail", &self.detail)
+            .finish()
+    }
+}
+
 pub enum AppState {
     Login,
     Main,
@@ -111,6 +129,7 @@ pub struct App {
     pub rate_remaining: Option<u32>,
     pub rate_reset_secs: Option<u64>,
     pub client: Arc<GitHubClient>,
+    pub confirmation: Option<ConfirmState>,
 }
 
 impl App {
@@ -162,6 +181,7 @@ impl App {
             rate_remaining: None,
             rate_reset_secs: None,
             client,
+            confirmation: None,
         }
     }
 
