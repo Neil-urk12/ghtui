@@ -93,11 +93,18 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
         }
         Message::SearchSubmit => {
             app.search.active = false;
+            let query = app.search.query.clone();
+            if let Some(entry) = app.panels.get_mut(&app.active_panel) {
+                entry.apply_filter(&query);
+            }
             Cmd::None
         }
         Message::SearchClear => {
             app.search.active = false;
             app.search.query.clear();
+            if let Some(entry) = app.panels.get_mut(&app.active_panel) {
+                entry.apply_filter("");
+            }
             Cmd::None
         }
         Message::DismissError => {
@@ -428,6 +435,205 @@ mod tests {
         assert!(app.search.active);
 
         update(&mut app, Message::NextTab);
+    }
+
+    #[test]
+    fn search_submit_applies_filter_to_active_panel() {
+        use crate::domain;
+        use crate::event::ApiPayload;
+
+        let mut app = test_app();
+        let repos = vec![
+            domain::Repo { name: "octocat/hello".into(), ..Default::default() },
+            domain::Repo { name: "test/repo".into(), ..Default::default() },
+            domain::Repo { name: "foo/bar".into(), ..Default::default() },
+        ];
+        update(&mut app, Message::ApiLoaded(ApiPayload::Repos(repos)));
+
+        // All 3 repos visible initially
+        if let Some(entry) = app.panels.get(&PanelKind::Repos) {
+            if let crate::app::PanelState::Repos(panel) = entry {
+                assert_eq!(panel.data.filtered_indices.len(), 3);
+            } else {
+                panic!("Expected Repos panel");
+            }
+        }
+
+        // Activate search, type query, submit
+        update(&mut app, Message::SearchActivate);
+        for ch in "test".chars() {
+            update(&mut app, Message::SearchInput(ch));
+        }
+        update(&mut app, Message::SearchSubmit);
+
+        // After submit: search closed, filtered_indices should be reduced
         assert!(!app.search.active);
+        if let Some(entry) = app.panels.get(&PanelKind::Repos) {
+            if let crate::app::PanelState::Repos(panel) = entry {
+                assert!(panel.data.filtered_indices.len() < 3,
+                    "Expected filtered_indices to be less than 3 after search, got {}",
+                    panel.data.filtered_indices.len());
+            } else {
+                panic!("Expected Repos panel");
+            }
+        }
+    }
+
+    #[test]
+    fn search_submit_filters_repos_by_name() {
+        use crate::domain;
+        use crate::event::ApiPayload;
+
+        let mut app = test_app();
+        let repos = vec![
+            domain::Repo { name: "octocat/hello".into(), ..Default::default() },
+            domain::Repo { name: "test/repo".into(), ..Default::default() },
+            domain::Repo { name: "foo/bar".into(), ..Default::default() },
+        ];
+        update(&mut app, Message::ApiLoaded(ApiPayload::Repos(repos)));
+
+        update(&mut app, Message::SearchActivate);
+        for ch in "octo".chars() {
+            update(&mut app, Message::SearchInput(ch));
+        }
+        update(&mut app, Message::SearchSubmit);
+
+        if let Some(entry) = app.panels.get(&PanelKind::Repos) {
+            if let crate::app::PanelState::Repos(panel) = entry {
+                assert_eq!(panel.data.filtered_indices.len(), 1,
+                    "Expected 1 match for 'octo', got {}",
+                    panel.data.filtered_indices.len());
+                assert_eq!(panel.data.items[panel.data.filtered_indices[0]].name, "octocat/hello");
+            } else {
+                panic!("Expected Repos panel");
+            }
+        }
+    }
+
+    #[test]
+    fn search_submit_filters_pulls_by_title() {
+        use crate::domain;
+        use crate::event::ApiPayload;
+
+        let mut app = test_app();
+        // Switch to Pulls panel
+        update(&mut app, Message::NextTab);
+        assert_eq!(app.active_panel, PanelKind::Pulls);
+
+        let pulls = vec![
+            domain::PullRequest { number: 1, title: "Fix login bug".into(), ..Default::default() },
+            domain::PullRequest { number: 2, title: "Add dark mode".into(), ..Default::default() },
+            domain::PullRequest { number: 3, title: "Refactor auth".into(), ..Default::default() },
+        ];
+        update(&mut app, Message::ApiLoaded(ApiPayload::Pulls(pulls)));
+
+        update(&mut app, Message::SearchActivate);
+        for ch in "dark".chars() {
+            update(&mut app, Message::SearchInput(ch));
+        }
+        update(&mut app, Message::SearchSubmit);
+
+        if let Some(entry) = app.panels.get(&PanelKind::Pulls) {
+            if let crate::app::PanelState::Pulls(panel) = entry {
+                assert_eq!(panel.data.filtered_indices.len(), 1,
+                    "Expected 1 match for 'dark', got {}",
+                    panel.data.filtered_indices.len());
+                assert_eq!(panel.data.items[panel.data.filtered_indices[0]].title, "Add dark mode");
+            } else {
+                panic!("Expected Pulls panel");
+            }
+        }
+    }
+
+    #[test]
+    fn search_clear_resets_filter() {
+        use crate::domain;
+        use crate::event::ApiPayload;
+
+        let mut app = test_app();
+        let repos = vec![
+            domain::Repo { name: "octocat/hello".into(), ..Default::default() },
+            domain::Repo { name: "test/repo".into(), ..Default::default() },
+            domain::Repo { name: "foo/bar".into(), ..Default::default() },
+        ];
+        update(&mut app, Message::ApiLoaded(ApiPayload::Repos(repos)));
+
+        // Apply filter
+        update(&mut app, Message::SearchActivate);
+        for ch in "octo".chars() {
+            update(&mut app, Message::SearchInput(ch));
+        }
+        update(&mut app, Message::SearchSubmit);
+
+        // Verify filtered
+        if let Some(entry) = app.panels.get(&PanelKind::Repos) {
+            if let crate::app::PanelState::Repos(panel) = entry {
+                assert_eq!(panel.data.filtered_indices.len(), 1);
+            }
+        }
+
+        // Clear search
+        update(&mut app, Message::SearchClear);
+
+        // Verify all items restored
+        if let Some(entry) = app.panels.get(&PanelKind::Repos) {
+            if let crate::app::PanelState::Repos(panel) = entry {
+                assert_eq!(panel.data.filtered_indices.len(), 3,
+                    "Expected all 3 repos after clear, got {}",
+                    panel.data.filtered_indices.len());
+            } else {
+                panic!("Expected Repos panel");
+            }
+        }
+    }
+
+    #[test]
+    fn search_submit_preserves_query() {
+        use crate::domain;
+        use crate::event::ApiPayload;
+
+        let mut app = test_app();
+        let repos = vec![
+            domain::Repo { name: "octocat/hello".into(), ..Default::default() },
+        ];
+        update(&mut app, Message::ApiLoaded(ApiPayload::Repos(repos)));
+
+        update(&mut app, Message::SearchActivate);
+        for ch in "octo".chars() {
+            update(&mut app, Message::SearchInput(ch));
+        }
+        update(&mut app, Message::SearchSubmit);
+
+        assert_eq!(app.search.query, "octo",
+            "Search query should be preserved after submit");
+    }
+
+    #[test]
+    fn search_submit_with_empty_query_shows_all() {
+        use crate::domain;
+        use crate::event::ApiPayload;
+
+        let mut app = test_app();
+        let repos = vec![
+            domain::Repo { name: "octocat/hello".into(), ..Default::default() },
+            domain::Repo { name: "test/repo".into(), ..Default::default() },
+            domain::Repo { name: "foo/bar".into(), ..Default::default() },
+        ];
+        update(&mut app, Message::ApiLoaded(ApiPayload::Repos(repos)));
+
+        // Activate and immediately submit (empty query)
+        update(&mut app, Message::SearchActivate);
+        update(&mut app, Message::SearchSubmit);
+
+        // All repos should still be visible
+        if let Some(entry) = app.panels.get(&PanelKind::Repos) {
+            if let crate::app::PanelState::Repos(panel) = entry {
+                assert_eq!(panel.data.filtered_indices.len(), 3,
+                    "Expected all 3 repos with empty query, got {}",
+                    panel.data.filtered_indices.len());
+            } else {
+                panic!("Expected Repos panel");
+            }
+        }
     }
 }

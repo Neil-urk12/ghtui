@@ -8,7 +8,7 @@ use crate::theme::Theme;
 use crate::util::format::relative_time;
 use crate::widgets::empty_state::EmptyState;
 use crate::widgets::list_view::LeftContent;
-use super::panel::{ListPanelData, PanelItem};
+use super::panel::{ListPanelData, PanelItem, SelectionState};
 
 #[derive(Debug, Default)]
 pub struct ActionsPanelItem {
@@ -68,7 +68,8 @@ impl PanelItem for ActionsPanelItem {
         data: &'a ListPanelData<Self::Item>,
         theme: &'a Theme,
     ) -> LeftContent<'a> {
-        let items: Vec<ListItem> = data.items.iter().enumerate().map(|(i, run)| {
+        let items: Vec<ListItem> = data.filtered_indices.iter().map(|&i| {
+            let run = &data.items[i];
             let (icon, style) = Self::status_icon(run);
             let is_expanded = self.expanded_run == Some(i);
 
@@ -250,11 +251,22 @@ impl PanelItem for ActionsPanelItem {
             .icon(" ")
             .hint("j/k to navigate, Enter to expand")
     }
+
+    fn apply_filter(&self, data: &mut ListPanelData<Self::Item>, query: &str, selection: &mut SelectionState) {
+        data.filter_by(query, |item, q| {
+            item.name.to_lowercase().contains(q)
+                || item.branch.to_lowercase().contains(q)
+                || item.event.to_lowercase().contains(q)
+                || item.status.to_lowercase().contains(q)
+                || item.conclusion.as_deref().unwrap_or("").to_lowercase().contains(q)
+        }, selection);
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::panels::panel::SelectionState;
 
     fn test_workflow_run() -> WorkflowRun {
         WorkflowRun {
@@ -526,6 +538,36 @@ mod tests {
         let mut item = ActionsPanelItem { expanded_run: Some(0) };
         item.toggle_expand(None);
         assert_eq!(item.expanded_run, Some(0));
+    }
+
+    #[test]
+    fn apply_filter_by_name() {
+        let mut data = ListPanelData::<WorkflowRun>::new();
+        let mut selection = SelectionState::list();
+        let items = vec![
+            WorkflowRun { id: 1, name: "CI".into(), ..Default::default() },
+            WorkflowRun { id: 2, name: "Deploy".into(), ..Default::default() },
+            WorkflowRun { id: 3, name: "CI nightly".into(), ..Default::default() },
+        ];
+        data.set_items(items, &mut selection);
+        let panel = ActionsPanelItem::default();
+        panel.apply_filter(&mut data, "CI", &mut selection);
+        assert_eq!(data.filtered_indices, vec![0, 2]);
+    }
+
+    #[test]
+    fn apply_filter_by_branch() {
+        let mut data = ListPanelData::<WorkflowRun>::new();
+        let mut selection = SelectionState::list();
+        let items = vec![
+            WorkflowRun { id: 1, name: "CI".into(), branch: "main".into(), ..Default::default() },
+            WorkflowRun { id: 2, name: "CI".into(), branch: "feature-x".into(), ..Default::default() },
+            WorkflowRun { id: 3, name: "CI".into(), branch: "main-hotfix".into(), ..Default::default() },
+        ];
+        data.set_items(items, &mut selection);
+        let panel = ActionsPanelItem::default();
+        panel.apply_filter(&mut data, "main", &mut selection);
+        assert_eq!(data.filtered_indices, vec![0, 2]);
     }
 }
 

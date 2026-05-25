@@ -8,7 +8,7 @@ use crate::theme::Theme;
 use crate::util::format::relative_time;
 use crate::widgets::empty_state::EmptyState;
 use crate::widgets::list_view::LeftContent;
-use super::panel::{ListPanelData, PanelItem};
+use super::panel::{ListPanelData, PanelItem, SelectionState};
 
 #[derive(Debug, Default)]
 pub struct NotificationsPanelItem {
@@ -153,6 +153,15 @@ impl PanelItem for NotificationsPanelItem {
             .icon(" ")
             .hint("j/k to navigate")
     }
+
+    fn apply_filter(&self, data: &mut ListPanelData<Self::Item>, query: &str, selection: &mut SelectionState) {
+        data.filter_by(query, |item, q| {
+            item.repo_name.to_lowercase().contains(q)
+                || item.subject_title.to_lowercase().contains(q)
+                || item.subject_type.to_lowercase().contains(q)
+                || item.reason.to_lowercase().contains(q)
+        }, selection);
+    }
 }
 
 #[cfg(test)]
@@ -163,6 +172,7 @@ mod tests {
     use crate::cmd::Cmd;
     use crate::theme::Theme;
     use crate::panels::panel::ListPanelData;
+    use crate::panels::panel::SelectionState;
 
     fn test_notification() -> Notification {
         Notification {
@@ -294,6 +304,36 @@ mod tests {
         let result = NotificationsPanelItem::extract_items(ApiPayload::Notifications(vec![]));
         assert!(result.is_some());
         assert_eq!(result.unwrap().len(), 0);
+    }
+
+    #[test]
+    fn apply_filter_by_subject_title() {
+        let mut data = ListPanelData::<Notification>::new();
+        let mut selection = SelectionState::list();
+        let items = vec![
+            Notification { id: "1".into(), subject_title: "Fix login bug".into(), ..Default::default() },
+            Notification { id: "2".into(), subject_title: "Add dark mode".into(), ..Default::default() },
+            Notification { id: "3".into(), subject_title: "Fix signup flow".into(), ..Default::default() },
+        ];
+        data.set_items(items, &mut selection);
+        let panel = NotificationsPanelItem::default();
+        panel.apply_filter(&mut data, "Fix", &mut selection);
+        assert_eq!(data.filtered_indices, vec![0, 2]);
+    }
+
+    #[test]
+    fn apply_filter_by_repo_name() {
+        let mut data = ListPanelData::<Notification>::new();
+        let mut selection = SelectionState::list();
+        let items = vec![
+            Notification { id: "1".into(), repo_name: "octocat/hello-world".into(), ..Default::default() },
+            Notification { id: "2".into(), repo_name: "dev/other-repo".into(), ..Default::default() },
+            Notification { id: "3".into(), repo_name: "octocat/another".into(), ..Default::default() },
+        ];
+        data.set_items(items, &mut selection);
+        let panel = NotificationsPanelItem::default();
+        panel.apply_filter(&mut data, "octocat", &mut selection);
+        assert_eq!(data.filtered_indices, vec![0, 2]);
     }
 }
 

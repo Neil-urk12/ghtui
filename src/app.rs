@@ -6,7 +6,7 @@ use crate::api::client::GitHubClient;
 use crate::config::Config;
 use crate::panels::{ActionsPanelItem, IssuesPanelItem, NotificationsPanelItem, Panel, PullsPanelItem, ReposPanelItem};
 use crate::panels::login::LoginState;
-use crate::panels::panel::{ListPanel, ListPanelData, SelectionState};
+use crate::panels::panel::{ListPanel, ListPanelData, PanelItem, SelectionState};
 use crate::theme::Theme;
 use crate::widgets::detail_pane::DetailPane;
 
@@ -67,6 +67,16 @@ impl PanelState {
             PanelState::Issues(p) => p,
             PanelState::Notifications(p) => p,
             PanelState::Actions(p) => p,
+        }
+    }
+
+    pub fn apply_filter(&mut self, query: &str) {
+        match self {
+            PanelState::Repos(p) => p.item.apply_filter(&mut p.data, query, &mut p.selection),
+            PanelState::Pulls(p) => p.item.apply_filter(&mut p.data, query, &mut p.selection),
+            PanelState::Issues(p) => p.item.apply_filter(&mut p.data, query, &mut p.selection),
+            PanelState::Notifications(p) => p.item.apply_filter(&mut p.data, query, &mut p.selection),
+            PanelState::Actions(p) => p.item.apply_filter(&mut p.data, query, &mut p.selection),
         }
     }
 }

@@ -10,7 +10,7 @@ use crate::util::format::relative_time;
 use crate::util::markdown::render_markdown;
 use crate::widgets::empty_state::EmptyState;
 use crate::widgets::list_view::LeftContent;
-use super::panel::{ListPanelData, PanelItem};
+use super::panel::{ListPanelData, PanelItem, SelectionState};
 
 fn issue_to_list_item(issue: &Issue, theme: &Theme) -> ListItem<'static> {
     let state_icon = if issue.state == "open" {
@@ -220,6 +220,15 @@ impl PanelItem for IssuesPanelItem {
             .icon("\u{1f4dd}")
             .hint("j/k to navigate")
     }
+
+    fn apply_filter(&self, data: &mut ListPanelData<Self::Item>, query: &str, selection: &mut SelectionState) {
+        data.filter_by(query, |item, q| {
+            item.title.to_lowercase().contains(q)
+                || item.author.to_lowercase().contains(q)
+                || item.labels.iter().any(|l| l.to_lowercase().contains(q))
+                || item.assignees.iter().any(|a| a.to_lowercase().contains(q))
+        }, selection);
+    }
 }
 
 #[cfg(test)]
@@ -349,5 +358,35 @@ mod tests {
             LeftContent::Table { rows, .. } => assert!(rows.is_empty()),
             LeftContent::List { items, .. } => assert!(items.is_empty()),
         }
+    }
+
+    #[test]
+    fn apply_filter_by_title() {
+        let mut data = ListPanelData::<Issue>::new();
+        let mut selection = SelectionState::list();
+        let items = vec![
+            Issue { number: 1, title: "Fix memory leak".into(), ..Default::default() },
+            Issue { number: 2, title: "Add feature X".into(), ..Default::default() },
+            Issue { number: 3, title: "Memory optimization".into(), ..Default::default() },
+        ];
+        data.set_items(items, &mut selection);
+        let panel = IssuesPanelItem::default();
+        panel.apply_filter(&mut data, "memory", &mut selection);
+        assert_eq!(data.filtered_indices, vec![0, 2]);
+    }
+
+    #[test]
+    fn apply_filter_by_author() {
+        let mut data = ListPanelData::<Issue>::new();
+        let mut selection = SelectionState::list();
+        let items = vec![
+            Issue { number: 1, title: "Issue 1".into(), author: "octocat".into(), ..Default::default() },
+            Issue { number: 2, title: "Issue 2".into(), author: "dev1".into(), ..Default::default() },
+            Issue { number: 3, title: "Issue 3".into(), author: "octocat".into(), ..Default::default() },
+        ];
+        data.set_items(items, &mut selection);
+        let panel = IssuesPanelItem::default();
+        panel.apply_filter(&mut data, "octocat", &mut selection);
+        assert_eq!(data.filtered_indices, vec![0, 2]);
     }
 }

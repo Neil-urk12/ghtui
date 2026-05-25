@@ -237,6 +237,14 @@ impl PanelItem for PullsPanelItem {
             .hint("j/k to navigate")
     }
 
+    fn apply_filter(&self, data: &mut ListPanelData<Self::Item>, query: &str, selection: &mut SelectionState) {
+        data.filter_by(query, |item, q| {
+            item.title.to_lowercase().contains(q)
+                || item.author.to_lowercase().contains(q)
+                || item.labels.iter().any(|l| l.to_lowercase().contains(q))
+        }, selection);
+    }
+
     fn initial_selection(&self) -> SelectionState {
         SelectionState::table()
     }
@@ -450,6 +458,36 @@ mod tests {
 
         assert!(result.is_some());
         assert_eq!(result.unwrap().len(), 0);
+    }
+
+    #[test]
+    fn apply_filter_by_title() {
+        let mut data = ListPanelData::<PullRequest>::new();
+        let mut selection = SelectionState::table();
+        let items = vec![
+            PullRequest { number: 1, title: "Fix login bug".into(), ..Default::default() },
+            PullRequest { number: 2, title: "Add dark mode".into(), ..Default::default() },
+            PullRequest { number: 3, title: "Fix signup bug".into(), ..Default::default() },
+        ];
+        data.set_items(items, &mut selection);
+        let panel = PullsPanelItem::default();
+        panel.apply_filter(&mut data, "bug", &mut selection);
+        assert_eq!(data.filtered_indices, vec![0, 2]);
+    }
+
+    #[test]
+    fn apply_filter_by_author() {
+        let mut data = ListPanelData::<PullRequest>::new();
+        let mut selection = SelectionState::table();
+        let items = vec![
+            PullRequest { number: 1, title: "PR 1".into(), author: "octocat".into(), ..Default::default() },
+            PullRequest { number: 2, title: "PR 2".into(), author: "dev1".into(), ..Default::default() },
+            PullRequest { number: 3, title: "PR 3".into(), author: "octocat".into(), ..Default::default() },
+        ];
+        data.set_items(items, &mut selection);
+        let panel = PullsPanelItem::default();
+        panel.apply_filter(&mut data, "octocat", &mut selection);
+        assert_eq!(data.filtered_indices, vec![0, 2]);
     }
 }
 

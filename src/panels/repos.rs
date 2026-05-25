@@ -182,6 +182,14 @@ impl PanelItem for ReposPanelItem {
     fn on_loaded(&mut self, data: &mut ListPanelData<Self::Item>) {
         self.sort.sort_indices(&data.items, &mut data.filtered_indices);
     }
+
+    fn apply_filter(&self, data: &mut ListPanelData<Self::Item>, query: &str, selection: &mut SelectionState) {
+        data.filter_by(query, |repo, q| {
+            repo.name.to_lowercase().contains(q)
+                || repo.language.as_deref().unwrap_or("").to_lowercase().contains(q)
+        }, selection);
+        self.sort.sort_indices(&data.items, &mut data.filtered_indices);
+    }
 }
 
 #[cfg(test)]
@@ -192,7 +200,7 @@ mod tests {
     use crate::event::ApiPayload;
     use crate::theme::Theme;
     use crate::widgets::list_view::LeftContent;
-    use crate::panels::panel::ListPanelData;
+    use crate::panels::panel::{ListPanelData, PanelItem, SelectionState};
 
     fn test_repo() -> Repo {
         Repo {
@@ -360,5 +368,35 @@ mod tests {
             LeftContent::Table { rows, .. } => assert!(rows.is_empty()),
             LeftContent::List { items, .. } => assert!(items.is_empty()),
         }
+    }
+
+    #[test]
+    fn apply_filter_by_name() {
+        let mut data = ListPanelData::<Repo>::new();
+        let mut selection = SelectionState::table();
+        let items = vec![
+            Repo { name: "octocat/alpha".into(), ..Default::default() },
+            Repo { name: "octocat/beta".into(), ..Default::default() },
+            Repo { name: "octocat/alphabet".into(), ..Default::default() },
+        ];
+        data.set_items(items, &mut selection);
+        let panel = ReposPanelItem::default();
+        panel.apply_filter(&mut data, "alpha", &mut selection);
+        assert_eq!(data.filtered_indices, vec![0, 2]);
+    }
+
+    #[test]
+    fn apply_filter_by_language() {
+        let mut data = ListPanelData::<Repo>::new();
+        let mut selection = SelectionState::table();
+        let items = vec![
+            Repo { name: "octocat/a".into(), language: Some("Rust".into()), ..Default::default() },
+            Repo { name: "octocat/b".into(), language: Some("Python".into()), ..Default::default() },
+            Repo { name: "octocat/c".into(), language: Some("Rust".into()), ..Default::default() },
+        ];
+        data.set_items(items, &mut selection);
+        let panel = ReposPanelItem::default();
+        panel.apply_filter(&mut data, "Rust", &mut selection);
+        assert_eq!(data.filtered_indices, vec![0, 2]);
     }
 }

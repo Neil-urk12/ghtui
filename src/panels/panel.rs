@@ -118,6 +118,28 @@ impl<T> ListPanelData<T> {
         self.owner = Some(owner);
         self.repo = Some(repo);
     }
+
+    /// Filter items by a predicate, updating filtered_indices and selection.
+    pub fn filter_by(
+        &mut self,
+        query: &str,
+        matches: impl Fn(&T, &str) -> bool,
+        selection: &mut SelectionState,
+    ) {
+        if query.is_empty() {
+            self.filtered_indices = (0..self.items.len()).collect();
+        } else {
+            let q = query.to_lowercase();
+            self.filtered_indices = self.items
+                .iter()
+                .enumerate()
+                .filter(|(_, item)| matches(item, &q))
+                .map(|(i, _)| i)
+                .collect();
+        }
+        selection.select(if self.filtered_indices.is_empty() { None } else { Some(0) });
+        selection.set_len(self.filtered_indices.len());
+    }
 }
 
 
@@ -215,6 +237,12 @@ pub trait PanelItem: std::fmt::Debug + Default {
     fn detail_empty_state(&self) -> EmptyState {
         EmptyState::new("Select an item")
             .hint("j/k to navigate")
+    }
+
+    /// Filter items in data based on search query. Default: no-op.
+    /// Override in concrete panels to filter by searchable fields.
+    fn apply_filter(&self, data: &mut ListPanelData<Self::Item>, query: &str, selection: &mut SelectionState) {
+        let _ = (data, query, selection);
     }
 }
 
@@ -441,6 +469,10 @@ mod tests {
         fn extract_items(_payload: ApiPayload) -> Option<Vec<Self::Item>> {
             None
         }
+
+        fn apply_filter(&self, data: &mut ListPanelData<Self::Item>, query: &str, selection: &mut SelectionState) {
+            data.filter_by(query, |item, q| item.to_lowercase().contains(q), selection);
+        }
     }
 
     #[test]
@@ -488,5 +520,101 @@ mod tests {
         // k should move up.
         let result = Panel::handle_key(&mut panel, 'k');
         assert!(result.is_none());
+    }
+
+    // --- Search filter tests (failing: methods don't exist yet) ---
+
+    #[test]
+    fn panel_item_trait_has_apply_filter_method() {
+        // DummyItem implements PanelItem, so if apply_filter exists on the
+        // trait, this will compile. We also verify the impl does basic
+        // substring matching.
+        let item = DummyItem;
+        let mut data = ListPanelData::<String>::new();
+        let mut selection = SelectionState::list();
+        data.set_items(vec!["foo".into(), "bar".into(), "foobar".into()], &mut selection);
+
+        item.apply_filter(&mut data, "foo", &mut selection);
+
+        assert_eq!(data.filtered_indices, vec![0, 2]);
+    }
+
+    #[test]
+    fn apply_filter_matches_substring() {
+        let item = DummyItem;
+        let mut data = ListPanelData::<String>::new();
+        let mut selection = SelectionState::list();
+        data.set_items(vec!["foo".into(), "bar".into(), "foobar".into()], &mut selection);
+
+        item.apply_filter(&mut data, "foo", &mut selection);
+
+        assert_eq!(data.filtered_indices, vec![0, 2]);
+    }
+
+    #[test]
+    fn apply_filter_is_case_insensitive() {
+        let item = DummyItem;
+        let mut data = ListPanelData::<String>::new();
+        let mut selection = SelectionState::list();
+        data.set_items(vec!["Hello".into(), "world".into(), "HELLO".into()], &mut selection);
+
+        item.apply_filter(&mut data, "hello", &mut selection);
+
+        assert_eq!(data.filtered_indices, vec![0, 2]);
+    }
+
+    #[test]
+    fn apply_filter_empty_query_shows_all() {
+        let item = DummyItem;
+        let mut data = ListPanelData::<String>::new();
+        let mut selection = SelectionState::list();
+        data.set_items(vec!["a".into(), "b".into(), "c".into()], &mut selection);
+
+        item.apply_filter(&mut data, "", &mut selection);
+
+        assert_eq!(data.filtered_indices, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn apply_filter_no_match_empty_result() {
+        let item = DummyItem;
+        let mut data = ListPanelData::<String>::new();
+        let mut selection = SelectionState::list();
+        data.set_items(vec!["foo".into(), "bar".into()], &mut selection);
+
+        item.apply_filter(&mut data, "zzz", &mut selection);
+
+        assert!(data.filtered_indices.is_empty());
+    }
+
+    #[test]
+    fn apply_filter_resets_selection() {
+        let item = DummyItem;
+        let mut data = ListPanelData::<String>::new();
+        let mut selection = SelectionState::list();
+        data.set_items(vec!["foo".into(), "bar".into(), "foobar".into()], &mut selection);
+
+        // Move selection down first.
+        selection.select(Some(2));
+        assert_eq!(selection.selected(), Some(2));
+
+        // After filtering, selection should reset to 0.
+        item.apply_filter(&mut data, "foo", &mut selection);
+
+        assert_eq!(selection.selected(), Some(0));
+        assert_eq!(selection.len(), 2);
+    }
+
+    #[test]
+    fn apply_filter_resets_selection_to_none_when_empty() {
+        let item = DummyItem;
+        let mut data = ListPanelData::<String>::new();
+        let mut selection = SelectionState::list();
+        data.set_items(vec!["foo".into(), "bar".into()], &mut selection);
+
+        item.apply_filter(&mut data, "zzz", &mut selection);
+
+        assert_eq!(selection.selected(), None);
+        assert_eq!(selection.len(), 0);
     }
 }
