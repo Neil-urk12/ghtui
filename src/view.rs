@@ -41,7 +41,7 @@ pub fn view(frame: &mut Frame, app: &mut App) {
     // Content area - delegate to active panel
     let content_area = layout[1];
     if let Some(entry) = app.panels.get_mut(&app.active_panel) {
-        entry.as_panel_mut().render(frame, content_area, true, &app.theme, app.tick);
+        entry.render(frame, content_area, true, &app.theme, app.tick);
     }
 
     // Status area + optional search bar

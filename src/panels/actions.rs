@@ -3,7 +3,6 @@ use ratatui::widgets::*;
 
 use crate::domain::WorkflowRun;
 use crate::cmd::Cmd;
-use crate::event::ApiPayload;
 use crate::theme::Theme;
 use crate::util::format::relative_time;
 use crate::widgets::empty_state::EmptyState;
@@ -156,7 +155,7 @@ impl PanelItem for ActionsPanelItem {
             }
             'o' => {
                 if let Some(run) = selected {
-                    if let (Some(owner), Some(repo)) = (&data.owner, &data.repo) {
+                    if let Some((owner, repo)) = data.owner_repo() {
                         crate::util::open_in_browser(run.id, owner, repo);
                     }
                 }
@@ -164,10 +163,10 @@ impl PanelItem for ActionsPanelItem {
             }
             'r' => {
                 if let Some(run) = selected {
-                    if let (Some(owner), Some(repo)) = (&data.owner, &data.repo) {
+                    if let Some((owner, repo)) = data.owner_repo() {
                         return Some(Cmd::RerunWorkflow {
-                            owner: owner.clone(),
-                            repo: repo.clone(),
+                            owner: owner.to_string(),
+                            repo: repo.to_string(),
                             run_id: run.id,
                         });
                     }
@@ -176,10 +175,10 @@ impl PanelItem for ActionsPanelItem {
             }
             'c' => {
                 if let Some(run) = selected {
-                    if let (Some(owner), Some(repo)) = (&data.owner, &data.repo) {
+                    if let Some((owner, repo)) = data.owner_repo() {
                         return Some(Cmd::CancelWorkflow {
-                            owner: owner.clone(),
-                            repo: repo.clone(),
+                            owner: owner.to_string(),
+                            repo: repo.to_string(),
                             run_id: run.id,
                         });
                     }
@@ -188,7 +187,7 @@ impl PanelItem for ActionsPanelItem {
             }
             'v' => {
                 if let Some(run) = selected {
-                    if let (Some(owner), Some(repo)) = (&data.owner, &data.repo) {
+                    if let Some((owner, repo)) = data.owner_repo() {
                         crate::util::spawn_background(
                             "gh",
                             &[
@@ -209,36 +208,29 @@ impl PanelItem for ActionsPanelItem {
     }
 
     fn fetch_cmd(&self, data: &ListPanelData<Self::Item>) -> Cmd {
-        match (&data.owner, &data.repo) {
-            (Some(owner), Some(repo)) => Cmd::FetchActions {
-                owner: owner.clone(),
-                repo: repo.clone(),
-            },
-            _ => Cmd::None,
+        if let Some((owner, repo)) = data.owner_repo() {
+            Cmd::FetchActions {
+                owner: owner.to_string(),
+                repo: repo.to_string(),
+            }
+        } else {
+            Cmd::None
         }
     }
 
     fn block_title(&self, data: &ListPanelData<Self::Item>) -> String {
-        format!(
-            " Actions: {}/{} ",
-            data.owner.as_deref().unwrap_or(""),
-            data.repo.as_deref().unwrap_or("")
-        )
-    }
-
-    fn empty_state(&self, _data: &ListPanelData<Self::Item>) -> EmptyState {
-        EmptyState::new("No workflow runs")
-            .icon(" ")
-            .hint("Press `r` to refresh")
-    }
-
-    fn extract_items(payload: ApiPayload) -> Option<Vec<Self::Item>> {
-        if let ApiPayload::Actions(runs) = payload {
-            Some(runs)
+        if let Some((o, r)) = data.owner_repo() {
+            format!(" Actions: {o}/{r} ")
         } else {
-            None
+            " Actions ".into()
         }
     }
+
+    fn empty_state(&self, data: &ListPanelData<Self::Item>) -> EmptyState {
+        data.repo_aware_empty_state("No workflow runs", " ", "Press `r` to refresh")
+    }
+
+    extract_items!(Actions);
 
     fn on_loaded(&mut self, _data: &mut ListPanelData<Self::Item>) {
         self.expanded_run = None;
@@ -277,6 +269,7 @@ impl PanelItem for ActionsPanelItem {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::event::ApiPayload;
     use crate::panels::panel::SelectionState;
 
     fn test_workflow_run() -> WorkflowRun {

@@ -3,7 +3,6 @@ use ratatui::widgets::*;
 
 use crate::domain::Notification;
 use crate::cmd::Cmd;
-use crate::event::ApiPayload;
 use crate::theme::Theme;
 use crate::util::format::relative_time;
 use crate::widgets::empty_state::EmptyState;
@@ -136,13 +135,7 @@ impl PanelItem for NotificationsPanelItem {
             .hint("Press `a` to show all, `r` to refresh")
     }
 
-    fn extract_items(payload: ApiPayload) -> Option<Vec<Self::Item>> {
-        if let ApiPayload::Notifications(notifs) = payload {
-            Some(notifs)
-        } else {
-            None
-        }
-    }
+    extract_items!(Notifications);
 
     fn detail_title(&self) -> String {
         " Detail ".to_string()

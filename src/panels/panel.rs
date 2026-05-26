@@ -140,6 +140,31 @@ impl<T> ListPanelData<T> {
         selection.select(if self.filtered_indices.is_empty() { None } else { Some(0) });
         selection.set_len(self.filtered_indices.len());
     }
+
+    /// Return (owner, repo) if both are set.
+    pub fn owner_repo(&self) -> Option<(&str, &str)> {
+        match (&self.owner, &self.repo) {
+            (Some(o), Some(r)) => Some((o.as_str(), r.as_str())),
+            _ => None,
+        }
+    }
+
+    /// Build an empty state that adapts its message based on whether a repo
+    /// context is available.
+    pub fn repo_aware_empty_state(
+        &self,
+        has_items_msg: &'static str,
+        has_items_icon: &'static str,
+        has_items_hint: &'static str,
+    ) -> EmptyState {
+        if self.owner.is_some() {
+            EmptyState::new(has_items_msg).icon(has_items_icon).hint(has_items_hint)
+        } else {
+            EmptyState::new("Select a repository first")
+                .icon(" ")
+                .hint("Switch to Repos tab, press Enter on a repo")
+        }
+    }
 }
 
 
@@ -161,22 +186,6 @@ pub fn navigate_down(selection: &mut SelectionState, detail_pane: &mut DetailPan
     }
 }
 
-// --- Panel trait ---
-
-/// Common interface for all panels.
-pub trait Panel: std::fmt::Debug {
-    fn handle_key(&mut self, key: char) -> Option<Cmd>;
-    #[allow(clippy::too_many_arguments)]
-    fn render(&mut self, frame: &mut Frame, area: Rect, focused: bool, theme: &Theme, tick: u64);
-    fn fetch_cmd(&self) -> Cmd { Cmd::None }
-    fn set_loading(&mut self, _loading: bool) {}
-    fn set_repo_context(&mut self, _owner: &str, _repo: &str) {}
-    fn load_data(&mut self, payload: ApiPayload);
-    fn scroll_detail_up(&mut self) {}
-    fn scroll_detail_down(&mut self) {}
-    fn selected_display(&self) -> Option<String> { None }
-}
-
 // --- PanelItem trait + ListPanel<T> ---
 
 /// Deeper panel trait that owns its own `ListPanelData`, `SelectionState`,
@@ -184,7 +193,7 @@ pub trait Panel: std::fmt::Debug {
 /// and key-handling; boilerplate (j/k nav, loading, repo context, render)
 /// is handled by the generic `ListPanel<T>` wrapper.
 ///
-/// During Phase 1 the old `Panel` trait and `ListPanel<T>` coexist.
+/// This trait pairs with the generic `ListPanel<T>` wrapper which handles
 pub trait PanelItem: std::fmt::Debug + Default {
     type Item: std::fmt::Debug;
 
@@ -253,8 +262,8 @@ pub trait PanelItem: std::fmt::Debug + Default {
 }
 
 /// Generic list panel that owns selection + detail pane internally.
-/// Wraps any `PanelItem` implementation and delegates the old `Panel` trait
-/// to the inner item's methods plus boilerplate navigation.
+/// Wraps any `PanelItem` implementation and delegates navigation and
+/// rendering to the inner item's methods plus boilerplate.
 pub struct ListPanel<T: PanelItem> {
     pub data: ListPanelData<T::Item>,
     pub selection: SelectionState,
@@ -285,23 +294,23 @@ impl<T: PanelItem> Default for ListPanel<T> {
     }
 }
 
-impl<T: PanelItem + 'static> Panel for ListPanel<T> {
-    fn set_loading(&mut self, loading: bool) {
+impl<T: PanelItem + 'static> ListPanel<T> {
+    pub fn set_loading(&mut self, loading: bool) {
         self.data.loading = loading;
     }
 
-    fn set_repo_context(&mut self, owner: &str, repo: &str) {
+    pub fn set_repo_context(&mut self, owner: &str, repo: &str) {
         self.data.set_repo(owner.to_string(), repo.to_string());
     }
 
-    fn load_data(&mut self, payload: ApiPayload) {
+    pub fn load_data(&mut self, payload: ApiPayload) {
         if let Some(items) = T::extract_items(payload) {
             self.data.load_items(items, &mut self.selection);
             self.item.on_loaded(&mut self.data);
         }
     }
 
-    fn handle_key(&mut self, key: char) -> Option<Cmd> {
+    pub fn handle_key(&mut self, key: char) -> Option<Cmd> {
         // Try the PanelItem's custom key handler first.
         let selected = self.data.selected(&self.selection);
         if let Some(cmd) = self.item.handle_key(key, selected, &self.data) {
@@ -315,11 +324,11 @@ impl<T: PanelItem + 'static> Panel for ListPanel<T> {
         }
     }
 
-    fn fetch_cmd(&self) -> Cmd {
+    pub fn fetch_cmd(&self) -> Cmd {
         self.item.fetch_cmd(&self.data)
     }
 
-    fn render(&mut self, frame: &mut Frame, area: Rect, focused: bool, theme: &Theme, tick: u64) {
+    pub fn render(&mut self, frame: &mut Frame, area: Rect, focused: bool, theme: &Theme, tick: u64) {
         let left = self.item.left_content(&self.data, theme);
         let (sr_left, sr_right) = self.item.split_ratio();
 
@@ -344,23 +353,28 @@ impl<T: PanelItem + 'static> Panel for ListPanel<T> {
         render_list_view(frame, area, config, left, &mut self.selection, &self.detail_pane, detail_lines, theme, tick);
     }
 
-    fn scroll_detail_up(&mut self) {
+    pub fn scroll_detail_up(&mut self) {
         self.detail_pane.scroll_up();
     }
 
-    fn scroll_detail_down(&mut self) {
+    pub fn scroll_detail_down(&mut self) {
         self.detail_pane.scroll_down();
     }
 
 
-    fn selected_display(&self) -> Option<String> {
+    pub fn selected_display(&self) -> Option<String> {
         let item = self.data.selected(&self.selection)?;
         self.item.item_display(item)
+    }
+
+    pub fn apply_filter(&mut self, query: &str) {
+        self.item.apply_filter(&mut self.data, query, &mut self.selection);
     }
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::api::models::Repo;
 
     #[test]
     fn set_items_populates_and_resets_selection() {
@@ -499,16 +513,16 @@ mod tests {
     #[test]
     fn list_panel_set_loading() {
         let mut panel: ListPanel<DummyItem> = ListPanel::default();
-        Panel::set_loading(&mut panel, true);
+        panel.set_loading(true);
         assert!(panel.data.loading);
-        Panel::set_loading(&mut panel, false);
+        panel.set_loading(false);
         assert!(!panel.data.loading);
     }
 
     #[test]
     fn list_panel_set_repo_context() {
         let mut panel: ListPanel<DummyItem> = ListPanel::default();
-        Panel::set_repo_context(&mut panel, "owner", "repo");
+        panel.set_repo_context("owner", "repo");
         assert_eq!(panel.data.owner.as_deref(), Some("owner"));
         assert_eq!(panel.data.repo.as_deref(), Some("repo"));
     }
@@ -516,7 +530,7 @@ mod tests {
     #[test]
     fn list_panel_fetch_cmd_delegates() {
         let panel: ListPanel<DummyItem> = ListPanel::default();
-        assert!(matches!(Panel::fetch_cmd(&panel), Cmd::None));
+        assert!(matches!(panel.fetch_cmd(), Cmd::None));
     }
 
     #[test]
@@ -526,11 +540,11 @@ mod tests {
         panel.data.set_items(vec!["a".into(), "b".into(), "c".into()], &mut panel.selection);
 
         // j should move down.
-        let result = Panel::handle_key(&mut panel, 'j');
+        let result = panel.handle_key('j');
         assert!(result.is_none());
 
         // k should move up.
-        let result = Panel::handle_key(&mut panel, 'k');
+        let result = panel.handle_key('k');
         assert!(result.is_none());
     }
 
@@ -628,5 +642,64 @@ mod tests {
 
         assert_eq!(selection.selected(), None);
         assert_eq!(selection.len(), 0);
+    }
+
+    #[test]
+    fn list_panel_apply_filter_delegates_to_item() {
+        let mut panel: ListPanel<DummyItem> = ListPanel::default();
+        panel.data.set_items(
+            vec!["foo".into(), "bar".into(), "foobar".into()],
+            &mut panel.selection,
+        );
+
+        // All 3 items visible initially
+        assert_eq!(panel.data.filtered_indices.len(), 3);
+
+        // Call apply_filter through the Panel trait
+        panel.apply_filter("foo");
+
+        // Should filter to items containing "foo"
+        assert_eq!(panel.data.filtered_indices, vec![0, 2]);
+
+        // Clear filter
+        panel.apply_filter("");
+        assert_eq!(panel.data.filtered_indices, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn list_panel_data_owner_repo_returns_pair() {
+        let mut data: ListPanelData<Repo> = ListPanelData::new();
+        data.owner = Some("octocat".into());
+        data.repo = Some("hello-world".into());
+        assert_eq!(data.owner_repo(), Some(("octocat", "hello-world")));
+    }
+
+    #[test]
+    fn list_panel_data_owner_repo_returns_none_without_both() {
+        let mut data: ListPanelData<Repo> = ListPanelData::new();
+        data.owner = Some("octocat".into());
+        assert_eq!(data.owner_repo(), None);
+    }
+
+    #[test]
+    fn list_panel_data_owner_repo_returns_none_when_neither() {
+        let data: ListPanelData<Repo> = ListPanelData::new();
+        assert_eq!(data.owner_repo(), None);
+    }
+
+    #[test]
+    fn repo_aware_empty_state_with_owner() {
+        let mut data: ListPanelData<Repo> = ListPanelData::new();
+        data.owner = Some("octocat".into());
+        data.repo = Some("hello-world".into());
+        let es = data.repo_aware_empty_state("No pulls found", " ", "Hint");
+        assert_eq!(es.message, "No pulls found");
+    }
+
+    #[test]
+    fn repo_aware_empty_state_without_owner() {
+        let data: ListPanelData<Repo> = ListPanelData::new();
+        let es = data.repo_aware_empty_state("No pulls found", " ", "Hint");
+        assert_eq!(es.message, "Select a repository first");
     }
 }

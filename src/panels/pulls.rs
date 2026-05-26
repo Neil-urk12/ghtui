@@ -3,7 +3,6 @@ use ratatui::widgets::{Cell, Row};
 
 use crate::cmd::Cmd;
 use crate::domain::{FilterState, PullRequest};
-use crate::event::ApiPayload;
 use crate::theme::Theme;
 use crate::util::format;
 use crate::widgets::empty_state::EmptyState;
@@ -113,10 +112,10 @@ impl PanelItem for PullsPanelItem {
         match key {
             '1' => {
                 self.state_filter = FilterState::Open;
-                if let (Some(owner), Some(repo)) = (&data.owner, &data.repo) {
+                if let Some((owner, repo)) = data.owner_repo() {
                     Some(Cmd::FetchPulls {
-                        owner: owner.clone(),
-                        repo: repo.clone(),
+                        owner: owner.to_string(),
+                        repo: repo.to_string(),
                         state: self.state_filter.as_str().to_string(),
                     })
                 } else {
@@ -125,10 +124,10 @@ impl PanelItem for PullsPanelItem {
             }
             '2' => {
                 self.state_filter = FilterState::Closed;
-                if let (Some(owner), Some(repo)) = (&data.owner, &data.repo) {
+                if let Some((owner, repo)) = data.owner_repo() {
                     Some(Cmd::FetchPulls {
-                        owner: owner.clone(),
-                        repo: repo.clone(),
+                        owner: owner.to_string(),
+                        repo: repo.to_string(),
                         state: self.state_filter.as_str().to_string(),
                     })
                 } else {
@@ -137,10 +136,10 @@ impl PanelItem for PullsPanelItem {
             }
             '3' => {
                 self.state_filter = FilterState::All;
-                if let (Some(owner), Some(repo)) = (&data.owner, &data.repo) {
+                if let Some((owner, repo)) = data.owner_repo() {
                     Some(Cmd::FetchPulls {
-                        owner: owner.clone(),
-                        repo: repo.clone(),
+                        owner: owner.to_string(),
+                        repo: repo.to_string(),
                         state: self.state_filter.as_str().to_string(),
                     })
                 } else {
@@ -149,7 +148,7 @@ impl PanelItem for PullsPanelItem {
             }
             'o' => {
                 if let Some(pr) = selected {
-                    if let (Some(owner), Some(repo)) = (&data.owner, &data.repo) {
+                    if let Some((owner, repo)) = data.owner_repo() {
                         crate::util::open_in_browser(pr.number, owner, repo);
                     }
                 }
@@ -157,10 +156,10 @@ impl PanelItem for PullsPanelItem {
             }
             'a' => {
                 if let Some(pr) = selected {
-                    if let (Some(owner), Some(repo)) = (&data.owner, &data.repo) {
+                    if let Some((owner, repo)) = data.owner_repo() {
                         return Some(Cmd::ApprovePr {
-                            owner: owner.clone(),
-                            repo: repo.clone(),
+                            owner: owner.to_string(),
+                            repo: repo.to_string(),
                             pr_number: pr.number as u64,
                         });
                     }
@@ -169,10 +168,10 @@ impl PanelItem for PullsPanelItem {
             }
             'm' => {
                 if let Some(pr) = selected {
-                    if let (Some(owner), Some(repo)) = (&data.owner, &data.repo) {
+                    if let Some((owner, repo)) = data.owner_repo() {
                         return Some(Cmd::MergePr {
-                            owner: owner.clone(),
-                            repo: repo.clone(),
+                            owner: owner.to_string(),
+                            repo: repo.to_string(),
                             pr_number: pr.number as u64,
                         });
                     }
@@ -184,42 +183,30 @@ impl PanelItem for PullsPanelItem {
     }
 
     fn fetch_cmd(&self, data: &ListPanelData<Self::Item>) -> Cmd {
-        match (&data.owner, &data.repo) {
-            (Some(owner), Some(repo)) => Cmd::FetchPulls {
-                owner: owner.clone(),
-                repo: repo.clone(),
+        if let Some((owner, repo)) = data.owner_repo() {
+            Cmd::FetchPulls {
+                owner: owner.to_string(),
+                repo: repo.to_string(),
                 state: self.state_filter.as_str().to_string(),
-            },
-            _ => Cmd::None,
+            }
+        } else {
+            Cmd::None
         }
     }
 
     fn block_title(&self, data: &ListPanelData<Self::Item>) -> String {
-        match (&data.owner, &data.repo) {
-            (Some(o), Some(r)) => format!(" PRs: {o}/{r} ({}) ", self.state_filter.as_str()),
-            _ => format!(" Pull Requests ({}) ", self.state_filter.as_str()),
+        if let Some((o, r)) = data.owner_repo() {
+            format!(" PRs: {o}/{r} ({}) ", self.state_filter.as_str())
+        } else {
+            format!(" Pull Requests ({}) ", self.state_filter.as_str())
         }
     }
 
     fn empty_state(&self, data: &ListPanelData<Self::Item>) -> EmptyState {
-        if data.owner.is_some() {
-            EmptyState::new("No pull requests found")
-                .icon(" ")
-                .hint("Press `r` to refresh, 1/2/3 to filter")
-        } else {
-            EmptyState::new("Select a repository first")
-                .icon(" ")
-                .hint("Switch to Repos tab, press Enter on a repo")
-        }
+        data.repo_aware_empty_state("No pull requests found", " ", "Press `r` to refresh, 1/2/3 to filter")
     }
 
-    fn extract_items(payload: ApiPayload) -> Option<Vec<Self::Item>> {
-        if let ApiPayload::Pulls(pulls) = payload {
-            Some(pulls)
-        } else {
-            None
-        }
-    }
+    extract_items!(Pulls);
 
     fn split_ratio(&self) -> (u16, u16) {
         (60, 40)
@@ -256,6 +243,7 @@ impl PanelItem for PullsPanelItem {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::event::ApiPayload;
 
     fn test_pr() -> PullRequest {
         PullRequest {

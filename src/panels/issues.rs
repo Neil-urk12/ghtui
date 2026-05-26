@@ -3,7 +3,6 @@ use ratatui::widgets::*;
 
 use crate::cmd::Cmd;
 use crate::domain::{FilterState, Issue};
-use crate::event::ApiPayload;
 use crate::theme::Theme;
 use crate::util::format;
 use crate::util::format::relative_time;
@@ -121,10 +120,10 @@ impl PanelItem for IssuesPanelItem {
         match key {
             '1' => {
                 self.state_filter = FilterState::Open;
-                if let (Some(owner), Some(repo)) = (&data.owner, &data.repo) {
+                if let Some((owner, repo)) = data.owner_repo() {
                     Some(Cmd::FetchIssues {
-                        owner: owner.clone(),
-                        repo: repo.clone(),
+                        owner: owner.to_string(),
+                        repo: repo.to_string(),
                         state: self.state_filter.as_str().to_string(),
                     })
                 } else {
@@ -133,10 +132,10 @@ impl PanelItem for IssuesPanelItem {
             }
             '2' => {
                 self.state_filter = FilterState::Closed;
-                if let (Some(owner), Some(repo)) = (&data.owner, &data.repo) {
+                if let Some((owner, repo)) = data.owner_repo() {
                     Some(Cmd::FetchIssues {
-                        owner: owner.clone(),
-                        repo: repo.clone(),
+                        owner: owner.to_string(),
+                        repo: repo.to_string(),
                         state: self.state_filter.as_str().to_string(),
                     })
                 } else {
@@ -145,10 +144,10 @@ impl PanelItem for IssuesPanelItem {
             }
             '3' => {
                 self.state_filter = FilterState::All;
-                if let (Some(owner), Some(repo)) = (&data.owner, &data.repo) {
+                if let Some((owner, repo)) = data.owner_repo() {
                     Some(Cmd::FetchIssues {
-                        owner: owner.clone(),
-                        repo: repo.clone(),
+                        owner: owner.to_string(),
+                        repo: repo.to_string(),
                         state: self.state_filter.as_str().to_string(),
                     })
                 } else {
@@ -157,7 +156,7 @@ impl PanelItem for IssuesPanelItem {
             }
             'o' => {
                 if let Some(issue) = selected {
-                    if let (Some(owner), Some(repo)) = (&data.owner, &data.repo) {
+                    if let Some((owner, repo)) = data.owner_repo() {
                         crate::util::open_in_browser(issue.number, owner, repo);
                     }
                 }
@@ -168,42 +167,30 @@ impl PanelItem for IssuesPanelItem {
     }
 
     fn fetch_cmd(&self, data: &ListPanelData<Self::Item>) -> Cmd {
-        match (&data.owner, &data.repo) {
-            (Some(owner), Some(repo)) => Cmd::FetchIssues {
-                owner: owner.clone(),
-                repo: repo.clone(),
+        if let Some((owner, repo)) = data.owner_repo() {
+            Cmd::FetchIssues {
+                owner: owner.to_string(),
+                repo: repo.to_string(),
                 state: self.state_filter.as_str().to_string(),
-            },
-            _ => Cmd::None,
+            }
+        } else {
+            Cmd::None
         }
     }
 
     fn block_title(&self, data: &ListPanelData<Self::Item>) -> String {
-        match (&data.owner, &data.repo) {
-            (Some(o), Some(r)) => format!(" Issues: {o}/{r} ({}) ", self.state_filter.as_str()),
-            _ => format!(" Issues ({}) ", self.state_filter.as_str()),
+        if let Some((o, r)) = data.owner_repo() {
+            format!(" Issues: {o}/{r} ({}) ", self.state_filter.as_str())
+        } else {
+            format!(" Issues ({}) ", self.state_filter.as_str())
         }
     }
 
     fn empty_state(&self, data: &ListPanelData<Self::Item>) -> EmptyState {
-        if data.owner.is_some() {
-            EmptyState::new("No issues found")
-                .icon("\u{1f41b}")
-                .hint("Press `r` to refresh, 1/2/3 to filter")
-        } else {
-            EmptyState::new("Select a repository first")
-                .icon("\u{1f4e6}")
-                .hint("Switch to Repos tab, press Enter on a repo")
-        }
+        data.repo_aware_empty_state("No issues found", "\u{1f41b}", "Press `r` to refresh, 1/2/3 to filter")
     }
 
-    fn extract_items(payload: ApiPayload) -> Option<Vec<Self::Item>> {
-        if let ApiPayload::Issues(issues) = payload {
-            Some(issues)
-        } else {
-            None
-        }
-    }
+    extract_items!(Issues);
 
     fn split_ratio(&self) -> (u16, u16) {
         (60, 40)
@@ -237,6 +224,7 @@ impl PanelItem for IssuesPanelItem {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::event::ApiPayload;
     use crate::panels::panel::SelectionState;
 
     fn test_issue() -> Issue {

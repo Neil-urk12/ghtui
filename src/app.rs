@@ -5,9 +5,9 @@ use std::sync::Arc;
 use crate::api::client::GitHubClient;
 use crate::config::Config;
 use crate::domain::FilterState;
-use crate::panels::{ActionsPanelItem, IssuesPanelItem, NotificationsPanelItem, Panel, PullsPanelItem, ReposPanelItem};
+use crate::panels::{ActionsPanelItem, IssuesPanelItem, NotificationsPanelItem, PullsPanelItem, ReposPanelItem};
 use crate::panels::login::LoginState;
-use crate::panels::panel::{ListPanel, ListPanelData, PanelItem, SelectionState};
+use crate::panels::panel::{ListPanel, ListPanelData, SelectionState};
 use crate::theme::Theme;
 use crate::widgets::detail_pane::DetailPane;
 
@@ -51,33 +51,111 @@ pub enum PanelState {
 }
 
 impl PanelState {
-    pub fn as_panel(&self) -> &dyn Panel {
-        match self {
-            PanelState::Repos(p) => p,
-            PanelState::Pulls(p) => p,
-            PanelState::Issues(p) => p,
-            PanelState::Notifications(p) => p,
-            PanelState::Actions(p) => p,
-        }
-    }
-
-    pub fn as_panel_mut(&mut self) -> &mut dyn Panel {
-        match self {
-            PanelState::Repos(p) => p,
-            PanelState::Pulls(p) => p,
-            PanelState::Issues(p) => p,
-            PanelState::Notifications(p) => p,
-            PanelState::Actions(p) => p,
-        }
-    }
 
     pub fn apply_filter(&mut self, query: &str) {
         match self {
-            PanelState::Repos(p) => p.item.apply_filter(&mut p.data, query, &mut p.selection),
-            PanelState::Pulls(p) => p.item.apply_filter(&mut p.data, query, &mut p.selection),
-            PanelState::Issues(p) => p.item.apply_filter(&mut p.data, query, &mut p.selection),
-            PanelState::Notifications(p) => p.item.apply_filter(&mut p.data, query, &mut p.selection),
-            PanelState::Actions(p) => p.item.apply_filter(&mut p.data, query, &mut p.selection),
+            PanelState::Repos(p) => p.apply_filter(query),
+            PanelState::Pulls(p) => p.apply_filter(query),
+            PanelState::Issues(p) => p.apply_filter(query),
+            PanelState::Notifications(p) => p.apply_filter(query),
+            PanelState::Actions(p) => p.apply_filter(query),
+        }
+    }
+
+    pub fn handle_key(&mut self, key: char) -> Option<crate::cmd::Cmd> {
+        match self {
+            PanelState::Repos(p) => p.handle_key(key),
+            PanelState::Pulls(p) => p.handle_key(key),
+            PanelState::Issues(p) => p.handle_key(key),
+            PanelState::Notifications(p) => p.handle_key(key),
+            PanelState::Actions(p) => p.handle_key(key),
+        }
+    }
+
+    pub fn render(
+        &mut self,
+        frame: &mut ratatui::Frame,
+        area: ratatui::prelude::Rect,
+        has_focus: bool,
+        theme: &crate::theme::Theme,
+        tick: u64,
+    ) {
+        match self {
+            PanelState::Repos(p) => p.render(frame, area, has_focus, theme, tick),
+            PanelState::Pulls(p) => p.render(frame, area, has_focus, theme, tick),
+            PanelState::Issues(p) => p.render(frame, area, has_focus, theme, tick),
+            PanelState::Notifications(p) => p.render(frame, area, has_focus, theme, tick),
+            PanelState::Actions(p) => p.render(frame, area, has_focus, theme, tick),
+        }
+    }
+
+    pub fn fetch_cmd(&self) -> crate::cmd::Cmd {
+        match self {
+            PanelState::Repos(p) => p.fetch_cmd(),
+            PanelState::Pulls(p) => p.fetch_cmd(),
+            PanelState::Issues(p) => p.fetch_cmd(),
+            PanelState::Notifications(p) => p.fetch_cmd(),
+            PanelState::Actions(p) => p.fetch_cmd(),
+        }
+    }
+
+    pub fn set_loading(&mut self, loading: bool) {
+        match self {
+            PanelState::Repos(p) => p.set_loading(loading),
+            PanelState::Pulls(p) => p.set_loading(loading),
+            PanelState::Issues(p) => p.set_loading(loading),
+            PanelState::Notifications(p) => p.set_loading(loading),
+            PanelState::Actions(p) => p.set_loading(loading),
+        }
+    }
+
+    pub fn set_repo_context(&mut self, owner: &str, repo: &str) {
+        match self {
+            PanelState::Repos(p) => p.set_repo_context(owner, repo),
+            PanelState::Pulls(p) => p.set_repo_context(owner, repo),
+            PanelState::Issues(p) => p.set_repo_context(owner, repo),
+            PanelState::Notifications(p) => p.set_repo_context(owner, repo),
+            PanelState::Actions(p) => p.set_repo_context(owner, repo),
+        }
+    }
+
+    pub fn load_data(&mut self, payload: crate::event::ApiPayload) {
+        match self {
+            PanelState::Repos(p) => p.load_data(payload),
+            PanelState::Pulls(p) => p.load_data(payload),
+            PanelState::Issues(p) => p.load_data(payload),
+            PanelState::Notifications(p) => p.load_data(payload),
+            PanelState::Actions(p) => p.load_data(payload),
+        }
+    }
+
+    pub fn scroll_detail_up(&mut self) {
+        match self {
+            PanelState::Repos(p) => p.scroll_detail_up(),
+            PanelState::Pulls(p) => p.scroll_detail_up(),
+            PanelState::Issues(p) => p.scroll_detail_up(),
+            PanelState::Notifications(p) => p.scroll_detail_up(),
+            PanelState::Actions(p) => p.scroll_detail_up(),
+        }
+    }
+
+    pub fn scroll_detail_down(&mut self) {
+        match self {
+            PanelState::Repos(p) => p.scroll_detail_down(),
+            PanelState::Pulls(p) => p.scroll_detail_down(),
+            PanelState::Issues(p) => p.scroll_detail_down(),
+            PanelState::Notifications(p) => p.scroll_detail_down(),
+            PanelState::Actions(p) => p.scroll_detail_down(),
+        }
+    }
+
+    pub fn selected_display(&self) -> Option<String> {
+        match self {
+            PanelState::Repos(p) => p.selected_display(),
+            PanelState::Pulls(p) => p.selected_display(),
+            PanelState::Issues(p) => p.selected_display(),
+            PanelState::Notifications(p) => p.selected_display(),
+            PanelState::Actions(p) => p.selected_display(),
         }
     }
 }

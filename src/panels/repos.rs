@@ -3,7 +3,6 @@ use ratatui::widgets::{Cell, Row};
 
 use crate::cmd::Cmd;
 use crate::domain::Repo;
-use crate::event::ApiPayload;
 use crate::theme::Theme;
 use crate::util::format;
 use crate::widgets::empty_state::EmptyState;
@@ -171,13 +170,7 @@ impl PanelItem for ReposPanelItem {
             .hint("Press 'r' to refresh")
     }
 
-    fn extract_items(payload: ApiPayload) -> Option<Vec<Self::Item>> {
-        if let ApiPayload::Repos(repos) = payload {
-            Some(repos)
-        } else {
-            None
-        }
-    }
+    extract_items!(Repos);
 
     fn on_loaded(&mut self, data: &mut ListPanelData<Self::Item>) {
         self.sort.sort_indices(&data.items, &mut data.filtered_indices);
