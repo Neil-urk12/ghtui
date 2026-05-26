@@ -39,6 +39,7 @@ impl std::fmt::Debug for Cmd {
 
 impl Cmd {
     /// Returns true if this command is destructive and requires confirmation.
+    /// Must stay in sync with `action_label()`.
     pub fn is_destructive(&self) -> bool {
         matches!(
             self,
@@ -51,14 +52,175 @@ impl Cmd {
     }
 
     /// Human-readable action label for confirmation dialogs.
-    pub fn action_label(&self) -> &'static str {
+    /// Must stay in sync with `is_destructive()`.
+    pub fn action_label(&self) -> Option<&'static str> {
         match self {
-            Cmd::MergePr { .. } => "Merge Pull Request",
-            Cmd::ApprovePr { .. } => "Approve Pull Request",
-            Cmd::CancelWorkflow { .. } => "Cancel Workflow",
-            Cmd::RerunWorkflow { .. } => "Rerun Workflow",
-            Cmd::MarkAllNotificationsRead => "Mark All Notifications as Read",
-            _ => "",
+            Cmd::MergePr { .. } => Some("Merge Pull Request"),
+            Cmd::ApprovePr { .. } => Some("Approve Pull Request"),
+            Cmd::CancelWorkflow { .. } => Some("Cancel Workflow"),
+            Cmd::RerunWorkflow { .. } => Some("Rerun Workflow"),
+            Cmd::MarkAllNotificationsRead => Some("Mark All Notifications as Read"),
+            // Invariant: non-destructive cmds return None (tested by non_destructive_cmds_lack_labels)
+            _ => None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn action_label_returns_some_for_destructive_cmds() {
+        // Each destructive variant should return Some with its expected label
+        let merge = Cmd::MergePr {
+            owner: "o".into(),
+            repo: "r".into(),
+            pr_number: 1,
+        };
+        assert_eq!(merge.action_label(), Some("Merge Pull Request"));
+
+        let approve = Cmd::ApprovePr {
+            owner: "o".into(),
+            repo: "r".into(),
+            pr_number: 1,
+        };
+        assert_eq!(approve.action_label(), Some("Approve Pull Request"));
+
+        let cancel = Cmd::CancelWorkflow {
+            owner: "o".into(),
+            repo: "r".into(),
+            run_id: 1,
+        };
+        assert_eq!(cancel.action_label(), Some("Cancel Workflow"));
+
+        let rerun = Cmd::RerunWorkflow {
+            owner: "o".into(),
+            repo: "r".into(),
+            run_id: 1,
+        };
+        assert_eq!(rerun.action_label(), Some("Rerun Workflow"));
+
+        assert_eq!(
+            Cmd::MarkAllNotificationsRead.action_label(),
+            Some("Mark All Notifications as Read")
+        );
+    }
+
+    #[test]
+    fn action_label_returns_none_for_non_destructive_cmds() {
+        assert_eq!(Cmd::None.action_label(), None);
+        assert_eq!(Cmd::FetchRepos.action_label(), None);
+
+        assert_eq!(
+            Cmd::FetchPulls {
+                owner: "o".into(),
+                repo: "r".into(),
+                state: "open".into(),
+            }
+            .action_label(),
+            None
+        );
+
+        assert_eq!(
+            Cmd::FetchIssues {
+                owner: "o".into(),
+                repo: "r".into(),
+                state: "open".into(),
+            }
+            .action_label(),
+            None
+        );
+
+        assert_eq!(
+            Cmd::FetchNotifications { all: false }.action_label(),
+            None
+        );
+
+        assert_eq!(
+            Cmd::FetchActions {
+                owner: "o".into(),
+                repo: "r".into(),
+            }
+            .action_label(),
+            None
+        );
+
+        assert_eq!(
+            Cmd::MarkNotificationRead { id: "1".into() }.action_label(),
+            None
+        );
+
+        assert_eq!(
+            Cmd::OpenRepoDetail {
+                owner: "o".into(),
+                repo: "r".into(),
+            }
+            .action_label(),
+            None
+        );
+
+        assert_eq!(Cmd::CycleRepoSort.action_label(), None);
+    }
+
+    #[test]
+    fn destructive_cmds_have_labels() {
+        // For every variant where is_destructive() == true, action_label must be Some
+        let all_cmds: Vec<Cmd> = vec![
+            Cmd::None,
+            Cmd::FetchRepos,
+            Cmd::FetchPulls { owner: "".into(), repo: "".into(), state: "".into() },
+            Cmd::FetchIssues { owner: "".into(), repo: "".into(), state: "".into() },
+            Cmd::FetchNotifications { all: false },
+            Cmd::FetchActions { owner: "".into(), repo: "".into() },
+            Cmd::MarkNotificationRead { id: "".into() },
+            Cmd::MarkAllNotificationsRead,
+            Cmd::ApprovePr { owner: "".into(), repo: "".into(), pr_number: 0 },
+            Cmd::MergePr { owner: "".into(), repo: "".into(), pr_number: 0 },
+            Cmd::RerunWorkflow { owner: "".into(), repo: "".into(), run_id: 0 },
+            Cmd::CancelWorkflow { owner: "".into(), repo: "".into(), run_id: 0 },
+            Cmd::OpenRepoDetail { owner: "".into(), repo: "".into() },
+            Cmd::CycleRepoSort,
+        ];
+
+        for cmd in &all_cmds {
+            if cmd.is_destructive() {
+                assert!(
+                    cmd.action_label().is_some(),
+                    "Destructive command {:?} should have an action label",
+                    cmd
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn non_destructive_cmds_lack_labels() {
+        let all_cmds: Vec<Cmd> = vec![
+            Cmd::None,
+            Cmd::FetchRepos,
+            Cmd::FetchPulls { owner: "".into(), repo: "".into(), state: "".into() },
+            Cmd::FetchIssues { owner: "".into(), repo: "".into(), state: "".into() },
+            Cmd::FetchNotifications { all: false },
+            Cmd::FetchActions { owner: "".into(), repo: "".into() },
+            Cmd::MarkNotificationRead { id: "".into() },
+            Cmd::MarkAllNotificationsRead,
+            Cmd::ApprovePr { owner: "".into(), repo: "".into(), pr_number: 0 },
+            Cmd::MergePr { owner: "".into(), repo: "".into(), pr_number: 0 },
+            Cmd::RerunWorkflow { owner: "".into(), repo: "".into(), run_id: 0 },
+            Cmd::CancelWorkflow { owner: "".into(), repo: "".into(), run_id: 0 },
+            Cmd::OpenRepoDetail { owner: "".into(), repo: "".into() },
+            Cmd::CycleRepoSort,
+        ];
+
+        for cmd in &all_cmds {
+            if !cmd.is_destructive() {
+                assert!(
+                    cmd.action_label().is_none(),
+                    "Non-destructive command {:?} should not have an action label",
+                    cmd
+                );
+            }
         }
     }
 }

@@ -175,17 +175,17 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
                         let detail = app.panels.get(&app.active_panel)
                             .and_then(|e| e.as_panel().selected_display())
                             .unwrap_or_default();
-                        let action_label = other.action_label().to_string();
+                        let action_label = other.action_label().expect("destructive cmd must have label").to_string();
                         app.confirmation = Some(crate::app::ConfirmState {
                             pending_cmd: other,
                             action_label,
                             detail,
                         });
                         Cmd::None
+                    } else if let Some(entry) = app.panels.get_mut(&app.active_panel) {
+                        entry.as_panel_mut().set_loading(true);
+                        other
                     } else {
-                        if let Some(entry) = app.panels.get_mut(&app.active_panel) {
-                            entry.as_panel_mut().set_loading(true);
-                        }
                         other
                     }
                 }
@@ -663,6 +663,53 @@ mod tests {
             } else {
                 panic!("Expected Repos panel");
             }
+        }
+    }
+
+    #[test]
+    fn non_destructive_cmd_sets_loading() {
+        use crate::event::ApiPayload;
+        let mut app = test_app();
+
+        // Navigate to Notifications panel (3 tabs from Repos)
+        update(&mut app, Message::NextTab); // Pulls
+        update(&mut app, Message::NextTab); // Issues
+        update(&mut app, Message::NextTab); // Notifications
+        assert_eq!(app.active_panel, PanelKind::Notifications);
+
+        // NextTab sets loading=true via fetch_and_set_loading.
+        // Simulate API response to clear it.
+        update(
+            &mut app,
+            Message::ApiLoaded(ApiPayload::Notifications(vec![])),
+        );
+
+        // Verify loading is now false
+        match app.panels.get(&PanelKind::Notifications) {
+            Some(crate::app::PanelState::Notifications(panel)) => {
+                assert!(!panel.data.loading, "Loading should be false after API response");
+            }
+            _ => panic!("Expected Notifications panel"),
+        }
+
+        // Press 'a' on notifications panel — returns FetchNotifications (non-destructive)
+        // This flows through the non-destructive else-if branch which sets loading = true
+        let cmd = update(&mut app, Message::PanelKeyInput('a'));
+        assert!(
+            matches!(cmd, Cmd::FetchNotifications { .. }),
+            "Expected FetchNotifications, got {:?}",
+            cmd
+        );
+
+        // Verify loading was set to true by the non-destructive path
+        match app.panels.get(&PanelKind::Notifications) {
+            Some(crate::app::PanelState::Notifications(panel)) => {
+                assert!(
+                    panel.data.loading,
+                    "Loading should be true after non-destructive cmd"
+                );
+            }
+            _ => panic!("Expected Notifications panel"),
         }
     }
 }
