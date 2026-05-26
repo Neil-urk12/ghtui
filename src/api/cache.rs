@@ -9,6 +9,9 @@ pub enum CacheKey {
     Issues { owner: String, repo: String, state: String },
     Notifications,
     Actions { owner: String, repo: String },
+    PrComments { owner: String, repo: String, pr_number: u64 },
+    PrReviews { owner: String, repo: String, pr_number: u64 },
+    PrCodeComments { owner: String, repo: String, pr_number: u64 },
 }
 
 struct CacheEntry {

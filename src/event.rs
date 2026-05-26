@@ -19,6 +19,12 @@ pub enum ApiPayload {
     Issues(Vec<crate::domain::Issue>),
     Notifications(Vec<crate::domain::Notification>),
     Actions(Vec<crate::domain::WorkflowRun>),
+    PrComments {
+        pr_number: u64,
+        comments: Result<Vec<crate::domain::PrComment>, String>,
+        reviews: Result<Vec<crate::domain::PrReview>, String>,
+        code_comments: Result<Vec<crate::domain::PrCodeComment>, String>,
+    },
     Success(String),
 }
 

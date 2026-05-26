@@ -59,9 +59,66 @@ fn pr_to_detail(pr: &PullRequest, theme: &Theme) -> Vec<Line<'static>> {
         )));
     }
 
+    // Render reviews
+    if let Some(reviews) = &pr.reviews {
+        if !reviews.is_empty() {
+            lines.push(Line::from(Span::styled(
+                format!("Reviews ({})", reviews.len()),
+                Style::default().add_modifier(Modifier::BOLD),
+            )));
+            for review in reviews {
+                let icon = match review.state.as_str() {
+                    "APPROVED" => "✓",
+                    "CHANGES_REQUESTED" | "DISMISSED" => "✗",
+                    _ => "•",
+                };
+                lines.push(Line::from(format!("{} {}: {}", icon, review.author, review.state)));
+                if let Some(body) = &review.body {
+                    if !body.is_empty() {
+                        lines.push(Line::from(format!("  {}", body)));
+                    }
+                }
+            }
+            lines.push(Line::from(""));
+        }
+    }
+
+    // Render comments
+    if let Some(comments) = &pr.comments {
+        if !comments.is_empty() {
+            lines.push(Line::from(Span::styled(
+                format!("Comments ({})", comments.len()),
+                Style::default().add_modifier(Modifier::BOLD),
+            )));
+            for comment in comments {
+                lines.push(Line::from(format!("{}: {}", comment.author, comment.body)));
+            }
+            lines.push(Line::from(""));
+        }
+    }
+
+    // Render code comments
+    if let Some(code_comments) = &pr.code_comments {
+        if !code_comments.is_empty() {
+            lines.push(Line::from(Span::styled(
+                format!("Code Comments ({})", code_comments.len()),
+                Style::default().add_modifier(Modifier::BOLD),
+            )));
+            for comment in code_comments {
+                let location = if let Some(line) = comment.line {
+                    format!("{}:{}", comment.path, line)
+                } else {
+                    comment.path.clone()
+                };
+                lines.push(Line::from(format!("{}: {}", location, comment.body)));
+            }
+            lines.push(Line::from(""));
+        }
+    }
+
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        "1:open 2:closed 3:all | o:browser | c:checkout | a:approve | m:merge",
+        "1:open 2:closed 3:all | o:browser | c:checkout | a:approve | m:merge | x:close | X:reopen",
         theme.muted,
     )));
 
@@ -178,8 +235,52 @@ impl PanelItem for PullsPanelItem {
                 }
                 None
             }
+
+            'x' => {
+                if let Some(pr) = selected {
+                    if pr.state == "open" {
+                        if let Some((owner, repo)) = data.owner_repo() {
+                            return Some(Cmd::ClosePr {
+                                owner: owner.to_string(),
+                                repo: repo.to_string(),
+                                pr_number: pr.number as u64,
+                            });
+                        }
+                    }
+                }
+                None
+            }
+            'X' => {
+                if let Some(pr) = selected {
+                    if pr.state == "closed" {
+                        if let Some((owner, repo)) = data.owner_repo() {
+                            return Some(Cmd::ReopenPr {
+                                owner: owner.to_string(),
+                                repo: repo.to_string(),
+                                pr_number: pr.number as u64,
+                            });
+                        }
+                    }
+                }
+                None
+            }
             _ => None,
         }
+    }
+
+    fn on_select(&self, selected: Option<&Self::Item>, data: &ListPanelData<Self::Item>) -> Option<Cmd> {
+        if let Some(pr) = selected {
+            if pr.comments.is_none() || pr.reviews.is_none() || pr.code_comments.is_none() {
+                if let Some((owner, repo)) = data.owner_repo() {
+                    return Some(Cmd::FetchPrComments {
+                        owner: owner.to_string(),
+                        repo: repo.to_string(),
+                        pr_number: pr.number as u64,
+                    });
+                }
+            }
+        }
+        None
     }
 
     fn fetch_cmd(&self, data: &ListPanelData<Self::Item>) -> Cmd {
@@ -255,6 +356,9 @@ mod tests {
             created_at: "2024-01-15T10:30:00Z".into(),
             updated_at: "2024-01-16T14:00:00Z".into(),
             body: Some("This fixes the login redirect issue.".into()),
+            comments: None,
+            reviews: None,
+            code_comments: None,
         }
     }
 
@@ -318,6 +422,9 @@ mod tests {
             created_at: "2024-01-15T10:30:00Z".into(),
             updated_at: "2024-01-15T10:30:00Z".into(),
             body: None,
+            comments: None,
+            reviews: None,
+            code_comments: None,
         };
         let item = PullsPanelItem::default();
         let theme = Theme::default();
@@ -522,5 +629,179 @@ mod tests {
             "empty state hint should show prose, got: {:?}",
             state.hint
         );
+    }
+
+    // --- x/X key handlers ---
+
+    #[test]
+    fn handle_key_x_returns_close_pr_cmd() {
+        let pr = test_pr(); // state is "open"
+        let data = make_data(pr);
+        let mut item = PullsPanelItem::default();
+
+        let selected = data.items.first();
+        let cmd = item.handle_key('x', selected, &data);
+
+        assert!(cmd.is_some());
+        assert!(matches!(
+            cmd.unwrap(),
+            Cmd::ClosePr { owner, repo, pr_number }
+                if owner == "octocat" && repo == "hello-world" && pr_number == 42
+        ));
+    }
+
+    #[test]
+    fn handle_key_x_on_closed_pr_returns_none() {
+        let pr = PullRequest {
+            state: "closed".into(),
+            ..test_pr()
+        };
+        let data = make_data(pr);
+        let mut item = PullsPanelItem::default();
+
+        let selected = data.items.first();
+        let cmd = item.handle_key('x', selected, &data);
+
+        assert!(cmd.is_none());
+    }
+
+    #[test]
+    fn handle_key_uppercase_x_returns_reopen_pr_cmd() {
+        let pr = PullRequest {
+            state: "closed".into(),
+            ..test_pr()
+        };
+        let data = make_data(pr);
+        let mut item = PullsPanelItem::default();
+
+        let selected = data.items.first();
+        let cmd = item.handle_key('X', selected, &data);
+
+        assert!(cmd.is_some());
+        assert!(matches!(
+            cmd.unwrap(),
+            Cmd::ReopenPr { owner, repo, pr_number }
+                if owner == "octocat" && repo == "hello-world" && pr_number == 42
+        ));
+    }
+
+    #[test]
+    fn handle_key_uppercase_x_on_open_pr_returns_none() {
+        let pr = test_pr(); // state is "open"
+        let data = make_data(pr);
+        let mut item = PullsPanelItem::default();
+
+        let selected = data.items.first();
+        let cmd = item.handle_key('X', selected, &data);
+
+        assert!(cmd.is_none());
+    }
+
+    // --- comment rendering ---
+
+    #[test]
+    fn detail_lines_shows_reviews_when_present() {
+        let pr = PullRequest {
+            reviews: Some(vec![
+                crate::domain::PrReview {
+                    id: 1,
+                    author: "reviewer".into(),
+                    state: "APPROVED".into(),
+                    body: None,
+                    submitted_at: "2024-01-15T10:30:00Z".into(),
+                },
+            ]),
+            ..test_pr()
+        };
+        let item = PullsPanelItem::default();
+        let theme = Theme::default();
+
+        let lines = item.detail_lines(&pr, &theme);
+        let text: String = lines.iter().map(|l| l.to_string()).collect::<Vec<_>>().join("\n");
+
+        assert!(text.contains("Reviews (1)"), "should contain reviews header");
+        assert!(text.contains("✓ reviewer: APPROVED"), "should contain approval");
+    }
+
+    #[test]
+    fn detail_lines_shows_comments_when_present() {
+        let pr = PullRequest {
+            comments: Some(vec![
+                crate::domain::PrComment {
+                    id: 1,
+                    author: "user".into(),
+                    body: "Looks good!".into(),
+                    created_at: "2024-01-15T10:30:00Z".into(),
+                },
+            ]),
+            ..test_pr()
+        };
+        let item = PullsPanelItem::default();
+        let theme = Theme::default();
+
+        let lines = item.detail_lines(&pr, &theme);
+        let text: String = lines.iter().map(|l| l.to_string()).collect::<Vec<_>>().join("\n");
+
+        assert!(text.contains("Comments (1)"), "should contain comments header");
+        assert!(text.contains("user: Looks good!"), "should contain comment");
+    }
+
+    #[test]
+    fn detail_lines_shows_code_comments_when_present() {
+        let pr = PullRequest {
+            code_comments: Some(vec![
+                crate::domain::PrCodeComment {
+                    id: 1,
+                    author: "reviewer".into(),
+                    body: "Fix this".into(),
+                    path: "src/main.rs".into(),
+                    line: Some(42),
+                    created_at: "2024-01-15T10:30:00Z".into(),
+                },
+            ]),
+            ..test_pr()
+        };
+        let item = PullsPanelItem::default();
+        let theme = Theme::default();
+
+        let lines = item.detail_lines(&pr, &theme);
+        let text: String = lines.iter().map(|l| l.to_string()).collect::<Vec<_>>().join("\n");
+
+        assert!(text.contains("Code Comments (1)"), "should contain code comments header");
+        assert!(text.contains("src/main.rs:42"), "should contain file:line");
+        assert!(text.contains("Fix this"), "should contain comment body");
+    }
+
+    #[test]
+    fn detail_lines_no_comments_shows_no_sections() {
+        let pr = test_pr(); // No comments
+        let item = PullsPanelItem::default();
+        let theme = Theme::default();
+
+        let lines = item.detail_lines(&pr, &theme);
+        let text: String = lines.iter().map(|l| l.to_string()).collect::<Vec<_>>().join("\n");
+
+        assert!(!text.contains("Reviews"), "should not contain reviews header");
+        assert!(!text.contains("Comments"), "should not contain comments header");
+        assert!(!text.contains("Code Comments"), "should not contain code comments header");
+    }
+
+    #[test]
+    fn detail_lines_empty_comments_shows_no_sections() {
+        let pr = PullRequest {
+            comments: Some(vec![]),
+            reviews: Some(vec![]),
+            code_comments: Some(vec![]),
+            ..test_pr()
+        };
+        let item = PullsPanelItem::default();
+        let theme = Theme::default();
+
+        let lines = item.detail_lines(&pr, &theme);
+        let text: String = lines.iter().map(|l| l.to_string()).collect::<Vec<_>>().join("\n");
+
+        assert!(!text.contains("Reviews"), "should not contain reviews header");
+        assert!(!text.contains("Comments"), "should not contain comments header");
+        assert!(!text.contains("Code Comments"), "should not contain code comments header");
     }
 }

@@ -103,3 +103,30 @@ pub struct WorkflowRunsResponse {
     pub workflow_runs: Vec<WorkflowRun>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IssueComment {
+    pub id: u64,
+    pub user: User,
+    pub body: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Review {
+    pub id: u64,
+    pub user: User,
+    pub state: String,
+    pub body: Option<String>,
+    pub submitted_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReviewComment {
+    pub id: u64,
+    pub user: User,
+    pub body: String,
+    pub path: String,
+    pub line: Option<u32>,
+    pub created_at: String,
+}
+

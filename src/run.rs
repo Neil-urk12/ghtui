@@ -235,5 +235,49 @@ fn spawn_cmd(cmd: Cmd, client: &Arc<GitHubClient>, tx: mpsc::Sender<Result<ApiPa
         Cmd::CycleRepoSort => {
             // Handled in update(), should not reach spawn_cmd
         }
+
+        Cmd::FetchPrComments { owner, repo, pr_number } => {
+            tokio::spawn(async move {
+                let (comments, reviews, code_comments) = tokio::join!(
+                    client.get_issue_comments(&owner, &repo, pr_number),
+                    client.get_reviews(&owner, &repo, pr_number),
+                    client.get_review_comments(&owner, &repo, pr_number),
+                );
+                let _ = tx.send(Ok(ApiPayload::PrComments {
+                    pr_number,
+                    comments: comments.map_err(|e| e.to_string()),
+                    reviews: reviews.map_err(|e| e.to_string()),
+                    code_comments: code_comments.map_err(|e| e.to_string()),
+                })).await;
+            });
+        }
+        Cmd::ClosePr { owner, repo, pr_number } => {
+            tokio::spawn(async move {
+                let result = client.close_pr(&owner, &repo, pr_number).await;
+                if result.is_ok() {
+                    for key in pull_cache_keys(&owner, &repo) {
+                        client.invalidate_cache(&key);
+                    }
+                    client.invalidate_cache(&CacheKey::PrComments { owner: owner.clone(), repo: repo.clone(), pr_number });
+                    client.invalidate_cache(&CacheKey::PrReviews { owner: owner.clone(), repo: repo.clone(), pr_number });
+                    client.invalidate_cache(&CacheKey::PrCodeComments { owner: owner.clone(), repo: repo.clone(), pr_number });
+                }
+                let _ = tx.send(result.map(|_| ApiPayload::Success(format!("PR #{} closed", pr_number)))).await;
+            });
+        }
+        Cmd::ReopenPr { owner, repo, pr_number } => {
+            tokio::spawn(async move {
+                let result = client.reopen_pr(&owner, &repo, pr_number).await;
+                if result.is_ok() {
+                    for key in pull_cache_keys(&owner, &repo) {
+                        client.invalidate_cache(&key);
+                    }
+                    client.invalidate_cache(&CacheKey::PrComments { owner: owner.clone(), repo: repo.clone(), pr_number });
+                    client.invalidate_cache(&CacheKey::PrReviews { owner: owner.clone(), repo: repo.clone(), pr_number });
+                    client.invalidate_cache(&CacheKey::PrCodeComments { owner: owner.clone(), repo: repo.clone(), pr_number });
+                }
+                let _ = tx.send(result.map(|_| ApiPayload::Success(format!("PR #{} reopened", pr_number)))).await;
+            });
+        }
     }
 }

@@ -248,10 +248,17 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
                 ApiPayload::Notifications(_) => Some(PanelKind::Notifications),
                 ApiPayload::Actions(_) => Some(PanelKind::Actions),
                 ApiPayload::Success(_) => None,
+                ApiPayload::PrComments { .. } => Some(PanelKind::Pulls),
             };
             if let Some(kind) = target {
                 if let Some(entry) = app.panels.get_mut(&kind) {
-                    entry.load_data(payload);
+                    // Handle PrComments specially
+                    if let ApiPayload::PrComments { pr_number, comments, reviews, code_comments } = payload {
+                        // Use .ok() — None fields keep existing state, enabling retry on failure
+                        entry.update_pr_comments(pr_number, comments.ok(), reviews.ok(), code_comments.ok());
+                    } else {
+                        entry.load_data(payload);
+                    }
                 }
             }
             Cmd::None

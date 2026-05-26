@@ -13,6 +13,9 @@ pub enum Cmd {
     CancelWorkflow { owner: String, repo: String, run_id: u64 },
     OpenRepoDetail { owner: String, repo: String },
     CycleRepoSort,
+    FetchPrComments { owner: String, repo: String, pr_number: u64 },
+    ClosePr { owner: String, repo: String, pr_number: u64 },
+    ReopenPr { owner: String, repo: String, pr_number: u64 },
 }
 
 impl std::fmt::Debug for Cmd {
@@ -32,6 +35,9 @@ impl std::fmt::Debug for Cmd {
             Cmd::CancelWorkflow { owner, repo, run_id } => write!(f, "CancelWorkflow({}/{}/{})", owner, repo, run_id),
             Cmd::OpenRepoDetail { owner, repo } => write!(f, "OpenRepoDetail({}/{})", owner, repo),
             Cmd::CycleRepoSort => write!(f, "CycleRepoSort"),
+            Cmd::FetchPrComments { owner, repo, pr_number } => write!(f, "FetchPrComments({}/{}/{})", owner, repo, pr_number),
+            Cmd::ClosePr { owner, repo, pr_number } => write!(f, "ClosePr({}/{}/{})", owner, repo, pr_number),
+            Cmd::ReopenPr { owner, repo, pr_number } => write!(f, "ReopenPr({}/{}/{})", owner, repo, pr_number),
         }
     }
 }
@@ -48,6 +54,8 @@ impl Cmd {
                 | Cmd::CancelWorkflow { .. }
                 | Cmd::RerunWorkflow { .. }
                 | Cmd::MarkAllNotificationsRead
+                | Cmd::ClosePr { .. }
+                | Cmd::ReopenPr { .. }
         )
     }
 
@@ -60,6 +68,8 @@ impl Cmd {
             Cmd::CancelWorkflow { .. } => Some("Cancel Workflow"),
             Cmd::RerunWorkflow { .. } => Some("Rerun Workflow"),
             Cmd::MarkAllNotificationsRead => Some("Mark All Notifications as Read"),
+            Cmd::ClosePr { .. } => Some("Close Pull Request"),
+            Cmd::ReopenPr { .. } => Some("Reopen Pull Request"),
             // Invariant: non-destructive cmds return None (tested by non_destructive_cmds_lack_labels)
             _ => None,
         }
@@ -107,6 +117,16 @@ mod tests {
         );
     }
 
+    #[test]
+    fn action_label_returns_some_for_close_pr() {
+        let close = Cmd::ClosePr {
+            owner: "o".into(),
+            repo: "r".into(),
+            pr_number: 1,
+        };
+        assert_eq!(close.action_label(), Some("Close Pull Request"));
+
+    }
     #[test]
     fn action_label_returns_none_for_non_destructive_cmds() {
         assert_eq!(Cmd::None.action_label(), None);
@@ -178,6 +198,9 @@ mod tests {
             Cmd::ApprovePr { owner: "".into(), repo: "".into(), pr_number: 0 },
             Cmd::MergePr { owner: "".into(), repo: "".into(), pr_number: 0 },
             Cmd::RerunWorkflow { owner: "".into(), repo: "".into(), run_id: 0 },
+            Cmd::FetchPrComments { owner: "".into(), repo: "".into(), pr_number: 0 },
+            Cmd::ClosePr { owner: "".into(), repo: "".into(), pr_number: 0 },
+            Cmd::ReopenPr { owner: "".into(), repo: "".into(), pr_number: 0 },
             Cmd::CancelWorkflow { owner: "".into(), repo: "".into(), run_id: 0 },
             Cmd::OpenRepoDetail { owner: "".into(), repo: "".into() },
             Cmd::CycleRepoSort,
@@ -207,6 +230,8 @@ mod tests {
             Cmd::MarkAllNotificationsRead,
             Cmd::ApprovePr { owner: "".into(), repo: "".into(), pr_number: 0 },
             Cmd::MergePr { owner: "".into(), repo: "".into(), pr_number: 0 },
+            Cmd::FetchPrComments { owner: "".into(), repo: "".into(), pr_number: 0 },
+            Cmd::ClosePr { owner: "".into(), repo: "".into(), pr_number: 0 },
             Cmd::RerunWorkflow { owner: "".into(), repo: "".into(), run_id: 0 },
             Cmd::CancelWorkflow { owner: "".into(), repo: "".into(), run_id: 0 },
             Cmd::OpenRepoDetail { owner: "".into(), repo: "".into() },
@@ -222,5 +247,40 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn reopen_pr_is_destructive() {
+        let reopen = Cmd::ReopenPr {
+            owner: "o".into(),
+            repo: "r".into(),
+            pr_number: 1,
+        };
+        assert!(reopen.is_destructive());
+    }
+
+    #[test]
+    fn reopen_pr_has_action_label() {
+        let reopen = Cmd::ReopenPr {
+            owner: "o".into(),
+            repo: "r".into(),
+            pr_number: 1,
+        };
+        assert_eq!(reopen.action_label(), Some("Reopen Pull Request"));
+    }
+
+    #[test]
+    fn debug_format_has_closing_paren() {
+        let cmd = Cmd::FetchPrComments { owner: "o".into(), repo: "r".into(), pr_number: 1 };
+        let debug = format!("{:?}", cmd);
+        assert!(debug.ends_with(')'), "Debug should have closing paren: {}", debug);
+
+        let cmd = Cmd::ClosePr { owner: "o".into(), repo: "r".into(), pr_number: 1 };
+        let debug = format!("{:?}", cmd);
+        assert!(debug.ends_with(')'), "Debug should have closing paren: {}", debug);
+
+        let cmd = Cmd::ReopenPr { owner: "o".into(), repo: "r".into(), pr_number: 1 };
+        let debug = format!("{:?}", cmd);
+        assert!(debug.ends_with(')'), "Debug should have closing paren: {}", debug);
     }
 }

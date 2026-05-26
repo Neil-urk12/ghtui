@@ -10,7 +10,7 @@ pub struct Repo {
     pub default_branch: String,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct PullRequest {
     pub number: u32,
     pub title: String,
@@ -20,6 +20,9 @@ pub struct PullRequest {
     pub created_at: String,
     pub updated_at: String,
     pub body: Option<String>,
+    pub comments: Option<Vec<PrComment>>,
+    pub reviews: Option<Vec<PrReview>>,
+    pub code_comments: Option<Vec<PrCodeComment>>,
 }
 
 #[derive(Debug, Default)]
@@ -33,6 +36,32 @@ pub struct Issue {
     pub created_at: String,
     pub updated_at: String,
     pub body: Option<String>,
+}
+#[derive(Debug, Default, Clone)]
+pub struct PrComment {
+    pub id: u64,
+    pub author: String,
+    pub body: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct PrReview {
+    pub id: u64,
+    pub author: String,
+    pub state: String,
+    pub body: Option<String>,
+    pub submitted_at: String,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct PrCodeComment {
+    pub id: u64,
+    pub author: String,
+    pub body: String,
+    pub path: String,
+    pub line: Option<u32>,
+    pub created_at: String,
 }
 
 #[derive(Debug, Clone, Default)]

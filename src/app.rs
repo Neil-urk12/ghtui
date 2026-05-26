@@ -99,6 +99,19 @@ impl PanelState {
         }
     }
 
+    /// Update PR with comment data (Pulls panel only).
+    pub fn update_pr_comments(&mut self, pr_number: u64, comments: Option<Vec<crate::domain::PrComment>>, reviews: Option<Vec<crate::domain::PrReview>>, code_comments: Option<Vec<crate::domain::PrCodeComment>>) {
+        if let PanelState::Pulls(p) = self {
+            if let Some(pr) = p.data.items.iter_mut().find(|pr| pr.number == pr_number as u32) {
+                // Only overwrite if we got data (None means keep existing state for retry)
+                if let Some(c) = comments { pr.comments = Some(c); }
+                if let Some(r) = reviews { pr.reviews = Some(r); }
+                if let Some(cc) = code_comments { pr.code_comments = Some(cc); }
+            }
+        }
+        self.set_loading(false);
+    }
+
     pub fn set_loading(&mut self, loading: bool) {
         match self {
             PanelState::Repos(p) => p.set_loading(loading),

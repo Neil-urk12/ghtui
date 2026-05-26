@@ -259,6 +259,10 @@ pub trait PanelItem: std::fmt::Debug + Default {
     fn apply_filter(&self, data: &mut ListPanelData<Self::Item>, query: &str, selection: &mut SelectionState) {
         let _ = (data, query, selection);
     }
+
+    /// Called after selection changes (j/k navigation).
+    /// Return `Some(Cmd)` to trigger an async fetch (e.g. comments).
+    fn on_select(&self, _selected: Option<&Self::Item>, _data: &ListPanelData<Self::Item>) -> Option<crate::cmd::Cmd> { None }
 }
 
 /// Generic list panel that owns selection + detail pane internally.
@@ -318,10 +322,19 @@ impl<T: PanelItem + 'static> ListPanel<T> {
         }
         // Fall through to default j/k navigation.
         match key {
-            'j' => { navigate_down(&mut self.selection, &mut self.detail_pane); None }
-            'k' => { navigate_up(&mut self.selection, &mut self.detail_pane); None }
+            'j' => {
+                navigate_down(&mut self.selection, &mut self.detail_pane);
+                let selected = self.data.selected(&self.selection);
+                self.item.on_select(selected, &self.data)
+            }
+            'k' => {
+                navigate_up(&mut self.selection, &mut self.detail_pane);
+                let selected = self.data.selected(&self.selection);
+                self.item.on_select(selected, &self.data)
+            }
             _ => None,
         }
+
     }
 
     pub fn fetch_cmd(&self) -> Cmd {
