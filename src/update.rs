@@ -170,6 +170,11 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
                     }
                     Cmd::None
                 }
+                Cmd::FetchPrComments { .. } => {
+                    // Don't set loading on the whole panel — only detail pane
+                    // needs to refresh when navigating between PRs.
+                    cmd
+                }
                 other => {
                     if other.is_destructive() {
                         let detail = app.panels.get(&app.active_panel)
@@ -727,6 +732,67 @@ mod tests {
                 );
             }
             _ => panic!("Expected Notifications panel"),
+        }
+    }
+
+    #[test]
+    fn fetch_pr_comments_does_not_set_loading() {
+        use crate::domain;
+        use crate::event::ApiPayload;
+
+        let mut app = test_app();
+
+        // Set repo context on Pulls panel (needed for on_select to trigger fetch)
+        if let Some(entry) = app.panels.get_mut(&PanelKind::Pulls) {
+            entry.set_repo_context("octocat", "hello-world");
+        }
+
+        // Load some PRs (comments/reviews/code_comments are None by default)
+        let pulls = vec![
+            domain::PullRequest { number: 1, title: "Fix bug".into(), ..Default::default() },
+            domain::PullRequest { number: 2, title: "Add feature".into(), ..Default::default() },
+        ];
+        update(&mut app, Message::ApiLoaded(ApiPayload::Pulls(pulls.clone())));
+
+        // Switch to Pulls panel
+        update(&mut app, Message::NextTab);
+        assert_eq!(app.active_panel, PanelKind::Pulls);
+
+        // NextTab triggers fetch_and_set_loading which sets loading=true.
+        // Simulate API response to clear it.
+        update(&mut app, Message::ApiLoaded(ApiPayload::Pulls(vec![])));
+
+        // Reload PRs so items exist for navigation
+        update(&mut app, Message::ApiLoaded(ApiPayload::Pulls(pulls)));
+
+        // Verify loading is false
+        match app.panels.get(&PanelKind::Pulls) {
+            Some(crate::app::PanelState::Pulls(panel)) => {
+                assert!(!panel.data.loading, "Loading should be false initially");
+                assert_eq!(panel.data.items.len(), 2, "Should have 2 PRs loaded");
+            }
+            _ => panic!("Expected Pulls panel"),
+        }
+
+        // Navigate down to trigger on_select which returns FetchPrComments
+        let cmd = update(&mut app, Message::PanelKeyInput('j'));
+
+        // Should return FetchPrComments cmd
+        assert!(
+            matches!(cmd, Cmd::FetchPrComments { .. }),
+            "Expected FetchPrComments cmd, got {:?}",
+            cmd
+        );
+
+        // Verify loading is STILL false (not set to true)
+        match app.panels.get(&PanelKind::Pulls) {
+            Some(crate::app::PanelState::Pulls(panel)) => {
+                assert!(
+                    !panel.data.loading,
+                    "Loading should remain false for FetchPrComments"
+                );
+            }
+            _ => panic!("Expected Pulls panel"),
         }
     }
 }
