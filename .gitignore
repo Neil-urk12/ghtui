@@ -1,0 +1,7 @@
+.gitnexus
+
+target/
+*.swp
+*.swo
+.env
+.DS_Store
