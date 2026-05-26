@@ -172,8 +172,10 @@ fn build_help_text(panel: &str) -> Text<'static> {
         "PRs" => vec![
             Line::from("Pull Requests").style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
             Line::from("  j / k            Navigate list"),
-            Line::from("  1 / 2 / 3        Filter open/closed/all"),
-            Line::from("  o                Open in browser"),
+            Line::from("  1: open          Show open items"),
+            Line::from("  2: closed        Show closed items"),
+            Line::from("  3: all           Show all items"),
+            Line::from("  o: browse        Open in browser"),
             Line::from("  c                Checkout branch"),
             Line::from("  a                Approve"),
             Line::from("  m                Merge"),
@@ -181,16 +183,19 @@ fn build_help_text(panel: &str) -> Text<'static> {
         "Issues" => vec![
             Line::from("Issues").style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
             Line::from("  j / k            Navigate list"),
-            Line::from("  1 / 2 / 3        Filter open/closed/all"),
-            Line::from("  o                Open in browser"),
+            Line::from("  1: open          Show open items"),
+            Line::from("  2: closed        Show closed items"),
+            Line::from("  3: all           Show all items"),
+            Line::from("  o: browse        Open in browser"),
             Line::from("  c                Add comment"),
             Line::from("  a                Toggle assign"),
         ],
         "Notif" => vec![
             Line::from("Notifications").style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
             Line::from("  j / k            Navigate list"),
-            Line::from("  x                Mark as read"),
-            Line::from("  X                Mark all as read"),
+            Line::from("  a: all/unread    Toggle all/unread view"),
+            Line::from("  m                Mark as read"),
+            Line::from("  M                Mark all as read"),
             Line::from("  Enter            Go to subject"),
         ],
         "Actions" => vec![
@@ -206,4 +211,111 @@ fn build_help_text(panel: &str) -> Text<'static> {
 
     lines.extend(panel_specific);
     lines.into_iter().collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+
+    fn render_help_to_string(panel: &str) -> String {
+        let backend = TestBackend::new(80, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|f| {
+                render_help(f, f.area(), panel);
+            })
+            .unwrap();
+        let buffer = terminal.backend().buffer().clone();
+        let mut content = String::new();
+        for y in 0..buffer.area.height {
+            for x in 0..buffer.area.width {
+                let cell = &buffer[(x, y)];
+                content.push_str(cell.symbol());
+            }
+            content.push('\n');
+        }
+        content
+    }
+
+    #[test]
+    fn prs_help_contains_new_filter_format() {
+        let content = render_help_to_string("PRs");
+        assert!(
+            content.contains("1: open"),
+            "PRs help should contain '1: open' but was:\n{}",
+            content
+        );
+        assert!(
+            content.contains("2: closed"),
+            "PRs help should contain '2: closed' but was:\n{}",
+            content
+        );
+        assert!(
+            content.contains("3: all"),
+            "PRs help should contain '3: all' but was:\n{}",
+            content
+        );
+        assert!(
+            content.contains("o: browse"),
+            "PRs help should contain 'o: browse' but was:\n{}",
+            content
+        );
+    }
+
+    #[test]
+    fn issues_help_contains_new_filter_format() {
+        let content = render_help_to_string("Issues");
+        assert!(
+            content.contains("1: open"),
+            "Issues help should contain '1: open' but was:\n{}",
+            content
+        );
+        assert!(
+            content.contains("2: closed"),
+            "Issues help should contain '2: closed' but was:\n{}",
+            content
+        );
+        assert!(
+            content.contains("3: all"),
+            "Issues help should contain '3: all' but was:\n{}",
+            content
+        );
+        assert!(
+            content.contains("o: browse"),
+            "Issues help should contain 'o: browse' but was:\n{}",
+            content
+        );
+    }
+
+    #[test]
+    fn notifications_help_contains_correct_key() {
+        let content = render_help_to_string("Notif");
+        assert!(
+            content.contains("a: all/unread"),
+            "Notifications help should contain 'a: all/unread' but was:\n{}",
+            content
+        );
+        assert!(
+            content.contains("m                Mark as read"),
+            "Notifications help should contain 'm' mark as read but was:\n{}",
+            content
+        );
+        assert!(
+            content.contains("M                Mark all as read"),
+            "Notifications help should contain 'M' mark all as read but was:\n{}",
+            content
+        );
+    }
+
+    #[test]
+    fn notifications_help_does_not_contain_x_binding() {
+        let content = render_help_to_string("Notif");
+        assert!(
+            !content.contains("x                Mark as read"),
+            "Notifications help should NOT contain old 'x' binding, got:\n{}",
+            content
+        );
+    }
 }

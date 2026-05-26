@@ -23,3 +23,10 @@
 **Event** — A raw input from one of three sources: crossterm keys, API results, or ticks.
 
 **ApiPayload** — A typed API response routed to the owning panel by variant, not by active tab.
+**Status Bar** — Bottom row of the terminal. Shows per-panel key hints (left) and global hints (right).
+
+**Detail Footer** — Muted key-hint line appended below the detail pane content.
+
+**Empty State** — Centered message shown when a panel has no items loaded.
+
+**Key Hint** — A terse `key:label` pair in the status bar or footer explaining a keyboard shortcut.

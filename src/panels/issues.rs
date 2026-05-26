@@ -83,6 +83,12 @@ fn issue_to_detail(issue: &Issue, theme: &Theme) -> Vec<Line<'static>> {
         content.push(Line::from(Span::styled("No description", theme.muted)));
     }
 
+    content.push(Line::from(""));
+    content.push(Line::from(Span::styled(
+        "1:open 2:closed 3:all | o:browser | c:comment | a:assign",
+        theme.muted,
+    )));
+
     content
 }
 
@@ -187,7 +193,7 @@ impl PanelItem for IssuesPanelItem {
     }
 
     fn empty_state(&self, data: &ListPanelData<Self::Item>) -> EmptyState {
-        data.repo_aware_empty_state("No issues found", "\u{1f41b}", "Press `r` to refresh, 1/2/3 to filter")
+        data.repo_aware_empty_state("No issues found", "\u{1f41b}", "Press 1 for open, 2 for closed, 3 for all \u{00b7} r to refresh")
     }
 
     extract_items!(Issues);
@@ -379,5 +385,39 @@ mod tests {
         let panel = IssuesPanelItem::default();
         panel.apply_filter(&mut data, "octocat", &mut selection);
         assert_eq!(data.filtered_indices, vec![0, 2]);
+    }
+
+    #[test]
+    fn detail_footer_contains_key_hints() {
+        let issue = test_issue();
+        let panel = IssuesPanelItem::default();
+        let theme = Theme::default();
+
+        let lines = panel.detail_lines(&issue, &theme);
+        let text: String = lines
+            .iter()
+            .map(|l| l.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            text.contains("1:open 2:closed 3:all | o:browser | c:comment | a:assign"),
+            "detail footer should contain key hints, got: {}",
+            text
+        );
+    }
+
+    #[test]
+    fn empty_state_shows_prose() {
+        let mut data = ListPanelData::<Issue>::new();
+        data.set_repo("owner".into(), "repo".into());
+        let panel = IssuesPanelItem::default();
+
+        let state = panel.empty_state(&data);
+        let hint = state.hint.expect("empty_state should have hint");
+        assert!(
+            hint.contains("Press 1 for open, 2 for closed, 3 for all · r to refresh"),
+            "empty state hint should contain filter prose, got: {}",
+            hint
+        );
     }
 }

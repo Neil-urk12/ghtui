@@ -61,7 +61,7 @@ fn pr_to_detail(pr: &PullRequest, theme: &Theme) -> Vec<Line<'static>> {
 
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        "1/2/3: filter | o: open | c: checkout | a: approve | m: merge",
+        "1:open 2:closed 3:all | o:browser | c:checkout | a:approve | m:merge",
         theme.muted,
     )));
 
@@ -203,7 +203,7 @@ impl PanelItem for PullsPanelItem {
     }
 
     fn empty_state(&self, data: &ListPanelData<Self::Item>) -> EmptyState {
-        data.repo_aware_empty_state("No pull requests found", " ", "Press `r` to refresh, 1/2/3 to filter")
+        data.repo_aware_empty_state("No pull requests found", " ", "Press 1 for open, 2 for closed, 3 for all · r to refresh")
     }
 
     extract_items!(Pulls);
@@ -490,5 +490,37 @@ mod tests {
             LeftContent::Table { rows, .. } => assert!(rows.is_empty()),
             LeftContent::List { items, .. } => assert!(items.is_empty()),
         }
+    }
+
+    #[test]
+    fn detail_footer_contains_self_documenting_hints() {
+        let pr = test_pr();
+        let item = PullsPanelItem::default();
+        let theme = Theme::default();
+
+        let lines = item.detail_lines(&pr, &theme);
+        let text: String = lines.iter().map(|l| l.to_string()).collect::<Vec<_>>().join("\n");
+
+        assert!(
+            text.contains("1:open 2:closed 3:all | o:browser | c:checkout | a:approve | m:merge"),
+            "footer should contain self-documenting key hints, got: {text}"
+        );
+    }
+
+    #[test]
+    fn empty_state_shows_prose() {
+        let pr = test_pr();
+        let mut data = make_data(pr);
+        // Populate items but clear filtered to trigger the filter-empty branch
+        data.filtered_indices = vec![];
+        let item = PullsPanelItem::default();
+
+        let state = item.empty_state(&data);
+
+        assert!(
+            state.hint.as_deref().unwrap_or("").contains("Press 1 for open, 2 for closed, 3 for all · r to refresh"),
+            "empty state hint should show prose, got: {:?}",
+            state.hint
+        );
     }
 }
