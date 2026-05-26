@@ -196,7 +196,6 @@ fn build_help_text(panel: &str) -> Text<'static> {
             Line::from("  a: all/unread    Toggle all/unread view"),
             Line::from("  m                Mark as read"),
             Line::from("  M                Mark all as read"),
-            Line::from("  Enter            Go to subject"),
         ],
         "Actions" => vec![
             Line::from("Actions").style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
@@ -315,6 +314,16 @@ mod tests {
         assert!(
             !content.contains("x                Mark as read"),
             "Notifications help should NOT contain old 'x' binding, got:\n{}",
+            content
+        );
+    }
+
+    #[test]
+    fn notifications_help_does_not_contain_enter() {
+        let content = render_help_to_string("Notif");
+        assert!(
+            !content.contains("Enter"),
+            "Notifications help should NOT contain 'Enter' (unimplemented), got:\n{}",
             content
         );
     }
