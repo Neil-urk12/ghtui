@@ -306,7 +306,8 @@ impl PanelItem for PullsPanelItem {
         const DEBOUNCE_MS: u128 = 500;
 
         if let Some(pr) = selected {
-            let needs_fetch = pr.comments.is_none() || pr.reviews.is_none() || pr.code_comments.is_none();            let has_error = pr.comment_errors.is_some() || pr.review_errors.is_some() || pr.code_comment_errors.is_some();            if needs_fetch && !has_error {
+            let needs_fetch = pr.comments.is_none() || pr.reviews.is_none() || pr.code_comments.is_none();
+            if needs_fetch {
                 let pr_number = pr.number;
                 let within_debounce = self.last_fetch_attempts
                     .borrow()
@@ -393,6 +394,7 @@ impl PanelItem for PullsPanelItem {
 mod tests {
     use super::*;
     use crate::event::ApiPayload;
+    use std::time::Duration;
 
     fn test_pr() -> PullRequest {
         PullRequest {
@@ -963,7 +965,7 @@ mod tests {
     }
 
     #[test]
-    fn on_select_does_not_retry_after_error() {
+    fn on_select_retries_on_first_select_after_error() {
         let mut pr = test_pr();
         pr.review_errors = Some("403 rate limited".to_string());
         let data = make_data(pr);
@@ -972,6 +974,55 @@ mod tests {
         let selected = data.items.first();
         let cmd = item.on_select(selected, &data);
 
-        assert!(cmd.is_none(), "should not auto-retry when error already stored");
+        // With error-clearing fix: first select triggers retry (no debounce entry yet)
+        assert!(cmd.is_some(), "should retry on first select even when error exists");
+    }
+
+    #[test]
+    fn on_select_retries_after_error_past_debounce() {
+        let mut pr = test_pr();
+        pr.review_errors = Some("rate limited".to_string());
+        // reviews stays None → needs_fetch = true
+        let data = make_data(pr);
+        let item = PullsPanelItem::default();
+
+        // First call — fetches, sets debounce
+        let selected = data.items.first();
+        let cmd = item.on_select(selected, &data);
+        assert!(cmd.is_some(), "first call should fetch");
+
+        // Second call within debounce — blocked
+        let cmd = item.on_select(selected, &data);
+        assert!(cmd.is_none(), "within debounce should block");
+
+        // Simulate time passing beyond debounce window
+        item.last_fetch_attempts
+            .borrow_mut()
+            .insert(42, Instant::now() - Duration::from_millis(600));
+
+        // Third call — past debounce, should retry despite prior error
+        let cmd = item.on_select(selected, &data);
+        assert!(
+            cmd.is_some(),
+            "should retry fetch after debounce expires, even with prior error"
+        );
+    }
+
+    #[test]
+    fn on_select_still_debounces_error_retry() {
+        let mut pr = test_pr();
+        pr.comment_errors = Some("403".to_string());
+        // comments stays None → needs_fetch = true
+        let data = make_data(pr);
+        let item = PullsPanelItem::default();
+
+        // First call — triggers fetch, starts debounce
+        let selected = data.items.first();
+        let cmd = item.on_select(selected, &data);
+        assert!(cmd.is_some(), "first call should trigger fetch");
+
+        // Second call — immediate, within debounce window
+        let cmd = item.on_select(selected, &data);
+        assert!(cmd.is_none(), "should debounce rapid retry");
     }
 }
