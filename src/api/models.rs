@@ -130,3 +130,40 @@ pub struct ReviewComment {
     pub created_at: String,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pull_request_deserializes_large_number() {
+        let json = r#"{
+            "number": 5000000000,
+            "title": "Big PR",
+            "user": {"login": "u", "id": 1},
+            "state": "open",
+            "html_url": "",
+            "created_at": "",
+            "updated_at": "",
+            "labels": []
+        }"#;
+        let pr: PullRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(pr.number, 5_000_000_000);
+    }
+
+    #[test]
+    fn issue_deserializes_large_number() {
+        let json = r#"{
+            "number": 5000000000,
+            "title": "Big Issue",
+            "user": {"login": "u", "id": 1},
+            "state": "open",
+            "html_url": "",
+            "created_at": "",
+            "updated_at": "",
+            "labels": [],
+            "assignees": []
+        }"#;
+        let issue: Issue = serde_json::from_str(json).unwrap();
+        assert_eq!(issue.number, 5_000_000_000);
+    }
+}

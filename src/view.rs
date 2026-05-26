@@ -15,8 +15,7 @@ pub fn view(frame: &mut Frame, app: &mut App) {
         if let Some(ref login) = app.login {
             render_login(frame, login);
         } else {
-            let loading = Paragraph::new("Initializing login...")
-                .alignment(Alignment::Center);
+            let loading = Paragraph::new("Initializing login...").alignment(Alignment::Center);
             frame.render_widget(loading, area);
         }
         return;
@@ -29,12 +28,8 @@ pub fn view(frame: &mut Frame, app: &mut App) {
         (Constraint::Fill(1), Constraint::Length(1))
     };
 
-    let layout = Layout::vertical([
-        Constraint::Length(1),
-        content_height,
-        status_height,
-    ])
-    .split(area);
+    let layout =
+        Layout::vertical([Constraint::Length(1), content_height, status_height]).split(area);
 
     render_tab_bar(frame, layout[0], app);
 
@@ -47,11 +42,8 @@ pub fn view(frame: &mut Frame, app: &mut App) {
     // Status area + optional search bar
     let status_area = layout[2];
     if app.search.active {
-        let status_layout = Layout::vertical([
-            Constraint::Length(1),
-            Constraint::Length(1),
-        ])
-        .split(status_area);
+        let status_layout =
+            Layout::vertical([Constraint::Length(1), Constraint::Length(1)]).split(status_area);
 
         // Search bar
         let search_text = format!("/{}", app.search.query);
@@ -80,7 +72,6 @@ pub fn view(frame: &mut Frame, app: &mut App) {
     if app.show_help {
         popup::render_help(frame, area, &app.active_panel.to_string());
     }
-
 
     // Confirmation modal overlay
     if let Some(ref confirm) = app.confirmation {

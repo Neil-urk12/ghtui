@@ -20,7 +20,9 @@ impl Default for Theme {
         Self {
             active_border: Style::default().fg(Color::Cyan),
             inactive_border: Style::default().fg(Color::DarkGray),
-            highlight: Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD),
+            highlight: Style::default()
+                .fg(Color::Blue)
+                .add_modifier(Modifier::BOLD),
             muted: Style::default().fg(Color::Gray),
             success: Style::default().fg(Color::Green),
             error: Style::default().fg(Color::Red),

@@ -8,7 +8,13 @@ pub enum Severity {
     Warn,
 }
 
-pub fn render_error_toast(frame: &mut Frame, area: Rect, message: &str, severity: Severity, tick: u64) {
+pub fn render_error_toast(
+    frame: &mut Frame,
+    area: Rect,
+    message: &str,
+    severity: Severity,
+    tick: u64,
+) {
     let (border_color, icon, title) = match severity {
         Severity::Error => (Color::Red, "✖", " Error "),
         Severity::Warn => (Color::Yellow, "⚠", " Warning "),
@@ -16,7 +22,11 @@ pub fn render_error_toast(frame: &mut Frame, area: Rect, message: &str, severity
 
     let remaining = AUTO_DISMISS_TICKS.saturating_sub(tick);
     let progress = if remaining > 0 {
-        format!(" [{}/{}]", AUTO_DISMISS_TICKS - remaining, AUTO_DISMISS_TICKS)
+        format!(
+            " [{}/{}]",
+            AUTO_DISMISS_TICKS - remaining,
+            AUTO_DISMISS_TICKS
+        )
     } else {
         String::new()
     };
@@ -25,7 +35,11 @@ pub fn render_error_toast(frame: &mut Frame, area: Rect, message: &str, severity
     frame.render_widget(Clear, toast_area);
     let block = Block::default()
         .title(format!("{}{}", title, progress))
-        .title_style(Style::default().fg(border_color).add_modifier(Modifier::BOLD))
+        .title_style(
+            Style::default()
+                .fg(border_color)
+                .add_modifier(Modifier::BOLD),
+        )
         .borders(Borders::ALL)
         .border_style(Style::default().fg(border_color));
     let text = Paragraph::new(format!("{} {}", icon, message))
@@ -37,7 +51,11 @@ pub fn render_error_toast(frame: &mut Frame, area: Rect, message: &str, severity
 pub fn render_success_toast(frame: &mut Frame, area: Rect, message: &str, tick: u64) {
     let remaining = AUTO_DISMISS_TICKS.saturating_sub(tick);
     let progress = if remaining > 0 {
-        format!(" [{}/{}]", AUTO_DISMISS_TICKS - remaining, AUTO_DISMISS_TICKS)
+        format!(
+            " [{}/{}]",
+            AUTO_DISMISS_TICKS - remaining,
+            AUTO_DISMISS_TICKS
+        )
     } else {
         String::new()
     };
@@ -46,7 +64,11 @@ pub fn render_success_toast(frame: &mut Frame, area: Rect, message: &str, tick: 
     frame.render_widget(Clear, toast_area);
     let block = Block::default()
         .title(format!(" Success{}", progress))
-        .title_style(Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))
+        .title_style(
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        )
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Green));
     let text = Paragraph::new(format!("✔ {}", message))
@@ -75,39 +97,47 @@ pub fn render_help(frame: &mut Frame, area: Rect, panel: &str) {
     );
 }
 
-
 pub fn render_confirmation(frame: &mut Frame, area: Rect, action_label: &str, detail: &str) {
     let modal_area = centered_rect(50, 20, area);
     frame.render_widget(Clear, modal_area);
 
     let block = Block::default()
         .title(" Confirm ")
-        .title_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
+        .title_style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Yellow));
 
-    let mut lines = vec![
-        Line::from(action_label.to_string())
-            .style(Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
-    ];
+    let mut lines = vec![Line::from(action_label.to_string()).style(
+        Style::default()
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD),
+    )];
 
     if !detail.is_empty() {
         lines.push(Line::from(detail.to_string()).style(Style::default().fg(Color::Gray)));
     }
 
     lines.push(Line::from(""));
-    lines.push(
-        Line::from(vec![
-            Span::styled(" y ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-            Span::raw(" Yes    "),
-            Span::styled(" n ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-            Span::raw(" No"),
-        ]),
-    );
+    lines.push(Line::from(vec![
+        Span::styled(
+            " y ",
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(" Yes    "),
+        Span::styled(
+            " n ",
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(" No"),
+    ]));
 
-    let text = Paragraph::new(lines)
-        .block(block)
-        .wrap(Wrap { trim: true });
+    let text = Paragraph::new(lines).block(block).wrap(Wrap { trim: true });
     frame.render_widget(text, modal_area);
 }
 
@@ -153,7 +183,11 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
 
 fn build_help_text(panel: &str) -> Text<'static> {
     let mut lines: Vec<Line> = vec![
-        Line::from("Global").style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Line::from("Global").style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
         Line::from("  Tab / Shift-Tab  Switch panel"),
         Line::from("  /                Search"),
         Line::from("  ?                Toggle help"),
@@ -164,13 +198,21 @@ fn build_help_text(panel: &str) -> Text<'static> {
 
     let panel_specific: Vec<Line> = match panel {
         "Repos" => vec![
-            Line::from("Repos").style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Line::from("Repos").style(
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Line::from("  j / k            Navigate list"),
             Line::from("  Enter            View PRs for repo"),
             Line::from("  s                Toggle sort"),
         ],
         "PRs" => vec![
-            Line::from("Pull Requests").style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Line::from("Pull Requests").style(
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Line::from("  j / k            Navigate list"),
             Line::from("  1: open          Show open items"),
             Line::from("  2: closed        Show closed items"),
@@ -181,7 +223,11 @@ fn build_help_text(panel: &str) -> Text<'static> {
             Line::from("  m                Merge"),
         ],
         "Issues" => vec![
-            Line::from("Issues").style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Line::from("Issues").style(
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Line::from("  j / k            Navigate list"),
             Line::from("  1: open          Show open items"),
             Line::from("  2: closed        Show closed items"),
@@ -191,14 +237,22 @@ fn build_help_text(panel: &str) -> Text<'static> {
             Line::from("  a                Toggle assign"),
         ],
         "Notif" => vec![
-            Line::from("Notifications").style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Line::from("Notifications").style(
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Line::from("  j / k            Navigate list"),
             Line::from("  a: all/unread    Toggle all/unread view"),
             Line::from("  m                Mark as read"),
             Line::from("  M                Mark all as read"),
         ],
         "Actions" => vec![
-            Line::from("Actions").style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Line::from("Actions").style(
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Line::from("  j / k            Navigate list"),
             Line::from("  Enter            Expand jobs"),
             Line::from("  v                View logs"),

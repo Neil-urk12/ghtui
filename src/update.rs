@@ -28,7 +28,10 @@ pub enum Message {
     LoginError(String),
     ApiLoaded(crate::event::ApiPayload),
     ApiError(String),
-    RateLimitUpdate { remaining: Option<u32>, reset_secs: Option<u64> },
+    RateLimitUpdate {
+        remaining: Option<u32>,
+        reset_secs: Option<u64>,
+    },
     Tick,
     ConfirmYes,
     ConfirmNo,
@@ -58,8 +61,15 @@ impl fmt::Debug for Message {
             Message::LoginError(msg) => write!(f, "LoginError({})", msg),
             Message::ApiLoaded(_) => write!(f, "ApiLoaded"),
             Message::ApiError(ref msg) => write!(f, "ApiError({})", msg),
-            Message::RateLimitUpdate { remaining, reset_secs } => {
-                write!(f, "RateLimitUpdate(remaining={:?}, reset={:?})", remaining, reset_secs)
+            Message::RateLimitUpdate {
+                remaining,
+                reset_secs,
+            } => {
+                write!(
+                    f,
+                    "RateLimitUpdate(remaining={:?}, reset={:?})",
+                    remaining, reset_secs
+                )
             }
             Message::Tick => write!(f, "Tick"),
             Message::ConfirmYes => write!(f, "ConfirmYes"),
@@ -81,7 +91,7 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
             fetch_and_set_loading(app)
         }
         Message::Refresh => fetch_and_set_loading(app),
-        
+
         Message::SearchActivate => {
             app.search.active = true;
             app.search.query.clear();
@@ -165,7 +175,9 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
                 }
                 Cmd::None => Cmd::None,
                 Cmd::CycleRepoSort => {
-                    if let Some(crate::app::PanelState::Repos(ref mut p)) = app.panels.get_mut(&PanelKind::Repos) {
+                    if let Some(crate::app::PanelState::Repos(ref mut p)) =
+                        app.panels.get_mut(&PanelKind::Repos)
+                    {
                         p.item.cycle_sort(&mut p.data, &mut p.selection);
                     }
                     Cmd::None
@@ -177,10 +189,15 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
                 }
                 other => {
                     if other.is_destructive() {
-                        let detail = app.panels.get(&app.active_panel)
+                        let detail = app
+                            .panels
+                            .get(&app.active_panel)
                             .and_then(|e| e.selected_display())
                             .unwrap_or_default();
-                        let action_label = other.action_label().expect("destructive cmd must have label").to_string();
+                        let action_label = other
+                            .action_label()
+                            .expect("destructive cmd must have label")
+                            .to_string();
                         app.confirmation = Some(crate::app::ConfirmState {
                             pending_cmd: other,
                             action_label,
@@ -202,7 +219,9 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
             Cmd::None
         }
         Message::LoginSuccess(token) => {
-            if let Err(e) = crate::api::auth::save_token(&token, crate::api::auth::GHTUI_SCOPES) { tracing::warn!("failed to persist token: {e}"); }
+            if let Err(e) = crate::api::auth::save_token(&token, crate::api::auth::GHTUI_SCOPES) {
+                tracing::warn!("failed to persist token: {e}");
+            }
             app.client = Arc::new(GitHubClient::new(token));
             app.login = None;
             app.state = AppState::Main;
@@ -258,19 +277,37 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
             if let Some(kind) = target {
                 if let Some(entry) = app.panels.get_mut(&kind) {
                     // Handle PrComments specially
-                    if let ApiPayload::PrComments { pr_number, comments, reviews, code_comments } = payload {
+                    if let ApiPayload::PrComments {
+                        pr_number,
+                        comments,
+                        reviews,
+                        code_comments,
+                    } = payload
+                    {
                         // Destructure: Ok data stored, Err stored as error string, None keeps existing state for retry
-                        let (c_ok, c_err) = match comments { Ok(v) => (Some(v), None), Err(e) => (None, Some(e)) };
-                        let (r_ok, r_err) = match reviews { Ok(v) => (Some(v), None), Err(e) => (None, Some(e)) };
-                        let (cc_ok, cc_err) = match code_comments { Ok(v) => (Some(v), None), Err(e) => (None, Some(e)) };
-                        entry.update_pr_comments(pr_number, PrCommentUpdate {
-                            comments: c_ok,
-                            reviews: r_ok,
-                            code_comments: cc_ok,
-                            comment_err: c_err,
-                            review_err: r_err,
-                            code_comment_err: cc_err,
-                        });
+                        let (c_ok, c_err) = match comments {
+                            Ok(v) => (Some(v), None),
+                            Err(e) => (None, Some(e)),
+                        };
+                        let (r_ok, r_err) = match reviews {
+                            Ok(v) => (Some(v), None),
+                            Err(e) => (None, Some(e)),
+                        };
+                        let (cc_ok, cc_err) = match code_comments {
+                            Ok(v) => (Some(v), None),
+                            Err(e) => (None, Some(e)),
+                        };
+                        entry.update_pr_comments(
+                            pr_number,
+                            PrCommentUpdate {
+                                comments: c_ok,
+                                reviews: r_ok,
+                                code_comments: cc_ok,
+                                comment_err: c_err,
+                                review_err: r_err,
+                                code_comment_err: cc_err,
+                            },
+                        );
                     } else {
                         entry.load_data(payload);
                     }
@@ -283,7 +320,10 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
             app.toast_tick = 0;
             Cmd::None
         }
-        Message::RateLimitUpdate { remaining, reset_secs } => {
+        Message::RateLimitUpdate {
+            remaining,
+            reset_secs,
+        } => {
             app.rate_remaining = remaining;
             app.rate_reset_secs = reset_secs;
             Cmd::None
@@ -304,7 +344,9 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
 }
 
 fn fetch_and_set_loading(app: &mut App) -> Cmd {
-    let cmd = app.panels.get(&app.active_panel)
+    let cmd = app
+        .panels
+        .get(&app.active_panel)
         .map(|entry| entry.fetch_cmd())
         .unwrap_or(Cmd::None);
     if !matches!(cmd, Cmd::None) {
@@ -457,7 +499,10 @@ mod tests {
     fn api_loaded_success_shows_toast() {
         use crate::event::ApiPayload;
         let mut app = test_app();
-        update(&mut app, Message::ApiLoaded(ApiPayload::Success("done".into())));
+        update(
+            &mut app,
+            Message::ApiLoaded(ApiPayload::Success("done".into())),
+        );
         assert_eq!(app.success_toast.as_deref(), Some("done"));
     }
 
@@ -472,10 +517,13 @@ mod tests {
     fn rate_limit_update() {
         let mut app = test_app();
         assert!(app.rate_remaining.is_none());
-        update(&mut app, Message::RateLimitUpdate {
-            remaining: Some(42),
-            reset_secs: Some(3600),
-        });
+        update(
+            &mut app,
+            Message::RateLimitUpdate {
+                remaining: Some(42),
+                reset_secs: Some(3600),
+            },
+        );
         assert_eq!(app.rate_remaining, Some(42));
         assert_eq!(app.rate_reset_secs, Some(3600));
     }
@@ -497,9 +545,18 @@ mod tests {
 
         let mut app = test_app();
         let repos = vec![
-            domain::Repo { name: "octocat/hello".into(), ..Default::default() },
-            domain::Repo { name: "test/repo".into(), ..Default::default() },
-            domain::Repo { name: "foo/bar".into(), ..Default::default() },
+            domain::Repo {
+                name: "octocat/hello".into(),
+                ..Default::default()
+            },
+            domain::Repo {
+                name: "test/repo".into(),
+                ..Default::default()
+            },
+            domain::Repo {
+                name: "foo/bar".into(),
+                ..Default::default()
+            },
         ];
         update(&mut app, Message::ApiLoaded(ApiPayload::Repos(repos)));
 
@@ -523,9 +580,11 @@ mod tests {
         assert!(!app.search.active);
         if let Some(entry) = app.panels.get(&PanelKind::Repos) {
             if let crate::app::PanelState::Repos(panel) = entry {
-                assert!(panel.data.filtered_indices.len() < 3,
+                assert!(
+                    panel.data.filtered_indices.len() < 3,
                     "Expected filtered_indices to be less than 3 after search, got {}",
-                    panel.data.filtered_indices.len());
+                    panel.data.filtered_indices.len()
+                );
             } else {
                 panic!("Expected Repos panel");
             }
@@ -539,9 +598,18 @@ mod tests {
 
         let mut app = test_app();
         let repos = vec![
-            domain::Repo { name: "octocat/hello".into(), ..Default::default() },
-            domain::Repo { name: "test/repo".into(), ..Default::default() },
-            domain::Repo { name: "foo/bar".into(), ..Default::default() },
+            domain::Repo {
+                name: "octocat/hello".into(),
+                ..Default::default()
+            },
+            domain::Repo {
+                name: "test/repo".into(),
+                ..Default::default()
+            },
+            domain::Repo {
+                name: "foo/bar".into(),
+                ..Default::default()
+            },
         ];
         update(&mut app, Message::ApiLoaded(ApiPayload::Repos(repos)));
 
@@ -553,10 +621,16 @@ mod tests {
 
         if let Some(entry) = app.panels.get(&PanelKind::Repos) {
             if let crate::app::PanelState::Repos(panel) = entry {
-                assert_eq!(panel.data.filtered_indices.len(), 1,
+                assert_eq!(
+                    panel.data.filtered_indices.len(),
+                    1,
                     "Expected 1 match for 'octo', got {}",
-                    panel.data.filtered_indices.len());
-                assert_eq!(panel.data.items[panel.data.filtered_indices[0]].name, "octocat/hello");
+                    panel.data.filtered_indices.len()
+                );
+                assert_eq!(
+                    panel.data.items[panel.data.filtered_indices[0]].name,
+                    "octocat/hello"
+                );
             } else {
                 panic!("Expected Repos panel");
             }
@@ -574,9 +648,21 @@ mod tests {
         assert_eq!(app.active_panel, PanelKind::Pulls);
 
         let pulls = vec![
-            domain::PullRequest { number: 1, title: "Fix login bug".into(), ..Default::default() },
-            domain::PullRequest { number: 2, title: "Add dark mode".into(), ..Default::default() },
-            domain::PullRequest { number: 3, title: "Refactor auth".into(), ..Default::default() },
+            domain::PullRequest {
+                number: 1,
+                title: "Fix login bug".into(),
+                ..Default::default()
+            },
+            domain::PullRequest {
+                number: 2,
+                title: "Add dark mode".into(),
+                ..Default::default()
+            },
+            domain::PullRequest {
+                number: 3,
+                title: "Refactor auth".into(),
+                ..Default::default()
+            },
         ];
         update(&mut app, Message::ApiLoaded(ApiPayload::Pulls(pulls)));
 
@@ -588,10 +674,16 @@ mod tests {
 
         if let Some(entry) = app.panels.get(&PanelKind::Pulls) {
             if let crate::app::PanelState::Pulls(panel) = entry {
-                assert_eq!(panel.data.filtered_indices.len(), 1,
+                assert_eq!(
+                    panel.data.filtered_indices.len(),
+                    1,
                     "Expected 1 match for 'dark', got {}",
-                    panel.data.filtered_indices.len());
-                assert_eq!(panel.data.items[panel.data.filtered_indices[0]].title, "Add dark mode");
+                    panel.data.filtered_indices.len()
+                );
+                assert_eq!(
+                    panel.data.items[panel.data.filtered_indices[0]].title,
+                    "Add dark mode"
+                );
             } else {
                 panic!("Expected Pulls panel");
             }
@@ -605,9 +697,18 @@ mod tests {
 
         let mut app = test_app();
         let repos = vec![
-            domain::Repo { name: "octocat/hello".into(), ..Default::default() },
-            domain::Repo { name: "test/repo".into(), ..Default::default() },
-            domain::Repo { name: "foo/bar".into(), ..Default::default() },
+            domain::Repo {
+                name: "octocat/hello".into(),
+                ..Default::default()
+            },
+            domain::Repo {
+                name: "test/repo".into(),
+                ..Default::default()
+            },
+            domain::Repo {
+                name: "foo/bar".into(),
+                ..Default::default()
+            },
         ];
         update(&mut app, Message::ApiLoaded(ApiPayload::Repos(repos)));
 
@@ -629,9 +730,12 @@ mod tests {
         // Verify all items restored
         if let Some(entry) = app.panels.get(&PanelKind::Repos) {
             if let crate::app::PanelState::Repos(panel) = entry {
-                assert_eq!(panel.data.filtered_indices.len(), 3,
+                assert_eq!(
+                    panel.data.filtered_indices.len(),
+                    3,
                     "Expected all 3 repos after clear, got {}",
-                    panel.data.filtered_indices.len());
+                    panel.data.filtered_indices.len()
+                );
             } else {
                 panic!("Expected Repos panel");
             }
@@ -644,9 +748,10 @@ mod tests {
         use crate::event::ApiPayload;
 
         let mut app = test_app();
-        let repos = vec![
-            domain::Repo { name: "octocat/hello".into(), ..Default::default() },
-        ];
+        let repos = vec![domain::Repo {
+            name: "octocat/hello".into(),
+            ..Default::default()
+        }];
         update(&mut app, Message::ApiLoaded(ApiPayload::Repos(repos)));
 
         update(&mut app, Message::SearchActivate);
@@ -655,8 +760,10 @@ mod tests {
         }
         update(&mut app, Message::SearchSubmit);
 
-        assert_eq!(app.search.query, "octo",
-            "Search query should be preserved after submit");
+        assert_eq!(
+            app.search.query, "octo",
+            "Search query should be preserved after submit"
+        );
     }
 
     #[test]
@@ -666,9 +773,18 @@ mod tests {
 
         let mut app = test_app();
         let repos = vec![
-            domain::Repo { name: "octocat/hello".into(), ..Default::default() },
-            domain::Repo { name: "test/repo".into(), ..Default::default() },
-            domain::Repo { name: "foo/bar".into(), ..Default::default() },
+            domain::Repo {
+                name: "octocat/hello".into(),
+                ..Default::default()
+            },
+            domain::Repo {
+                name: "test/repo".into(),
+                ..Default::default()
+            },
+            domain::Repo {
+                name: "foo/bar".into(),
+                ..Default::default()
+            },
         ];
         update(&mut app, Message::ApiLoaded(ApiPayload::Repos(repos)));
 
@@ -679,9 +795,12 @@ mod tests {
         // All repos should still be visible
         if let Some(entry) = app.panels.get(&PanelKind::Repos) {
             if let crate::app::PanelState::Repos(panel) = entry {
-                assert_eq!(panel.data.filtered_indices.len(), 3,
+                assert_eq!(
+                    panel.data.filtered_indices.len(),
+                    3,
                     "Expected all 3 repos with empty query, got {}",
-                    panel.data.filtered_indices.len());
+                    panel.data.filtered_indices.len()
+                );
             } else {
                 panic!("Expected Repos panel");
             }
@@ -709,7 +828,10 @@ mod tests {
         // Verify loading is now false
         match app.panels.get(&PanelKind::Notifications) {
             Some(crate::app::PanelState::Notifications(panel)) => {
-                assert!(!panel.data.loading, "Loading should be false after API response");
+                assert!(
+                    !panel.data.loading,
+                    "Loading should be false after API response"
+                );
             }
             _ => panic!("Expected Notifications panel"),
         }
@@ -749,10 +871,21 @@ mod tests {
 
         // Load some PRs (comments/reviews/code_comments are None by default)
         let pulls = vec![
-            domain::PullRequest { number: 1, title: "Fix bug".into(), ..Default::default() },
-            domain::PullRequest { number: 2, title: "Add feature".into(), ..Default::default() },
+            domain::PullRequest {
+                number: 1,
+                title: "Fix bug".into(),
+                ..Default::default()
+            },
+            domain::PullRequest {
+                number: 2,
+                title: "Add feature".into(),
+                ..Default::default()
+            },
         ];
-        update(&mut app, Message::ApiLoaded(ApiPayload::Pulls(pulls.clone())));
+        update(
+            &mut app,
+            Message::ApiLoaded(ApiPayload::Pulls(pulls.clone())),
+        );
 
         // Switch to Pulls panel
         update(&mut app, Message::NextTab);

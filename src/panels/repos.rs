@@ -1,13 +1,13 @@
 use ratatui::prelude::*;
 use ratatui::widgets::{Cell, Row};
 
+use super::panel::{ListPanelData, PanelItem, SelectionState};
 use crate::cmd::Cmd;
 use crate::domain::Repo;
 use crate::theme::Theme;
 use crate::util::format;
 use crate::widgets::empty_state::EmptyState;
 use crate::widgets::list_view::LeftContent;
-use super::panel::{ListPanelData, PanelItem, SelectionState};
 
 #[derive(Debug, Default)]
 pub enum RepoSort {
@@ -20,9 +20,7 @@ pub enum RepoSort {
 impl RepoSort {
     pub fn sort_indices(&self, items: &[Repo], filtered_indices: &mut [usize]) {
         match self {
-            RepoSort::Name => {
-                filtered_indices.sort_by(|&a, &b| items[a].name.cmp(&items[b].name))
-            }
+            RepoSort::Name => filtered_indices.sort_by(|&a, &b| items[a].name.cmp(&items[b].name)),
             RepoSort::Stars => filtered_indices.sort_by(|&a, &b| {
                 items[b]
                     .stars
@@ -96,7 +94,8 @@ impl ReposPanelItem {
             RepoSort::Stars => RepoSort::Updated,
             RepoSort::Updated => RepoSort::Name,
         };
-        self.sort.sort_indices(&data.items, &mut data.filtered_indices);
+        self.sort
+            .sort_indices(&data.items, &mut data.filtered_indices);
         selection.set_len(data.filtered_indices.len());
     }
 }
@@ -173,15 +172,31 @@ impl PanelItem for ReposPanelItem {
     extract_items!(Repos);
 
     fn on_loaded(&mut self, data: &mut ListPanelData<Self::Item>) {
-        self.sort.sort_indices(&data.items, &mut data.filtered_indices);
+        self.sort
+            .sort_indices(&data.items, &mut data.filtered_indices);
     }
 
-    fn apply_filter(&self, data: &mut ListPanelData<Self::Item>, query: &str, selection: &mut SelectionState) {
-        data.filter_by(query, |repo, q| {
-            repo.name.to_lowercase().contains(q)
-                || repo.language.as_deref().unwrap_or("").to_lowercase().contains(q)
-        }, selection);
-        self.sort.sort_indices(&data.items, &mut data.filtered_indices);
+    fn apply_filter(
+        &self,
+        data: &mut ListPanelData<Self::Item>,
+        query: &str,
+        selection: &mut SelectionState,
+    ) {
+        data.filter_by(
+            query,
+            |repo, q| {
+                repo.name.to_lowercase().contains(q)
+                    || repo
+                        .language
+                        .as_deref()
+                        .unwrap_or("")
+                        .to_lowercase()
+                        .contains(q)
+            },
+            selection,
+        );
+        self.sort
+            .sort_indices(&data.items, &mut data.filtered_indices);
     }
 }
 
@@ -191,9 +206,9 @@ mod tests {
     use crate::cmd::Cmd;
     use crate::domain::Repo;
     use crate::event::ApiPayload;
+    use crate::panels::panel::{ListPanelData, PanelItem, SelectionState};
     use crate::theme::Theme;
     use crate::widgets::list_view::LeftContent;
-    use crate::panels::panel::{ListPanelData, PanelItem, SelectionState};
 
     fn test_repo() -> Repo {
         Repo {
@@ -227,7 +242,11 @@ mod tests {
         let content = item.left_content(&data, &theme);
 
         match content {
-            LeftContent::Table { headers, rows, widths } => {
+            LeftContent::Table {
+                headers,
+                rows,
+                widths,
+            } => {
                 assert_eq!(headers, vec!["Name", "Stars", "Updated"]);
                 assert_eq!(rows.len(), 2);
                 assert_eq!(widths.len(), 3);
@@ -251,8 +270,14 @@ mod tests {
             .collect::<Vec<&str>>()
             .join(" ");
 
-        assert!(all_text.contains("octocat/hello-world"), "should contain name");
-        assert!(all_text.contains("A test repository"), "should contain description");
+        assert!(
+            all_text.contains("octocat/hello-world"),
+            "should contain name"
+        );
+        assert!(
+            all_text.contains("A test repository"),
+            "should contain description"
+        );
         assert!(all_text.contains("Rust"), "should contain language");
         assert!(all_text.contains("42"), "should contain stars");
         assert!(all_text.contains("Forks: 10"), "should contain forks");
@@ -279,7 +304,10 @@ mod tests {
         let cmd = item.handle_key('\n', Some(&repo), &data);
 
         match cmd {
-            Some(Cmd::OpenRepoDetail { owner, repo: repo_name }) => {
+            Some(Cmd::OpenRepoDetail {
+                owner,
+                repo: repo_name,
+            }) => {
                 assert_eq!(owner, "octocat");
                 assert_eq!(repo_name, "hello-world");
             }
@@ -303,13 +331,27 @@ mod tests {
 
     #[test]
     fn on_loaded_sorts_by_stars_descending() {
-        let mut item = ReposPanelItem { sort: RepoSort::Stars };
+        let mut item = ReposPanelItem {
+            sort: RepoSort::Stars,
+        };
 
         let mut data = ListPanelData::<Repo>::new();
         data.items = vec![
-            Repo { name: "a/repo-a".to_string(), stars: 10, ..Default::default() },
-            Repo { name: "b/repo-b".to_string(), stars: 50, ..Default::default() },
-            Repo { name: "c/repo-c".to_string(), stars: 30, ..Default::default() },
+            Repo {
+                name: "a/repo-a".to_string(),
+                stars: 10,
+                ..Default::default()
+            },
+            Repo {
+                name: "b/repo-b".to_string(),
+                stars: 50,
+                ..Default::default()
+            },
+            Repo {
+                name: "c/repo-c".to_string(),
+                stars: 30,
+                ..Default::default()
+            },
         ];
         data.filtered_indices = vec![0, 1, 2];
 
@@ -368,9 +410,18 @@ mod tests {
         let mut data = ListPanelData::<Repo>::new();
         let mut selection = SelectionState::table();
         let items = vec![
-            Repo { name: "octocat/alpha".into(), ..Default::default() },
-            Repo { name: "octocat/beta".into(), ..Default::default() },
-            Repo { name: "octocat/alphabet".into(), ..Default::default() },
+            Repo {
+                name: "octocat/alpha".into(),
+                ..Default::default()
+            },
+            Repo {
+                name: "octocat/beta".into(),
+                ..Default::default()
+            },
+            Repo {
+                name: "octocat/alphabet".into(),
+                ..Default::default()
+            },
         ];
         data.set_items(items, &mut selection);
         let panel = ReposPanelItem::default();
@@ -383,9 +434,21 @@ mod tests {
         let mut data = ListPanelData::<Repo>::new();
         let mut selection = SelectionState::table();
         let items = vec![
-            Repo { name: "octocat/a".into(), language: Some("Rust".into()), ..Default::default() },
-            Repo { name: "octocat/b".into(), language: Some("Python".into()), ..Default::default() },
-            Repo { name: "octocat/c".into(), language: Some("Rust".into()), ..Default::default() },
+            Repo {
+                name: "octocat/a".into(),
+                language: Some("Rust".into()),
+                ..Default::default()
+            },
+            Repo {
+                name: "octocat/b".into(),
+                language: Some("Python".into()),
+                ..Default::default()
+            },
+            Repo {
+                name: "octocat/c".into(),
+                language: Some("Rust".into()),
+                ..Default::default()
+            },
         ];
         data.set_items(items, &mut selection);
         let panel = ReposPanelItem::default();

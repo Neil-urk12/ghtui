@@ -1,6 +1,7 @@
 use ratatui::prelude::*;
 use ratatui::widgets::*;
 
+use super::panel::{ListPanelData, PanelItem, SelectionState};
 use crate::cmd::Cmd;
 use crate::domain::{FilterState, Issue};
 use crate::theme::Theme;
@@ -9,7 +10,6 @@ use crate::util::format::relative_time;
 use crate::util::markdown::render_markdown;
 use crate::widgets::empty_state::EmptyState;
 use crate::widgets::list_view::LeftContent;
-use super::panel::{ListPanelData, PanelItem, SelectionState};
 
 fn issue_to_list_item(issue: &Issue, theme: &Theme) -> ListItem<'static> {
     let state_icon = if issue.state == "open" {
@@ -45,7 +45,10 @@ fn issue_to_detail(issue: &Issue, theme: &Theme) -> Vec<Line<'static>> {
     let mut content: Vec<Line<'static>> = Vec::new();
     content.push(Line::from(vec![
         Span::styled(format!("#{} ", issue.number), theme.muted),
-        Span::styled(issue.title.clone(), Style::default().add_modifier(Modifier::BOLD)),
+        Span::styled(
+            issue.title.clone(),
+            Style::default().add_modifier(Modifier::BOLD),
+        ),
     ]));
     content.push(Line::from(vec![
         Span::styled("Author: ", theme.muted),
@@ -193,7 +196,11 @@ impl PanelItem for IssuesPanelItem {
     }
 
     fn empty_state(&self, data: &ListPanelData<Self::Item>) -> EmptyState {
-        data.repo_aware_empty_state("No issues found", "\u{1f41b}", "Press 1 for open, 2 for closed, 3 for all \u{00b7} r to refresh")
+        data.repo_aware_empty_state(
+            "No issues found",
+            "\u{1f41b}",
+            "Press 1 for open, 2 for closed, 3 for all \u{00b7} r to refresh",
+        )
     }
 
     extract_items!(Issues);
@@ -212,15 +219,23 @@ impl PanelItem for IssuesPanelItem {
             .hint("j/k to navigate")
     }
 
-    fn apply_filter(&self, data: &mut ListPanelData<Self::Item>, query: &str, selection: &mut SelectionState) {
-        data.filter_by(query, |item, q| {
-            item.title.to_lowercase().contains(q)
-                || item.author.to_lowercase().contains(q)
-                || item.labels.iter().any(|l| l.to_lowercase().contains(q))
-                || item.assignees.iter().any(|a| a.to_lowercase().contains(q))
-        }, selection);
+    fn apply_filter(
+        &self,
+        data: &mut ListPanelData<Self::Item>,
+        query: &str,
+        selection: &mut SelectionState,
+    ) {
+        data.filter_by(
+            query,
+            |item, q| {
+                item.title.to_lowercase().contains(q)
+                    || item.author.to_lowercase().contains(q)
+                    || item.labels.iter().any(|l| l.to_lowercase().contains(q))
+                    || item.assignees.iter().any(|a| a.to_lowercase().contains(q))
+            },
+            selection,
+        );
     }
-
 
     fn item_display(&self, item: &Self::Item) -> Option<String> {
         Some(format!("#{} {}", item.number, item.title))
@@ -268,13 +283,20 @@ mod tests {
 
         let lines = panel.detail_lines(&issue, &theme);
 
-        let text: String = lines.iter().flat_map(|l| l.spans.iter().map(|s| s.content.as_ref())).collect::<Vec<&str>>().join(" ");
+        let text: String = lines
+            .iter()
+            .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
+            .collect::<Vec<&str>>()
+            .join(" ");
         assert!(text.contains("#42"), "should contain issue number");
         assert!(text.contains("Fix memory leak"), "should contain title");
         assert!(text.contains("octocat"), "should contain author");
         assert!(text.contains("open"), "should contain state");
         assert!(text.contains("bug"), "should contain bug label");
-        assert!(text.contains("high-priority"), "should contain high-priority label");
+        assert!(
+            text.contains("high-priority"),
+            "should contain high-priority label"
+        );
         assert!(text.contains("dev1"), "should contain assignee dev1");
         assert!(text.contains("dev2"), "should contain assignee dev2");
     }
@@ -362,9 +384,21 @@ mod tests {
         let mut data = ListPanelData::<Issue>::new();
         let mut selection = SelectionState::list();
         let items = vec![
-            Issue { number: 1, title: "Fix memory leak".into(), ..Default::default() },
-            Issue { number: 2, title: "Add feature X".into(), ..Default::default() },
-            Issue { number: 3, title: "Memory optimization".into(), ..Default::default() },
+            Issue {
+                number: 1,
+                title: "Fix memory leak".into(),
+                ..Default::default()
+            },
+            Issue {
+                number: 2,
+                title: "Add feature X".into(),
+                ..Default::default()
+            },
+            Issue {
+                number: 3,
+                title: "Memory optimization".into(),
+                ..Default::default()
+            },
         ];
         data.set_items(items, &mut selection);
         let panel = IssuesPanelItem::default();
@@ -377,9 +411,24 @@ mod tests {
         let mut data = ListPanelData::<Issue>::new();
         let mut selection = SelectionState::list();
         let items = vec![
-            Issue { number: 1, title: "Issue 1".into(), author: "octocat".into(), ..Default::default() },
-            Issue { number: 2, title: "Issue 2".into(), author: "dev1".into(), ..Default::default() },
-            Issue { number: 3, title: "Issue 3".into(), author: "octocat".into(), ..Default::default() },
+            Issue {
+                number: 1,
+                title: "Issue 1".into(),
+                author: "octocat".into(),
+                ..Default::default()
+            },
+            Issue {
+                number: 2,
+                title: "Issue 2".into(),
+                author: "dev1".into(),
+                ..Default::default()
+            },
+            Issue {
+                number: 3,
+                title: "Issue 3".into(),
+                author: "octocat".into(),
+                ..Default::default()
+            },
         ];
         data.set_items(items, &mut selection);
         let panel = IssuesPanelItem::default();

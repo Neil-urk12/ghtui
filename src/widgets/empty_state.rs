@@ -52,7 +52,9 @@ impl EmptyStateWidget {
         let msg_text = format!("{}  {}", state.icon, state.message);
         lines.push(Line::from(Span::styled(
             msg_text,
-            Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC),
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC),
         )));
 
         // Hint line

@@ -12,7 +12,7 @@ pub struct Repo {
 
 #[derive(Debug, Default, Clone)]
 pub struct PullRequest {
-    pub number: u32,
+    pub number: u64,
     pub title: String,
     pub author: String,
     pub state: String,
@@ -30,7 +30,7 @@ pub struct PullRequest {
 
 #[derive(Debug, Default)]
 pub struct Issue {
-    pub number: u32,
+    pub number: u64,
     pub title: String,
     pub author: String,
     pub state: String,
@@ -41,32 +41,36 @@ pub struct Issue {
     pub body: Option<String>,
 }
 #[derive(Debug, Default, Clone)]
-#[allow(dead_code)]
 pub struct PrComment {
+    #[allow(dead_code)]
     pub id: u64,
     pub author: String,
     pub body: String,
+    #[allow(dead_code)]
     pub created_at: String,
 }
 
 #[derive(Debug, Default, Clone)]
-#[allow(dead_code)]
 pub struct PrReview {
+    #[allow(dead_code)]
     pub id: u64,
     pub author: String,
     pub state: String,
     pub body: Option<String>,
+    #[allow(dead_code)]
     pub submitted_at: String,
 }
 
 #[derive(Debug, Default, Clone)]
-#[allow(dead_code)]
 pub struct PrCodeComment {
+    #[allow(dead_code)]
     pub id: u64,
+    #[allow(dead_code)]
     pub author: String,
     pub body: String,
     pub path: String,
     pub line: Option<u32>,
+    #[allow(dead_code)]
     pub created_at: String,
 }
 
@@ -153,5 +157,23 @@ mod tests {
     #[test]
     fn filter_state_default_is_open() {
         assert_eq!(FilterState::default(), FilterState::Open);
+    }
+
+    #[test]
+    fn pull_request_number_accepts_large_values() {
+        let pr = PullRequest {
+            number: 5_000_000_000,
+            ..Default::default()
+        };
+        assert_eq!(pr.number, 5_000_000_000);
+    }
+
+    #[test]
+    fn issue_number_accepts_large_values() {
+        let issue = Issue {
+            number: 5_000_000_000,
+            ..Default::default()
+        };
+        assert_eq!(issue.number, 5_000_000_000);
     }
 }

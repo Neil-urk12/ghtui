@@ -5,9 +5,11 @@ use std::sync::Arc;
 use crate::api::client::GitHubClient;
 use crate::config::Config;
 use crate::domain::FilterState;
-use crate::panels::{ActionsPanelItem, IssuesPanelItem, NotificationsPanelItem, PullsPanelItem, ReposPanelItem};
 use crate::panels::login::LoginState;
 use crate::panels::panel::{ListPanel, ListPanelData, SelectionState};
+use crate::panels::{
+    ActionsPanelItem, IssuesPanelItem, NotificationsPanelItem, PullsPanelItem, ReposPanelItem,
+};
 use crate::theme::Theme;
 use crate::widgets::detail_pane::DetailPane;
 
@@ -59,7 +61,6 @@ pub enum PanelState {
 }
 
 impl PanelState {
-
     pub fn apply_filter(&mut self, query: &str) {
         match self {
             PanelState::Repos(p) => p.apply_filter(query),
@@ -110,7 +111,7 @@ impl PanelState {
     /// Update PR with comment data (Pulls panel only).
     pub fn update_pr_comments(&mut self, pr_number: u64, update: PrCommentUpdate) {
         if let PanelState::Pulls(p) = self {
-            if let Some(pr) = p.data.items.iter_mut().find(|pr| pr.number == pr_number as u32) {
+            if let Some(pr) = p.data.items.iter_mut().find(|pr| pr.number == pr_number) {
                 // On success: store data, clear error. On error: clear stale data, store error.
                 // Neither: keep existing state for retry.
                 if let Some(c) = update.comments {
@@ -200,13 +201,11 @@ impl PanelState {
     }
 }
 
-
 #[derive(Debug, Default)]
 pub struct SearchState {
     pub active: bool,
     pub query: String,
 }
-
 
 /// State for the confirmation dialog. Holds the pending destructive command
 /// and display information for the confirmation modal.
@@ -262,25 +261,41 @@ impl App {
         // Apply config defaults
         let mut panels = HashMap::new();
         panels.insert(PanelKind::Repos, PanelState::Repos(ListPanel::default()));
-        panels.insert(PanelKind::Pulls, PanelState::Pulls(ListPanel {
+        panels.insert(
+            PanelKind::Pulls,
+            PanelState::Pulls(ListPanel {
                 data: ListPanelData::new(),
                 selection: SelectionState::table(),
                 detail_pane: DetailPane::new(),
                 item: PullsPanelItem::new(FilterState::from(config.defaults.pulls_state.as_str())),
-            }));
-        panels.insert(PanelKind::Issues, PanelState::Issues(ListPanel {
+            }),
+        );
+        panels.insert(
+            PanelKind::Issues,
+            PanelState::Issues(ListPanel {
                 data: ListPanelData::new(),
                 selection: SelectionState::list(),
                 detail_pane: DetailPane::new(),
-                item: IssuesPanelItem { state_filter: FilterState::from(config.defaults.issues_state.as_str()) },
-            }));
-        panels.insert(PanelKind::Notifications, PanelState::Notifications(ListPanel {
+                item: IssuesPanelItem {
+                    state_filter: FilterState::from(config.defaults.issues_state.as_str()),
+                },
+            }),
+        );
+        panels.insert(
+            PanelKind::Notifications,
+            PanelState::Notifications(ListPanel {
                 data: ListPanelData::new(),
                 selection: SelectionState::list(),
                 detail_pane: DetailPane::new(),
-                item: NotificationsPanelItem { show_all: config.defaults.notifications_show_all },
-            }));
-        panels.insert(PanelKind::Actions, PanelState::Actions(ListPanel::default()));
+                item: NotificationsPanelItem {
+                    show_all: config.defaults.notifications_show_all,
+                },
+            }),
+        );
+        panels.insert(
+            PanelKind::Actions,
+            PanelState::Actions(ListPanel::default()),
+        );
 
         Self {
             state,
@@ -319,4 +334,3 @@ impl App {
         self.active_panel = PanelKind::ALL[(idx + PanelKind::ALL.len() - 1) % PanelKind::ALL.len()];
     }
 }
-

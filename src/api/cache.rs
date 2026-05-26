@@ -5,13 +5,36 @@ use std::time::{Duration, Instant};
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
 pub enum CacheKey {
     UserRepos,
-    Pulls { owner: String, repo: String, state: String },
-    Issues { owner: String, repo: String, state: String },
+    Pulls {
+        owner: String,
+        repo: String,
+        state: String,
+    },
+    Issues {
+        owner: String,
+        repo: String,
+        state: String,
+    },
     Notifications,
-    Actions { owner: String, repo: String },
-    PrComments { owner: String, repo: String, pr_number: u64 },
-    PrReviews { owner: String, repo: String, pr_number: u64 },
-    PrCodeComments { owner: String, repo: String, pr_number: u64 },
+    Actions {
+        owner: String,
+        repo: String,
+    },
+    PrComments {
+        owner: String,
+        repo: String,
+        pr_number: u64,
+    },
+    PrReviews {
+        owner: String,
+        repo: String,
+        pr_number: u64,
+    },
+    PrCodeComments {
+        owner: String,
+        repo: String,
+        pr_number: u64,
+    },
 }
 
 struct CacheEntry {
@@ -52,5 +75,143 @@ impl Cache {
 
     pub fn invalidate(&mut self, key: &CacheKey) {
         self.entries.remove(key);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn insert_and_get() {
+        let mut cache = Cache::new();
+        let key = CacheKey::PrComments {
+            owner: "o".into(),
+            repo: "r".into(),
+            pr_number: 1,
+        };
+        cache.insert(key.clone(), "hello".to_string(), Duration::from_secs(60));
+        let val = cache.get::<String>(&key);
+        assert_eq!(val, Some(&"hello".to_string()));
+    }
+
+    #[test]
+    fn get_returns_none_for_missing_key() {
+        let cache = Cache::new();
+        let key = CacheKey::PrComments {
+            owner: "o".into(),
+            repo: "r".into(),
+            pr_number: 999,
+        };
+        assert!(cache.get::<String>(&key).is_none());
+    }
+
+    #[test]
+    fn invalidate_removes_entry() {
+        let mut cache = Cache::new();
+        let key = CacheKey::PrComments {
+            owner: "o".into(),
+            repo: "r".into(),
+            pr_number: 1,
+        };
+        cache.insert(key.clone(), "data".to_string(), Duration::from_secs(60));
+        cache.invalidate(&key);
+        assert!(cache.get::<String>(&key).is_none());
+    }
+
+    #[test]
+    fn invalidate_nonexistent_key_is_noop() {
+        let mut cache = Cache::new();
+        let key = CacheKey::PrComments {
+            owner: "o".into(),
+            repo: "r".into(),
+            pr_number: 42,
+        };
+        cache.invalidate(&key);
+        assert!(cache.get::<String>(&key).is_none());
+    }
+
+    #[test]
+    fn expired_entry_returns_none() {
+        let mut cache = Cache::new();
+        let key = CacheKey::PrComments {
+            owner: "o".into(),
+            repo: "r".into(),
+            pr_number: 1,
+        };
+        cache.insert(key.clone(), "stale".to_string(), Duration::from_millis(1));
+        std::thread::sleep(Duration::from_millis(10));
+        assert!(cache.get::<String>(&key).is_none());
+    }
+
+    #[test]
+    fn pr_cache_keys_invalidate_independently() {
+        let mut cache = Cache::new();
+        let comments_key = CacheKey::PrComments {
+            owner: "o".into(),
+            repo: "r".into(),
+            pr_number: 1,
+        };
+        let reviews_key = CacheKey::PrReviews {
+            owner: "o".into(),
+            repo: "r".into(),
+            pr_number: 1,
+        };
+        let code_comments_key = CacheKey::PrCodeComments {
+            owner: "o".into(),
+            repo: "r".into(),
+            pr_number: 1,
+        };
+
+        cache.insert(comments_key.clone(), "comments".to_string(), Duration::from_secs(60));
+        cache.insert(reviews_key.clone(), "reviews".to_string(), Duration::from_secs(60));
+        cache.insert(code_comments_key.clone(), "code_comments".to_string(), Duration::from_secs(60));
+
+        cache.invalidate(&comments_key);
+
+        assert!(cache.get::<String>(&comments_key).is_none());
+        assert_eq!(cache.get::<String>(&reviews_key), Some(&"reviews".to_string()));
+        assert_eq!(cache.get::<String>(&code_comments_key), Some(&"code_comments".to_string()));
+    }
+
+    #[test]
+    fn insert_overwrites_existing_key() {
+        let mut cache = Cache::new();
+        let key = CacheKey::PrComments {
+            owner: "o".into(),
+            repo: "r".into(),
+            pr_number: 1,
+        };
+        cache.insert(key.clone(), "first".to_string(), Duration::from_secs(60));
+        cache.insert(key.clone(), "second".to_string(), Duration::from_secs(60));
+        assert_eq!(cache.get::<String>(&key), Some(&"second".to_string()));
+    }
+
+    #[test]
+    fn get_returns_none_for_wrong_type() {
+        let mut cache = Cache::new();
+        let key = CacheKey::PrComments {
+            owner: "o".into(),
+            repo: "r".into(),
+            pr_number: 1,
+        };
+        cache.insert(key.clone(), "hello".to_string(), Duration::from_secs(60));
+        assert!(cache.get::<Vec<u8>>(&key).is_none());
+        // Entry still exists with correct type — cache didn't clear it
+        assert!(cache.get::<String>(&key).is_some());
+    }
+
+    #[test]
+    fn works_with_struct_type() {
+        let mut cache = Cache::new();
+        let key = CacheKey::Pulls {
+            owner: "o".into(),
+            repo: "r".into(),
+            state: "open".into(),
+        };
+        let data = vec!["a".to_string(), "b".to_string()];
+        cache.insert(key.clone(), data.clone(), Duration::from_secs(60));
+        assert_eq!(cache.get::<Vec<String>>(&key), Some(&data));
     }
 }

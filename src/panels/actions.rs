@@ -1,13 +1,13 @@
 use ratatui::prelude::*;
 use ratatui::widgets::*;
 
-use crate::domain::WorkflowRun;
+use super::panel::{ListPanelData, PanelItem, SelectionState};
 use crate::cmd::Cmd;
+use crate::domain::WorkflowRun;
 use crate::theme::Theme;
 use crate::util::format::relative_time;
 use crate::widgets::empty_state::EmptyState;
 use crate::widgets::list_view::LeftContent;
-use super::panel::{ListPanelData, PanelItem, SelectionState};
 
 #[derive(Debug, Default)]
 pub struct ActionsPanelItem {
@@ -67,30 +67,34 @@ impl PanelItem for ActionsPanelItem {
         data: &'a ListPanelData<Self::Item>,
         theme: &'a Theme,
     ) -> LeftContent<'a> {
-        let items: Vec<ListItem> = data.filtered_indices.iter().map(|&i| {
-            let run = &data.items[i];
-            let (icon, style) = Self::status_icon(run);
-            let is_expanded = self.expanded_run == Some(i);
+        let items: Vec<ListItem> = data
+            .filtered_indices
+            .iter()
+            .map(|&i| {
+                let run = &data.items[i];
+                let (icon, style) = Self::status_icon(run);
+                let is_expanded = self.expanded_run == Some(i);
 
-            let status_text = if run.status == "in_progress" {
-                "in_progress"
-            } else {
-                run.conclusion.as_deref().unwrap_or(&run.status)
-            };
+                let status_text = if run.status == "in_progress" {
+                    "in_progress"
+                } else {
+                    run.conclusion.as_deref().unwrap_or(&run.status)
+                };
 
-            let expand_marker = if is_expanded { "▾ " } else { "▸ " };
+                let expand_marker = if is_expanded { "▾ " } else { "▸ " };
 
-            let line = Line::from(vec![
-                Span::raw(expand_marker),
-                icon,
-                Span::styled(run.name.clone(), style),
-                Span::raw(format!(" #{}", run.run_number)),
-                Span::styled(format!("  {}  ", status_text), theme.muted),
-                Span::styled(run.branch.clone(), Style::default().fg(Color::Blue)),
-                Span::raw(format!("  {}", relative_time(&run.created_at))),
-            ]);
-            ListItem::new(line)
-        }).collect();
+                let line = Line::from(vec![
+                    Span::raw(expand_marker),
+                    icon,
+                    Span::styled(run.name.clone(), style),
+                    Span::raw(format!(" #{}", run.run_number)),
+                    Span::styled(format!("  {}  ", status_text), theme.muted),
+                    Span::styled(run.branch.clone(), Style::default().fg(Color::Blue)),
+                    Span::raw(format!("  {}", relative_time(&run.created_at))),
+                ]);
+                ListItem::new(line)
+            })
+            .collect();
 
         LeftContent::List { items }
     }
@@ -101,7 +105,10 @@ impl PanelItem for ActionsPanelItem {
         let (icon, status_style) = Self::status_icon(run);
         content.push(Line::from(vec![
             icon,
-            Span::styled(run.name.clone(), Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled(
+                run.name.clone(),
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
         ]));
         content.push(Line::from(""));
 
@@ -144,9 +151,8 @@ impl PanelItem for ActionsPanelItem {
         data: &ListPanelData<Self::Item>,
     ) -> Option<Cmd> {
         // Compute selected index via pointer comparison into data.items
-        let selected_index = selected.and_then(|sel| {
-            data.items.iter().position(|r| std::ptr::eq(r, sel))
-        });
+        let selected_index =
+            selected.and_then(|sel| data.items.iter().position(|r| std::ptr::eq(r, sel)));
 
         match key {
             '\n' => {
@@ -250,16 +256,29 @@ impl PanelItem for ActionsPanelItem {
             .hint("j/k to navigate, Enter to expand")
     }
 
-    fn apply_filter(&self, data: &mut ListPanelData<Self::Item>, query: &str, selection: &mut SelectionState) {
-        data.filter_by(query, |item, q| {
-            item.name.to_lowercase().contains(q)
-                || item.branch.to_lowercase().contains(q)
-                || item.event.to_lowercase().contains(q)
-                || item.status.to_lowercase().contains(q)
-                || item.conclusion.as_deref().unwrap_or("").to_lowercase().contains(q)
-        }, selection);
+    fn apply_filter(
+        &self,
+        data: &mut ListPanelData<Self::Item>,
+        query: &str,
+        selection: &mut SelectionState,
+    ) {
+        data.filter_by(
+            query,
+            |item, q| {
+                item.name.to_lowercase().contains(q)
+                    || item.branch.to_lowercase().contains(q)
+                    || item.event.to_lowercase().contains(q)
+                    || item.status.to_lowercase().contains(q)
+                    || item
+                        .conclusion
+                        .as_deref()
+                        .unwrap_or("")
+                        .to_lowercase()
+                        .contains(q)
+            },
+            selection,
+        );
     }
-
 
     fn item_display(&self, item: &Self::Item) -> Option<String> {
         Some(format!("#{} {}", item.run_number, item.name))
@@ -327,7 +346,9 @@ mod tests {
     #[test]
     fn left_content_with_expanded_run_shows_expand_marker() {
         let data = make_data();
-        let item = ActionsPanelItem { expanded_run: Some(0) };
+        let item = ActionsPanelItem {
+            expanded_run: Some(0),
+        };
         let theme = Theme::default();
 
         let content = item.left_content(&data, &theme);
@@ -368,7 +389,11 @@ mod tests {
 
         let lines = item.detail_lines(&run, &theme);
 
-        let text: String = lines.iter().map(|l| l.to_string()).collect::<Vec<_>>().join("\n");
+        let text: String = lines
+            .iter()
+            .map(|l| l.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
         assert!(text.contains("CI"), "should contain run name");
         assert!(text.contains("Status:"), "should contain status label");
         assert!(text.contains("success"), "should contain conclusion");
@@ -473,7 +498,9 @@ mod tests {
 
     #[test]
     fn on_loaded_resets_expanded_run() {
-        let mut item = ActionsPanelItem { expanded_run: Some(5) };
+        let mut item = ActionsPanelItem {
+            expanded_run: Some(5),
+        };
         let mut data = ListPanelData::<WorkflowRun>::new();
 
         item.on_loaded(&mut data);
@@ -539,7 +566,9 @@ mod tests {
 
     #[test]
     fn toggle_expand_none_ignored() {
-        let mut item = ActionsPanelItem { expanded_run: Some(0) };
+        let mut item = ActionsPanelItem {
+            expanded_run: Some(0),
+        };
         item.toggle_expand(None);
         assert_eq!(item.expanded_run, Some(0));
     }
@@ -549,9 +578,21 @@ mod tests {
         let mut data = ListPanelData::<WorkflowRun>::new();
         let mut selection = SelectionState::list();
         let items = vec![
-            WorkflowRun { id: 1, name: "CI".into(), ..Default::default() },
-            WorkflowRun { id: 2, name: "Deploy".into(), ..Default::default() },
-            WorkflowRun { id: 3, name: "CI nightly".into(), ..Default::default() },
+            WorkflowRun {
+                id: 1,
+                name: "CI".into(),
+                ..Default::default()
+            },
+            WorkflowRun {
+                id: 2,
+                name: "Deploy".into(),
+                ..Default::default()
+            },
+            WorkflowRun {
+                id: 3,
+                name: "CI nightly".into(),
+                ..Default::default()
+            },
         ];
         data.set_items(items, &mut selection);
         let panel = ActionsPanelItem::default();
@@ -564,9 +605,24 @@ mod tests {
         let mut data = ListPanelData::<WorkflowRun>::new();
         let mut selection = SelectionState::list();
         let items = vec![
-            WorkflowRun { id: 1, name: "CI".into(), branch: "main".into(), ..Default::default() },
-            WorkflowRun { id: 2, name: "CI".into(), branch: "feature-x".into(), ..Default::default() },
-            WorkflowRun { id: 3, name: "CI".into(), branch: "main-hotfix".into(), ..Default::default() },
+            WorkflowRun {
+                id: 1,
+                name: "CI".into(),
+                branch: "main".into(),
+                ..Default::default()
+            },
+            WorkflowRun {
+                id: 2,
+                name: "CI".into(),
+                branch: "feature-x".into(),
+                ..Default::default()
+            },
+            WorkflowRun {
+                id: 3,
+                name: "CI".into(),
+                branch: "main-hotfix".into(),
+                ..Default::default()
+            },
         ];
         data.set_items(items, &mut selection);
         let panel = ActionsPanelItem::default();

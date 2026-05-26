@@ -24,12 +24,16 @@ pub fn render_markdown(input: &str) -> Vec<Line<'static>> {
         if let Some(heading) = line.strip_prefix("# ") {
             lines.push(Line::from(Span::styled(
                 heading.to_string(),
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
             )));
         } else if let Some(heading) = line.strip_prefix("## ") {
             lines.push(Line::from(Span::styled(
                 heading.to_string(),
-                Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Blue)
+                    .add_modifier(Modifier::BOLD),
             )));
         } else if let Some(item) = line.strip_prefix("- ").or_else(|| line.strip_prefix("* ")) {
             let content = parse_inline(item);

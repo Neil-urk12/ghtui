@@ -1,13 +1,13 @@
 use ratatui::prelude::*;
 use ratatui::widgets::*;
 
-use crate::domain::Notification;
+use super::panel::{ListPanelData, PanelItem, SelectionState};
 use crate::cmd::Cmd;
+use crate::domain::Notification;
 use crate::theme::Theme;
 use crate::util::format::relative_time;
 use crate::widgets::empty_state::EmptyState;
 use crate::widgets::list_view::LeftContent;
-use super::panel::{ListPanelData, PanelItem, SelectionState};
 
 #[derive(Debug, Default)]
 pub struct NotificationsPanelItem {
@@ -147,15 +147,23 @@ impl PanelItem for NotificationsPanelItem {
             .hint("j/k to navigate")
     }
 
-    fn apply_filter(&self, data: &mut ListPanelData<Self::Item>, query: &str, selection: &mut SelectionState) {
-        data.filter_by(query, |item, q| {
-            item.repo_name.to_lowercase().contains(q)
-                || item.subject_title.to_lowercase().contains(q)
-                || item.subject_type.to_lowercase().contains(q)
-                || item.reason.to_lowercase().contains(q)
-        }, selection);
+    fn apply_filter(
+        &self,
+        data: &mut ListPanelData<Self::Item>,
+        query: &str,
+        selection: &mut SelectionState,
+    ) {
+        data.filter_by(
+            query,
+            |item, q| {
+                item.repo_name.to_lowercase().contains(q)
+                    || item.subject_title.to_lowercase().contains(q)
+                    || item.subject_type.to_lowercase().contains(q)
+                    || item.reason.to_lowercase().contains(q)
+            },
+            selection,
+        );
     }
-
 
     fn item_display(&self, _item: &Self::Item) -> Option<String> {
         None // MarkAllNotificationsRead doesn't have a specific item context
@@ -165,12 +173,12 @@ impl PanelItem for NotificationsPanelItem {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cmd::Cmd;
     use crate::domain::Notification;
     use crate::event::ApiPayload;
-    use crate::cmd::Cmd;
-    use crate::theme::Theme;
     use crate::panels::panel::ListPanelData;
     use crate::panels::panel::SelectionState;
+    use crate::theme::Theme;
 
     fn test_notification() -> Notification {
         Notification {
@@ -212,9 +220,19 @@ mod tests {
 
         let lines = panel.detail_lines(&notif, &theme);
 
-        assert!(!lines.is_empty(), "detail_lines should return non-empty Vec");
-        let text: String = lines.iter().map(|l| l.to_string()).collect::<Vec<_>>().join("\n");
-        assert!(text.contains("Fix login bug"), "should contain subject title");
+        assert!(
+            !lines.is_empty(),
+            "detail_lines should return non-empty Vec"
+        );
+        let text: String = lines
+            .iter()
+            .map(|l| l.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            text.contains("Fix login bug"),
+            "should contain subject title"
+        );
         assert!(text.contains("owner/repo"), "should contain repo name");
         assert!(text.contains("mention"), "should contain reason");
         assert!(text.contains("unread"), "should contain read status");
@@ -242,7 +260,11 @@ mod tests {
 
         let result = panel.handle_key('m', None, &data);
 
-        assert!(result.is_none(), "expected None when nothing selected, got {:?}", result);
+        assert!(
+            result.is_none(),
+            "expected None when nothing selected, got {:?}",
+            result
+        );
     }
 
     #[test]
@@ -294,7 +316,11 @@ mod tests {
     fn extract_items_returns_none_for_repos() {
         let result = NotificationsPanelItem::extract_items(ApiPayload::Repos(vec![]));
 
-        assert!(result.is_none(), "expected None for Repos payload, got {:?}", result);
+        assert!(
+            result.is_none(),
+            "expected None for Repos payload, got {:?}",
+            result
+        );
     }
 
     #[test]
@@ -309,9 +335,21 @@ mod tests {
         let mut data = ListPanelData::<Notification>::new();
         let mut selection = SelectionState::list();
         let items = vec![
-            Notification { id: "1".into(), subject_title: "Fix login bug".into(), ..Default::default() },
-            Notification { id: "2".into(), subject_title: "Add dark mode".into(), ..Default::default() },
-            Notification { id: "3".into(), subject_title: "Fix signup flow".into(), ..Default::default() },
+            Notification {
+                id: "1".into(),
+                subject_title: "Fix login bug".into(),
+                ..Default::default()
+            },
+            Notification {
+                id: "2".into(),
+                subject_title: "Add dark mode".into(),
+                ..Default::default()
+            },
+            Notification {
+                id: "3".into(),
+                subject_title: "Fix signup flow".into(),
+                ..Default::default()
+            },
         ];
         data.set_items(items, &mut selection);
         let panel = NotificationsPanelItem::default();
@@ -324,16 +362,27 @@ mod tests {
         let mut data = ListPanelData::<Notification>::new();
         let mut selection = SelectionState::list();
         let items = vec![
-            Notification { id: "1".into(), repo_name: "octocat/hello-world".into(), ..Default::default() },
-            Notification { id: "2".into(), repo_name: "dev/other-repo".into(), ..Default::default() },
-            Notification { id: "3".into(), repo_name: "octocat/another".into(), ..Default::default() },
+            Notification {
+                id: "1".into(),
+                repo_name: "octocat/hello-world".into(),
+                ..Default::default()
+            },
+            Notification {
+                id: "2".into(),
+                repo_name: "dev/other-repo".into(),
+                ..Default::default()
+            },
+            Notification {
+                id: "3".into(),
+                repo_name: "octocat/another".into(),
+                ..Default::default()
+            },
         ];
         data.set_items(items, &mut selection);
         let panel = NotificationsPanelItem::default();
         panel.apply_filter(&mut data, "octocat", &mut selection);
         assert_eq!(data.filtered_indices, vec![0, 2]);
     }
-}
 
     #[test]
     fn left_content_empty_items() {
@@ -342,7 +391,25 @@ mod tests {
         let theme = Theme::default();
         let content = item.left_content(&data, &theme);
         match content {
-            LeftContent::Table { rows, .. } => assert!(rows.is_empty()),
-            LeftContent::List { items, .. } => assert!(items.is_empty()),
+            LeftContent::List { items } => assert!(items.is_empty()),
+            _ => panic!("expected LeftContent::List, got something else"),
         }
     }
+
+    #[test]
+    fn apply_filter_is_case_insensitive() {
+        let mut data = ListPanelData::<Notification>::new();
+        let mut selection = SelectionState::list();
+        let items = vec![
+            Notification {
+                id: "1".into(),
+                subject_title: "Fix login bug".into(),
+                ..Default::default()
+            },
+        ];
+        data.set_items(items, &mut selection);
+        let panel = NotificationsPanelItem::default();
+        panel.apply_filter(&mut data, "FIX", &mut selection);
+        assert_eq!(data.filtered_indices, vec![0]);
+    }
+}

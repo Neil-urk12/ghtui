@@ -6,7 +6,7 @@ use crate::event::ApiPayload;
 use crate::theme::Theme;
 use crate::widgets::detail_pane::DetailPane;
 use crate::widgets::empty_state::EmptyState;
-use crate::widgets::list_view::{LeftContent, ListViewConfig, render_list_view};
+use crate::widgets::list_view::{render_list_view, LeftContent, ListViewConfig};
 
 // --- SelectionState ---
 
@@ -97,7 +97,11 @@ impl<T> ListPanelData<T> {
     pub fn set_items(&mut self, items: Vec<T>, selection: &mut SelectionState) {
         self.items = items;
         self.filtered_indices = (0..self.items.len()).collect();
-        selection.select(if self.filtered_indices.is_empty() { None } else { Some(0) });
+        selection.select(if self.filtered_indices.is_empty() {
+            None
+        } else {
+            Some(0)
+        });
         selection.set_len(self.filtered_indices.len());
     }
 
@@ -130,14 +134,19 @@ impl<T> ListPanelData<T> {
             self.filtered_indices = (0..self.items.len()).collect();
         } else {
             let q = query.to_lowercase();
-            self.filtered_indices = self.items
+            self.filtered_indices = self
+                .items
                 .iter()
                 .enumerate()
                 .filter(|(_, item)| matches(item, &q))
                 .map(|(i, _)| i)
                 .collect();
         }
-        selection.select(if self.filtered_indices.is_empty() { None } else { Some(0) });
+        selection.select(if self.filtered_indices.is_empty() {
+            None
+        } else {
+            Some(0)
+        });
         selection.set_len(self.filtered_indices.len());
     }
 
@@ -158,7 +167,9 @@ impl<T> ListPanelData<T> {
         has_items_hint: &'static str,
     ) -> EmptyState {
         if self.owner.is_some() {
-            EmptyState::new(has_items_msg).icon(has_items_icon).hint(has_items_hint)
+            EmptyState::new(has_items_msg)
+                .icon(has_items_icon)
+                .hint(has_items_hint)
         } else {
             EmptyState::new("Select a repository first")
                 .icon(" ")
@@ -166,7 +177,6 @@ impl<T> ListPanelData<T> {
         }
     }
 }
-
 
 // --- Free navigation functions ---
 
@@ -200,14 +210,23 @@ pub trait PanelItem: std::fmt::Debug + Default {
     // --- Required ----------------------------------------------------------
 
     /// Build the left-side content (list or table rows) from data.
-    fn left_content<'a>(&'a self, data: &'a ListPanelData<Self::Item>, theme: &'a Theme) -> LeftContent<'a>;
+    fn left_content<'a>(
+        &'a self,
+        data: &'a ListPanelData<Self::Item>,
+        theme: &'a Theme,
+    ) -> LeftContent<'a>;
 
     /// Build detail lines for the selected item.
     fn detail_lines(&self, item: &Self::Item, theme: &Theme) -> Vec<Line<'static>>;
 
     /// Handle a key press.  Return `Some(Cmd)` if consumed, `None` to fall
     /// through to default j/k navigation.
-    fn handle_key(&mut self, key: char, selected: Option<&Self::Item>, data: &ListPanelData<Self::Item>) -> Option<Cmd>;
+    fn handle_key(
+        &mut self,
+        key: char,
+        selected: Option<&Self::Item>,
+        data: &ListPanelData<Self::Item>,
+    ) -> Option<Cmd>;
 
     /// Return the fetch command for this panel (e.g. `Cmd::FetchIssues`).
     fn fetch_cmd(&self, data: &ListPanelData<Self::Item>) -> Cmd;
@@ -228,41 +247,62 @@ pub trait PanelItem: std::fmt::Debug + Default {
     fn on_loaded(&mut self, _data: &mut ListPanelData<Self::Item>) {}
 
     /// Left/right split ratio.  Default `(50, 50)`.
-    fn split_ratio(&self) -> (u16, u16) { (50, 50) }
+    fn split_ratio(&self) -> (u16, u16) {
+        (50, 50)
+    }
 
     /// Detail pane title.  Default `" Details "`.
-    fn detail_title(&self) -> String { " Details ".into() }
+    fn detail_title(&self) -> String {
+        " Details ".into()
+    }
 
     /// Wrap full (block wraps entire area, split inside). Default `true`.
-    fn wrap_full(&self) -> bool { true }
+    fn wrap_full(&self) -> bool {
+        true
+    }
 
     /// Highlight symbol for selected row. Default `"▸ "`.
-    fn highlight_symbol(&self) -> String { "▸ ".into() }
+    fn highlight_symbol(&self) -> String {
+        "▸ ".into()
+    }
 
     /// Initial selection state. Override for table-based panels.
     /// Default: `SelectionState::list()`.
-    fn initial_selection(&self) -> SelectionState { SelectionState::list() }
-
+    fn initial_selection(&self) -> SelectionState {
+        SelectionState::list()
+    }
 
     /// Display title for the selected item. Used in confirmation dialogs.
     /// Default returns `None`.
-    fn item_display(&self, _item: &Self::Item) -> Option<String> { None }
+    fn item_display(&self, _item: &Self::Item) -> Option<String> {
+        None
+    }
 
     /// Empty state for the detail pane when nothing is selected.
     fn detail_empty_state(&self) -> EmptyState {
-        EmptyState::new("Select an item")
-            .hint("j/k to navigate")
+        EmptyState::new("Select an item").hint("j/k to navigate")
     }
 
     /// Filter items in data based on search query. Default: no-op.
     /// Override in concrete panels to filter by searchable fields.
-    fn apply_filter(&self, data: &mut ListPanelData<Self::Item>, query: &str, selection: &mut SelectionState) {
+    fn apply_filter(
+        &self,
+        data: &mut ListPanelData<Self::Item>,
+        query: &str,
+        selection: &mut SelectionState,
+    ) {
         let _ = (data, query, selection);
     }
 
     /// Called after selection changes (j/k navigation).
     /// Return `Some(Cmd)` to trigger an async fetch (e.g. comments).
-    fn on_select(&self, _selected: Option<&Self::Item>, _data: &ListPanelData<Self::Item>) -> Option<crate::cmd::Cmd> { None }
+    fn on_select(
+        &self,
+        _selected: Option<&Self::Item>,
+        _data: &ListPanelData<Self::Item>,
+    ) -> Option<crate::cmd::Cmd> {
+        None
+    }
 }
 
 /// Generic list panel that owns selection + detail pane internally.
@@ -334,14 +374,20 @@ impl<T: PanelItem + 'static> ListPanel<T> {
             }
             _ => None,
         }
-
     }
 
     pub fn fetch_cmd(&self) -> Cmd {
         self.item.fetch_cmd(&self.data)
     }
 
-    pub fn render(&mut self, frame: &mut Frame, area: Rect, focused: bool, theme: &Theme, tick: u64) {
+    pub fn render(
+        &mut self,
+        frame: &mut Frame,
+        area: Rect,
+        focused: bool,
+        theme: &Theme,
+        tick: u64,
+    ) {
         let left = self.item.left_content(&self.data, theme);
         let (sr_left, sr_right) = self.item.split_ratio();
 
@@ -363,7 +409,17 @@ impl<T: PanelItem + 'static> ListPanel<T> {
             detail_empty_state: self.item.detail_empty_state(),
         };
 
-        render_list_view(frame, area, config, left, &mut self.selection, &self.detail_pane, detail_lines, theme, tick);
+        render_list_view(
+            frame,
+            area,
+            config,
+            left,
+            &mut self.selection,
+            &self.detail_pane,
+            detail_lines,
+            theme,
+            tick,
+        );
     }
 
     pub fn scroll_detail_up(&mut self) {
@@ -374,14 +430,14 @@ impl<T: PanelItem + 'static> ListPanel<T> {
         self.detail_pane.scroll_down();
     }
 
-
     pub fn selected_display(&self) -> Option<String> {
         let item = self.data.selected(&self.selection)?;
         self.item.item_display(item)
     }
 
     pub fn apply_filter(&mut self, query: &str) {
-        self.item.apply_filter(&mut self.data, query, &mut self.selection);
+        self.item
+            .apply_filter(&mut self.data, query, &mut self.selection);
     }
 }
 #[cfg(test)]
@@ -420,7 +476,10 @@ mod tests {
         let mut data = ListPanelData::<String>::new();
         let mut selection = SelectionState::list();
 
-        data.set_items(vec!["first".into(), "second".into(), "third".into()], &mut selection);
+        data.set_items(
+            vec!["first".into(), "second".into(), "third".into()],
+            &mut selection,
+        );
 
         assert_eq!(data.selected(&selection), Some(&"first".to_string()));
 
@@ -481,7 +540,11 @@ mod tests {
     impl PanelItem for DummyItem {
         type Item = String;
 
-        fn left_content<'a>(&'a self, _data: &'a ListPanelData<Self::Item>, _theme: &'a Theme) -> LeftContent<'a> {
+        fn left_content<'a>(
+            &'a self,
+            _data: &'a ListPanelData<Self::Item>,
+            _theme: &'a Theme,
+        ) -> LeftContent<'a> {
             LeftContent::List { items: vec![] }
         }
 
@@ -489,7 +552,12 @@ mod tests {
             vec![]
         }
 
-        fn handle_key(&mut self, _key: char, _selected: Option<&Self::Item>, _data: &ListPanelData<Self::Item>) -> Option<Cmd> {
+        fn handle_key(
+            &mut self,
+            _key: char,
+            _selected: Option<&Self::Item>,
+            _data: &ListPanelData<Self::Item>,
+        ) -> Option<Cmd> {
             None
         }
 
@@ -509,7 +577,12 @@ mod tests {
             None
         }
 
-        fn apply_filter(&self, data: &mut ListPanelData<Self::Item>, query: &str, selection: &mut SelectionState) {
+        fn apply_filter(
+            &self,
+            data: &mut ListPanelData<Self::Item>,
+            query: &str,
+            selection: &mut SelectionState,
+        ) {
             data.filter_by(query, |item, q| item.to_lowercase().contains(q), selection);
         }
     }
@@ -550,7 +623,10 @@ mod tests {
     fn list_panel_handle_key_navigation() {
         let mut panel: ListPanel<DummyItem> = ListPanel::default();
         // Populate via set_items which also sets selection len.
-        panel.data.set_items(vec!["a".into(), "b".into(), "c".into()], &mut panel.selection);
+        panel.data.set_items(
+            vec!["a".into(), "b".into(), "c".into()],
+            &mut panel.selection,
+        );
 
         // j should move down.
         let result = panel.handle_key('j');
@@ -571,7 +647,10 @@ mod tests {
         let item = DummyItem;
         let mut data = ListPanelData::<String>::new();
         let mut selection = SelectionState::list();
-        data.set_items(vec!["foo".into(), "bar".into(), "foobar".into()], &mut selection);
+        data.set_items(
+            vec!["foo".into(), "bar".into(), "foobar".into()],
+            &mut selection,
+        );
 
         item.apply_filter(&mut data, "foo", &mut selection);
 
@@ -583,7 +662,10 @@ mod tests {
         let item = DummyItem;
         let mut data = ListPanelData::<String>::new();
         let mut selection = SelectionState::list();
-        data.set_items(vec!["foo".into(), "bar".into(), "foobar".into()], &mut selection);
+        data.set_items(
+            vec!["foo".into(), "bar".into(), "foobar".into()],
+            &mut selection,
+        );
 
         item.apply_filter(&mut data, "foo", &mut selection);
 
@@ -595,7 +677,10 @@ mod tests {
         let item = DummyItem;
         let mut data = ListPanelData::<String>::new();
         let mut selection = SelectionState::list();
-        data.set_items(vec!["Hello".into(), "world".into(), "HELLO".into()], &mut selection);
+        data.set_items(
+            vec!["Hello".into(), "world".into(), "HELLO".into()],
+            &mut selection,
+        );
 
         item.apply_filter(&mut data, "hello", &mut selection);
 
@@ -631,7 +716,10 @@ mod tests {
         let item = DummyItem;
         let mut data = ListPanelData::<String>::new();
         let mut selection = SelectionState::list();
-        data.set_items(vec!["foo".into(), "bar".into(), "foobar".into()], &mut selection);
+        data.set_items(
+            vec!["foo".into(), "bar".into(), "foobar".into()],
+            &mut selection,
+        );
 
         // Move selection down first.
         selection.select(Some(2));

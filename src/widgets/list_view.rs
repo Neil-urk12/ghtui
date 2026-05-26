@@ -1,8 +1,12 @@
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, List, ListItem, Row, Table};
 
+use super::{
+    detail_pane::DetailPane,
+    empty_state::{EmptyState, EmptyStateWidget},
+    loading::LoadingWidget,
+};
 use crate::panels::panel::SelectionState;
-use super::{detail_pane::DetailPane, empty_state::{EmptyState, EmptyStateWidget}, loading::LoadingWidget};
 use crate::theme::Theme;
 
 pub enum LeftContent<'a> {
@@ -74,7 +78,14 @@ pub fn render_list_view(
         .margin(config.margin)
         .split(area);
 
-        render_left(frame, chunks[0], left, selection, theme, &config.highlight_symbol);
+        render_left(
+            frame,
+            chunks[0],
+            left,
+            selection,
+            theme,
+            &config.highlight_symbol,
+        );
 
         let detail_block = Block::bordered()
             .title(config.detail_title.as_str())
@@ -82,7 +93,13 @@ pub fn render_list_view(
         if detail_lines.is_empty() {
             EmptyStateWidget::render(frame, chunks[1], &config.detail_empty_state, detail_block);
         } else {
-            detail_pane.render(frame, chunks[1], &config.detail_title, detail_lines, detail_block);
+            detail_pane.render(
+                frame,
+                chunks[1],
+                &config.detail_title,
+                detail_lines,
+                detail_block,
+            );
         }
     } else {
         // Table camp: block wraps left side only
@@ -109,7 +126,15 @@ pub fn render_list_view(
         if is_empty {
             EmptyStateWidget::render(frame, list_area, &config.empty_state, block);
         } else {
-            render_left_with_block(frame, list_area, left, block, selection, theme, &config.highlight_symbol);
+            render_left_with_block(
+                frame,
+                list_area,
+                left,
+                block,
+                selection,
+                theme,
+                &config.highlight_symbol,
+            );
         }
 
         let detail_block = Block::default()
@@ -119,14 +144,31 @@ pub fn render_list_view(
         if detail_lines.is_empty() {
             EmptyStateWidget::render(frame, detail_area, &config.detail_empty_state, detail_block);
         } else {
-            detail_pane.render(frame, detail_area, &config.detail_title, detail_lines, detail_block);
+            detail_pane.render(
+                frame,
+                detail_area,
+                &config.detail_title,
+                detail_lines,
+                detail_block,
+            );
         }
     }
 }
 
-fn render_left(frame: &mut Frame, area: Rect, left: LeftContent<'_>, selection: &mut SelectionState, theme: &Theme, highlight_symbol: &str) {
+fn render_left(
+    frame: &mut Frame,
+    area: Rect,
+    left: LeftContent<'_>,
+    selection: &mut SelectionState,
+    theme: &Theme,
+    highlight_symbol: &str,
+) {
     match left {
-        LeftContent::Table { headers, rows, widths } => {
+        LeftContent::Table {
+            headers,
+            rows,
+            widths,
+        } => {
             let header = Row::new(headers).style(theme.muted);
             let table = Table::new(rows, widths)
                 .header(header)
@@ -156,7 +198,11 @@ fn render_left_with_block(
     highlight_symbol: &str,
 ) {
     match left {
-        LeftContent::Table { headers, rows, widths } => {
+        LeftContent::Table {
+            headers,
+            rows,
+            widths,
+        } => {
             let header = Row::new(headers).style(theme.muted);
             let table = Table::new(rows, widths)
                 .block(block)

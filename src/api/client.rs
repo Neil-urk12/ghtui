@@ -52,7 +52,10 @@ impl GitHubClient {
         if let Some(remaining) = headers.get("x-ratelimit-remaining") {
             if let Ok(val) = remaining.to_str() {
                 if let Ok(n) = val.parse::<u32>() {
-                    *self.rate_remaining.lock().unwrap_or_else(|e| e.into_inner()) = Some(n);
+                    *self
+                        .rate_remaining
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner()) = Some(n);
                 }
             }
         }
@@ -102,8 +105,11 @@ impl GitHubClient {
     }
 
     async fn post_empty(&self, path: &str) -> Result<()> {
-        self.send_and_check(self.request(Method::POST, path).header("Content-Length", "0"))
-            .await?;
+        self.send_and_check(
+            self.request(Method::POST, path)
+                .header("Content-Length", "0"),
+        )
+        .await?;
         Ok(())
     }
 
@@ -127,18 +133,25 @@ impl GitHubClient {
 
     pub async fn get_repos(&self) -> Result<Vec<domain::Repo>> {
         let models: Vec<Repo> = self
-            .get("/user/repos?sort=updated&per_page=100", Some(CacheKey::UserRepos), Duration::from_secs(REPO_CACHE_TTL_SECS))
+            .get(
+                "/user/repos?sort=updated&per_page=100",
+                Some(CacheKey::UserRepos),
+                Duration::from_secs(REPO_CACHE_TTL_SECS),
+            )
             .await?;
-        Ok(models.into_iter().map(|r| domain::Repo {
-            name: r.full_name,
-            description: r.description,
-            language: r.language,
-            stars: safe_u32(r.stargazers_count),
-            forks: safe_u32(r.forks_count),
-            updated_at: r.updated_at,
-            visibility: r.visibility.unwrap_or_default(),
-            default_branch: r.default_branch,
-        }).collect())
+        Ok(models
+            .into_iter()
+            .map(|r| domain::Repo {
+                name: r.full_name,
+                description: r.description,
+                language: r.language,
+                stars: safe_u32(r.stargazers_count),
+                forks: safe_u32(r.forks_count),
+                updated_at: r.updated_at,
+                visibility: r.visibility.unwrap_or_default(),
+                default_branch: r.default_branch,
+            })
+            .collect())
     }
 
     pub async fn get_pulls(
@@ -149,24 +162,35 @@ impl GitHubClient {
     ) -> Result<Vec<domain::PullRequest>> {
         let path = format!("/repos/{owner}/{repo}/pulls?state={state}&per_page=100");
         let models: Vec<PullRequest> = self
-            .get(&path, Some(CacheKey::Pulls { owner: owner.to_string(), repo: repo.to_string(), state: state.to_string() }), Duration::from_secs(PULLS_CACHE_TTL_SECS))
+            .get(
+                &path,
+                Some(CacheKey::Pulls {
+                    owner: owner.to_string(),
+                    repo: repo.to_string(),
+                    state: state.to_string(),
+                }),
+                Duration::from_secs(PULLS_CACHE_TTL_SECS),
+            )
             .await?;
-        Ok(models.into_iter().map(|pr| domain::PullRequest {
-            number: safe_u32(pr.number),
-            title: pr.title,
-            author: pr.user.login,
-            state: pr.state,
-            labels: pr.labels.into_iter().map(|l| l.name).collect(),
-            created_at: pr.created_at,
-            updated_at: pr.updated_at,
-            body: pr.body,
-            comments: None,
-            reviews: None,
-            code_comments: None,
-            comment_errors: None,
-            review_errors: None,
-            code_comment_errors: None,
-        }).collect())
+        Ok(models
+            .into_iter()
+            .map(|pr| domain::PullRequest {
+                number: pr.number,
+                title: pr.title,
+                author: pr.user.login,
+                state: pr.state,
+                labels: pr.labels.into_iter().map(|l| l.name).collect(),
+                created_at: pr.created_at,
+                updated_at: pr.updated_at,
+                body: pr.body,
+                comments: None,
+                reviews: None,
+                code_comments: None,
+                comment_errors: None,
+                review_errors: None,
+                code_comment_errors: None,
+            })
+            .collect())
     }
 
     pub async fn get_issues(
@@ -177,14 +201,22 @@ impl GitHubClient {
     ) -> Result<Vec<domain::Issue>> {
         let path = format!("/repos/{owner}/{repo}/issues?state={state}&per_page=100");
         let models: Vec<Issue> = self
-            .get(&path, Some(CacheKey::Issues { owner: owner.to_string(), repo: repo.to_string(), state: state.to_string() }), Duration::from_secs(ISSUES_CACHE_TTL_SECS))
+            .get(
+                &path,
+                Some(CacheKey::Issues {
+                    owner: owner.to_string(),
+                    repo: repo.to_string(),
+                    state: state.to_string(),
+                }),
+                Duration::from_secs(ISSUES_CACHE_TTL_SECS),
+            )
             .await?;
         // Filter out pull requests (GitHub returns them as issues too)
         Ok(models
             .into_iter()
             .filter(|i| i.pull_request.is_none())
             .map(|i| domain::Issue {
-                number: safe_u32(i.number),
+                number: i.number,
                 title: i.title,
                 author: i.user.login,
                 state: i.state,
@@ -204,38 +236,52 @@ impl GitHubClient {
             "/notifications?per_page=100"
         };
         let models: Vec<Notification> = self
-            .get(path, Some(CacheKey::Notifications), Duration::from_secs(NOTIFICATIONS_CACHE_TTL_SECS))
+            .get(
+                path,
+                Some(CacheKey::Notifications),
+                Duration::from_secs(NOTIFICATIONS_CACHE_TTL_SECS),
+            )
             .await?;
-        Ok(models.into_iter().map(|n| domain::Notification {
-            id: n.id,
-            repo_name: n.repository.full_name,
-            subject_title: n.subject.title,
-            subject_type: n.subject.subject_type,
-            reason: n.reason,
-            unread: n.unread,
-            updated_at: n.updated_at,
-        }).collect())
+        Ok(models
+            .into_iter()
+            .map(|n| domain::Notification {
+                id: n.id,
+                repo_name: n.repository.full_name,
+                subject_title: n.subject.title,
+                subject_type: n.subject.subject_type,
+                reason: n.reason,
+                unread: n.unread,
+                updated_at: n.updated_at,
+            })
+            .collect())
     }
 
-    pub async fn get_actions(
-        &self,
-        owner: &str,
-        repo: &str,
-    ) -> Result<Vec<domain::WorkflowRun>> {
+    pub async fn get_actions(&self, owner: &str, repo: &str) -> Result<Vec<domain::WorkflowRun>> {
         let path = format!("/repos/{owner}/{repo}/actions/runs?per_page=50");
         let resp: WorkflowRunsResponse = self
-            .get(&path, Some(CacheKey::Actions { owner: owner.to_string(), repo: repo.to_string() }), Duration::from_secs(ACTIONS_CACHE_TTL_SECS))
+            .get(
+                &path,
+                Some(CacheKey::Actions {
+                    owner: owner.to_string(),
+                    repo: repo.to_string(),
+                }),
+                Duration::from_secs(ACTIONS_CACHE_TTL_SECS),
+            )
             .await?;
-        Ok(resp.workflow_runs.into_iter().map(|w| domain::WorkflowRun {
-            id: w.id,
-            name: w.name,
-            status: w.status,
-            conclusion: w.conclusion,
-            branch: w.head_branch,
-            event: w.event,
-            created_at: w.created_at,
-            run_number: safe_u32(w.run_number),
-        }).collect())
+        Ok(resp
+            .workflow_runs
+            .into_iter()
+            .map(|w| domain::WorkflowRun {
+                id: w.id,
+                name: w.name,
+                status: w.status,
+                conclusion: w.conclusion,
+                branch: w.head_branch,
+                event: w.event,
+                created_at: w.created_at,
+                run_number: safe_u32(w.run_number),
+            })
+            .collect())
     }
 
     pub async fn mark_notification_read(&self, id: &str) -> Result<()> {
@@ -275,64 +321,113 @@ impl GitHubClient {
         .await
     }
 
-    pub async fn get_issue_comments(&self, owner: &str, repo: &str, pr_number: u64) -> Result<Vec<domain::PrComment>> {
+    pub async fn get_issue_comments(
+        &self,
+        owner: &str,
+        repo: &str,
+        pr_number: u64,
+    ) -> Result<Vec<domain::PrComment>> {
         let path = format!("/repos/{owner}/{repo}/issues/{pr_number}/comments?per_page=100");
-        let cache_key = CacheKey::PrComments { owner: owner.to_string(), repo: repo.to_string(), pr_number };
+        let cache_key = CacheKey::PrComments {
+            owner: owner.to_string(),
+            repo: repo.to_string(),
+            pr_number,
+        };
         let models: Vec<IssueComment> = self
-            .get(&path, Some(cache_key), Duration::from_secs(PR_COMMENTS_CACHE_TTL_SECS))
+            .get(
+                &path,
+                Some(cache_key),
+                Duration::from_secs(PR_COMMENTS_CACHE_TTL_SECS),
+            )
             .await?;
-        Ok(models.into_iter().map(|c| domain::PrComment {
-            id: c.id,
-            author: c.user.login,
-            body: c.body,
-            created_at: c.created_at,
-        }).collect())
+        Ok(models
+            .into_iter()
+            .map(|c| domain::PrComment {
+                id: c.id,
+                author: c.user.login,
+                body: c.body,
+                created_at: c.created_at,
+            })
+            .collect())
     }
 
-    pub async fn get_reviews(&self, owner: &str, repo: &str, pr_number: u64) -> Result<Vec<domain::PrReview>> {
+    pub async fn get_reviews(
+        &self,
+        owner: &str,
+        repo: &str,
+        pr_number: u64,
+    ) -> Result<Vec<domain::PrReview>> {
         let path = format!("/repos/{owner}/{repo}/pulls/{pr_number}/reviews?per_page=100");
-        let cache_key = CacheKey::PrReviews { owner: owner.to_string(), repo: repo.to_string(), pr_number };
+        let cache_key = CacheKey::PrReviews {
+            owner: owner.to_string(),
+            repo: repo.to_string(),
+            pr_number,
+        };
         let models: Vec<Review> = self
-            .get(&path, Some(cache_key), Duration::from_secs(PR_COMMENTS_CACHE_TTL_SECS))
+            .get(
+                &path,
+                Some(cache_key),
+                Duration::from_secs(PR_COMMENTS_CACHE_TTL_SECS),
+            )
             .await?;
-        Ok(models.into_iter().map(|r| domain::PrReview {
-            id: r.id,
-            author: r.user.login,
-            state: r.state,
-            body: r.body,
-            submitted_at: r.submitted_at,
-        }).collect())
+        Ok(models
+            .into_iter()
+            .map(|r| domain::PrReview {
+                id: r.id,
+                author: r.user.login,
+                state: r.state,
+                body: r.body,
+                submitted_at: r.submitted_at,
+            })
+            .collect())
     }
 
-    pub async fn get_review_comments(&self, owner: &str, repo: &str, pr_number: u64) -> Result<Vec<domain::PrCodeComment>> {
+    pub async fn get_review_comments(
+        &self,
+        owner: &str,
+        repo: &str,
+        pr_number: u64,
+    ) -> Result<Vec<domain::PrCodeComment>> {
         let path = format!("/repos/{owner}/{repo}/pulls/{pr_number}/comments?per_page=100");
-        let cache_key = CacheKey::PrCodeComments { owner: owner.to_string(), repo: repo.to_string(), pr_number };
+        let cache_key = CacheKey::PrCodeComments {
+            owner: owner.to_string(),
+            repo: repo.to_string(),
+            pr_number,
+        };
         let models: Vec<ReviewComment> = self
-            .get(&path, Some(cache_key), Duration::from_secs(PR_COMMENTS_CACHE_TTL_SECS))
+            .get(
+                &path,
+                Some(cache_key),
+                Duration::from_secs(PR_COMMENTS_CACHE_TTL_SECS),
+            )
             .await?;
-        Ok(models.into_iter().map(|c| domain::PrCodeComment {
-            id: c.id,
-            author: c.user.login,
-            body: c.body,
-            path: c.path,
-            line: c.line,
-            created_at: c.created_at,
-        }).collect())
+        Ok(models
+            .into_iter()
+            .map(|c| domain::PrCodeComment {
+                id: c.id,
+                author: c.user.login,
+                body: c.body,
+                path: c.path,
+                line: c.line,
+                created_at: c.created_at,
+            })
+            .collect())
     }
 
     pub async fn close_pr(&self, owner: &str, repo: &str, pr_number: u64) -> Result<()> {
         let body = serde_json::json!({ "state": "closed" });
-        self.patch_json(&format!("/repos/{owner}/{repo}/pulls/{pr_number}"), &body).await
+        self.patch_json(&format!("/repos/{owner}/{repo}/pulls/{pr_number}"), &body)
+            .await
     }
 
     pub async fn reopen_pr(&self, owner: &str, repo: &str, pr_number: u64) -> Result<()> {
         let body = serde_json::json!({ "state": "open" });
-        self.patch_json(&format!("/repos/{owner}/{repo}/pulls/{pr_number}"), &body).await
+        self.patch_json(&format!("/repos/{owner}/{repo}/pulls/{pr_number}"), &body)
+            .await
     }
 
     async fn put_empty(&self, path: &str) -> Result<()> {
-        self.send_and_check(self.request(Method::PUT, path))
-            .await?;
+        self.send_and_check(self.request(Method::PUT, path)).await?;
         Ok(())
     }
 
@@ -351,7 +446,11 @@ impl GitHubClient {
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
-            return Err(color_eyre::eyre::eyre!("GitHub API error {}: {}", status, body));
+            return Err(color_eyre::eyre::eyre!(
+                "GitHub API error {}: {}",
+                status,
+                body
+            ));
         }
         Ok(resp)
     }

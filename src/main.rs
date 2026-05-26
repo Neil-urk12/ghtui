@@ -43,7 +43,7 @@ fn main() -> color_eyre::Result<()> {
     // Handle --logout before TUI init
     if cli.logout {
         match auth::delete_token() {
-            Ok(()) => println!("Stored token deleted."),
+            Ok(()) => tracing::info!("Stored token deleted."),
             Err(e) => tracing::warn!("no stored token to delete: {e}"),
         }
         return Ok(());

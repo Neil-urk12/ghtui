@@ -78,12 +78,9 @@ enum TokenEffect {
 
 impl LoginState {
     pub async fn new(http_client: reqwest::Client) -> Result<Self> {
-        let resp = auth::request_device_code(
-            &http_client,
-            auth::GHTUI_CLIENT_ID,
-            auth::GHTUI_SCOPES,
-        )
-        .await?;
+        let resp =
+            auth::request_device_code(&http_client, auth::GHTUI_CLIENT_ID, auth::GHTUI_SCOPES)
+                .await?;
 
         Ok(Self {
             user_code: resp.user_code,
@@ -113,25 +110,21 @@ impl LoginState {
         }
         self.last_poll = Instant::now();
 
-        match auth::poll_for_token(
-            &self.http_client,
-            auth::GHTUI_CLIENT_ID,
-            &self.device_code,
-        )
-        .await
+        match auth::poll_for_token(&self.http_client, auth::GHTUI_CLIENT_ID, &self.device_code)
+            .await
         {
-            Ok(resp) => {
-                match apply_token_response(resp.access_token, resp.interval, resp.scope) {
-                    TokenEffect::Success(token, scopes) => {
-                        if let Err(e) = auth::save_token(&token, &scopes) { tracing::warn!("failed to persist token: {e}"); }
-                        self.status = LoginStatus::Success(token);
+            Ok(resp) => match apply_token_response(resp.access_token, resp.interval, resp.scope) {
+                TokenEffect::Success(token, scopes) => {
+                    if let Err(e) = auth::save_token(&token, &scopes) {
+                        tracing::warn!("failed to persist token: {e}");
                     }
-                    TokenEffect::UpdateInterval(interval) => {
-                        self.poll_interval = interval;
-                    }
-                    TokenEffect::NoChange => {}
+                    self.status = LoginStatus::Success(token);
                 }
-            }
+                TokenEffect::UpdateInterval(interval) => {
+                    self.poll_interval = interval;
+                }
+                TokenEffect::NoChange => {}
+            },
             Err(e) => {
                 self.status = LoginStatus::Error(e.to_string());
             }
@@ -168,7 +161,9 @@ pub fn render_login(frame: &mut Frame, state: &LoginState) {
         "Open: ".white(),
         Span::styled(
             &state.verification_uri,
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::UNDERLINED),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::UNDERLINED),
         ),
     ]);
     frame.render_widget(Paragraph::new(instruction), chunks[1]);
@@ -178,7 +173,9 @@ pub fn render_login(frame: &mut Frame, state: &LoginState) {
 
     let code_value = Line::from(vec![Span::styled(
         &state.user_code,
-        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD),
     )]);
     frame.render_widget(Paragraph::new(code_value), chunks[4]);
 
@@ -190,15 +187,9 @@ pub fn render_login(frame: &mut Frame, state: &LoginState) {
             "Waiting for authorization... ".gray(),
             countdown.white(),
         ]),
-        LoginStatus::Expired => {
-            Line::from("Code expired. Requesting new one...".red())
-        }
-        LoginStatus::Error(e) => {
-            Line::from(vec!["Error: ".red(), e.as_str().white()])
-        }
-        LoginStatus::Success(_) => {
-            Line::from("Authorized! Redirecting...".green())
-        }
+        LoginStatus::Expired => Line::from("Code expired. Requesting new one...".red()),
+        LoginStatus::Error(e) => Line::from(vec!["Error: ".red(), e.as_str().white()]),
+        LoginStatus::Success(_) => Line::from("Authorized! Redirecting...".green()),
     };
     frame.render_widget(Paragraph::new(status_line), chunks[6]);
 
@@ -343,11 +334,7 @@ mod tests {
 
     #[test]
     fn apply_token_response_token_takes_priority_over_interval() {
-        let result = apply_token_response(
-            Some("gho_token".into()),
-            Some(5),
-            Some("scope".into()),
-        );
+        let result = apply_token_response(Some("gho_token".into()), Some(5), Some("scope".into()));
         match result {
             TokenEffect::Success(token, _) => assert_eq!(token, "gho_token"),
             _ => panic!("expected Success, token should take priority"),

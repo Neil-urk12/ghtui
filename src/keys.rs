@@ -69,12 +69,18 @@ mod tests {
 
     #[test]
     fn single_char_rejects_modifiers() {
-        assert!(!matches_key(key_mod(KeyCode::Char('q'), KeyModifiers::CONTROL), "q"));
+        assert!(!matches_key(
+            key_mod(KeyCode::Char('q'), KeyModifiers::CONTROL),
+            "q"
+        ));
     }
 
     #[test]
     fn ctrl_combo() {
-        assert!(matches_key(key_mod(KeyCode::Char('c'), KeyModifiers::CONTROL), "Ctrl+c"));
+        assert!(matches_key(
+            key_mod(KeyCode::Char('c'), KeyModifiers::CONTROL),
+            "Ctrl+c"
+        ));
         assert!(!matches_key(key(KeyCode::Char('c')), "Ctrl+c"));
     }
 

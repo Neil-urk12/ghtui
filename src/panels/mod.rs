@@ -3,7 +3,11 @@
 macro_rules! extract_items {
     ($variant:ident) => {
         fn extract_items(payload: $crate::event::ApiPayload) -> Option<Vec<Self::Item>> {
-            if let $crate::event::ApiPayload::$variant(items) = payload { Some(items) } else { None }
+            if let $crate::event::ApiPayload::$variant(items) = payload {
+                Some(items)
+            } else {
+                None
+            }
         }
     };
 }

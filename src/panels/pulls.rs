@@ -5,17 +5,25 @@ use std::time::Instant;
 use ratatui::prelude::*;
 use ratatui::widgets::{Cell, Row};
 
+use super::panel::{ListPanelData, PanelItem, SelectionState};
 use crate::cmd::Cmd;
 use crate::domain::{FilterState, PullRequest};
 use crate::theme::Theme;
 use crate::util::format;
 use crate::widgets::empty_state::EmptyState;
 use crate::widgets::list_view::LeftContent;
-use super::panel::{ListPanelData, PanelItem, SelectionState};
 
 fn pr_to_row(pr: &PullRequest, theme: &Theme) -> Row<'static> {
-    let status_str = if pr.state == "closed" { "closed" } else { "open" };
-    let status_style = if pr.state == "closed" { theme.error } else { theme.success };
+    let status_str = if pr.state == "closed" {
+        "closed"
+    } else {
+        "open"
+    };
+    let status_style = if pr.state == "closed" {
+        theme.error
+    } else {
+        theme.success
+    };
     let updated = format::relative_time(&pr.updated_at);
     Row::new(vec![
         Cell::from(format!("#{}", pr.number)),
@@ -57,10 +65,7 @@ fn pr_to_detail(pr: &PullRequest, theme: &Theme) -> Vec<Line<'static>> {
         let rendered = crate::util::markdown::render_markdown(body);
         lines.extend(rendered);
     } else {
-        lines.push(Line::from(Span::styled(
-            "(no description)",
-            theme.muted,
-        )));
+        lines.push(Line::from(Span::styled("(no description)", theme.muted)));
     }
 
     // Render reviews
@@ -76,7 +81,10 @@ fn pr_to_detail(pr: &PullRequest, theme: &Theme) -> Vec<Line<'static>> {
                     "CHANGES_REQUESTED" | "DISMISSED" => "✗",
                     _ => "•",
                 };
-                lines.push(Line::from(format!("{} {}: {}", icon, review.author, review.state)));
+                lines.push(Line::from(format!(
+                    "{} {}: {}",
+                    icon, review.author, review.state
+                )));
                 if let Some(body) = &review.body {
                     if !body.is_empty() {
                         lines.push(Line::from(format!("  {}", body)));
@@ -122,13 +130,22 @@ fn pr_to_detail(pr: &PullRequest, theme: &Theme) -> Vec<Line<'static>> {
 
     // Render partial error indicators
     if let Some(err) = &pr.review_errors {
-        lines.push(Line::from(format!("[WARN] Reviews: failed to load ({})", err)));
+        lines.push(Line::from(format!(
+            "[WARN] Reviews: failed to load ({})",
+            err
+        )));
     }
     if let Some(err) = &pr.comment_errors {
-        lines.push(Line::from(format!("[WARN] Comments: failed to load ({})", err)));
+        lines.push(Line::from(format!(
+            "[WARN] Comments: failed to load ({})",
+            err
+        )));
     }
     if let Some(err) = &pr.code_comment_errors {
-        lines.push(Line::from(format!("[WARN] Code Comments: failed to load ({})", err)));
+        lines.push(Line::from(format!(
+            "[WARN] Code Comments: failed to load ({})",
+            err
+        )));
     }
 
     lines.push(Line::from(""));
@@ -143,7 +160,7 @@ fn pr_to_detail(pr: &PullRequest, theme: &Theme) -> Vec<Line<'static>> {
 #[derive(Debug)]
 pub struct PullsPanelItem {
     pub state_filter: FilterState,
-    last_fetch_attempts: RefCell<HashMap<u32, Instant>>,
+    last_fetch_attempts: RefCell<HashMap<u64, Instant>>,
 }
 
 impl Default for PullsPanelItem {
@@ -251,7 +268,7 @@ impl PanelItem for PullsPanelItem {
                         return Some(Cmd::ApprovePr {
                             owner: owner.to_string(),
                             repo: repo.to_string(),
-                            pr_number: pr.number as u64,
+                            pr_number: pr.number,
                         });
                     }
                 }
@@ -263,7 +280,7 @@ impl PanelItem for PullsPanelItem {
                         return Some(Cmd::MergePr {
                             owner: owner.to_string(),
                             repo: repo.to_string(),
-                            pr_number: pr.number as u64,
+                            pr_number: pr.number,
                         });
                     }
                 }
@@ -277,7 +294,7 @@ impl PanelItem for PullsPanelItem {
                             return Some(Cmd::ClosePr {
                                 owner: owner.to_string(),
                                 repo: repo.to_string(),
-                                pr_number: pr.number as u64,
+                                pr_number: pr.number,
                             });
                         }
                     }
@@ -291,7 +308,7 @@ impl PanelItem for PullsPanelItem {
                             return Some(Cmd::ReopenPr {
                                 owner: owner.to_string(),
                                 repo: repo.to_string(),
-                                pr_number: pr.number as u64,
+                                pr_number: pr.number,
                             });
                         }
                     }
@@ -302,14 +319,20 @@ impl PanelItem for PullsPanelItem {
         }
     }
 
-    fn on_select(&self, selected: Option<&Self::Item>, data: &ListPanelData<Self::Item>) -> Option<Cmd> {
+    fn on_select(
+        &self,
+        selected: Option<&Self::Item>,
+        data: &ListPanelData<Self::Item>,
+    ) -> Option<Cmd> {
         const DEBOUNCE_MS: u128 = 500;
 
         if let Some(pr) = selected {
-            let needs_fetch = pr.comments.is_none() || pr.reviews.is_none() || pr.code_comments.is_none();
+            let needs_fetch =
+                pr.comments.is_none() || pr.reviews.is_none() || pr.code_comments.is_none();
             if needs_fetch {
                 let pr_number = pr.number;
-                let within_debounce = self.last_fetch_attempts
+                let within_debounce = self
+                    .last_fetch_attempts
                     .borrow()
                     .get(&pr_number)
                     .map(|last| last.elapsed().as_millis() < DEBOUNCE_MS)
@@ -320,11 +343,13 @@ impl PanelItem for PullsPanelItem {
                 }
 
                 if let Some((owner, repo)) = data.owner_repo() {
-                    self.last_fetch_attempts.borrow_mut().insert(pr_number, Instant::now());
+                    self.last_fetch_attempts
+                        .borrow_mut()
+                        .insert(pr_number, Instant::now());
                     return Some(Cmd::FetchPrComments {
                         owner: owner.to_string(),
                         repo: repo.to_string(),
-                        pr_number: pr_number as u64,
+                        pr_number,
                     });
                 }
             }
@@ -353,7 +378,11 @@ impl PanelItem for PullsPanelItem {
     }
 
     fn empty_state(&self, data: &ListPanelData<Self::Item>) -> EmptyState {
-        data.repo_aware_empty_state("No pull requests found", " ", "Press 1 for open, 2 for closed, 3 for all · r to refresh")
+        data.repo_aware_empty_state(
+            "No pull requests found",
+            " ",
+            "Press 1 for open, 2 for closed, 3 for all · r to refresh",
+        )
     }
 
     extract_items!(Pulls);
@@ -372,18 +401,26 @@ impl PanelItem for PullsPanelItem {
             .hint("j/k to navigate")
     }
 
-    fn apply_filter(&self, data: &mut ListPanelData<Self::Item>, query: &str, selection: &mut SelectionState) {
-        data.filter_by(query, |item, q| {
-            item.title.to_lowercase().contains(q)
-                || item.author.to_lowercase().contains(q)
-                || item.labels.iter().any(|l| l.to_lowercase().contains(q))
-        }, selection);
+    fn apply_filter(
+        &self,
+        data: &mut ListPanelData<Self::Item>,
+        query: &str,
+        selection: &mut SelectionState,
+    ) {
+        data.filter_by(
+            query,
+            |item, q| {
+                item.title.to_lowercase().contains(q)
+                    || item.author.to_lowercase().contains(q)
+                    || item.labels.iter().any(|l| l.to_lowercase().contains(q))
+            },
+            selection,
+        );
     }
 
     fn initial_selection(&self) -> SelectionState {
         SelectionState::table()
     }
-
 
     fn item_display(&self, item: &Self::Item) -> Option<String> {
         Some(format!("#{} {}", item.number, item.title))
@@ -436,7 +473,11 @@ mod tests {
         let content = item.left_content(&data, &theme);
 
         match content {
-            LeftContent::Table { headers, rows, widths } => {
+            LeftContent::Table {
+                headers,
+                rows,
+                widths,
+            } => {
                 assert_eq!(headers, vec!["#", "Title", "Author", "Status", "Updated"]);
                 assert_eq!(rows.len(), 1);
                 assert_eq!(widths.len(), 5);
@@ -455,7 +496,11 @@ mod tests {
 
         let lines = item.detail_lines(&pr, &theme);
 
-        let text: String = lines.iter().map(|l| l.to_string()).collect::<Vec<_>>().join("\n");
+        let text: String = lines
+            .iter()
+            .map(|l| l.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
         assert!(text.contains("#42"), "should contain PR number");
         assert!(text.contains("Fix login bug"), "should contain title");
         assert!(text.contains("octocat"), "should contain author");
@@ -487,7 +532,9 @@ mod tests {
 
         let lines = item.detail_lines(&pr, &theme);
 
-        let has_placeholder = lines.iter().any(|l| l.to_string().contains("(no description)"));
+        let has_placeholder = lines
+            .iter()
+            .any(|l| l.to_string().contains("(no description)"));
         assert!(has_placeholder);
     }
 
@@ -619,9 +666,21 @@ mod tests {
         let mut data = ListPanelData::<PullRequest>::new();
         let mut selection = SelectionState::table();
         let items = vec![
-            PullRequest { number: 1, title: "Fix login bug".into(), ..Default::default() },
-            PullRequest { number: 2, title: "Add dark mode".into(), ..Default::default() },
-            PullRequest { number: 3, title: "Fix signup bug".into(), ..Default::default() },
+            PullRequest {
+                number: 1,
+                title: "Fix login bug".into(),
+                ..Default::default()
+            },
+            PullRequest {
+                number: 2,
+                title: "Add dark mode".into(),
+                ..Default::default()
+            },
+            PullRequest {
+                number: 3,
+                title: "Fix signup bug".into(),
+                ..Default::default()
+            },
         ];
         data.set_items(items, &mut selection);
         let panel = PullsPanelItem::default();
@@ -634,9 +693,24 @@ mod tests {
         let mut data = ListPanelData::<PullRequest>::new();
         let mut selection = SelectionState::table();
         let items = vec![
-            PullRequest { number: 1, title: "PR 1".into(), author: "octocat".into(), ..Default::default() },
-            PullRequest { number: 2, title: "PR 2".into(), author: "dev1".into(), ..Default::default() },
-            PullRequest { number: 3, title: "PR 3".into(), author: "octocat".into(), ..Default::default() },
+            PullRequest {
+                number: 1,
+                title: "PR 1".into(),
+                author: "octocat".into(),
+                ..Default::default()
+            },
+            PullRequest {
+                number: 2,
+                title: "PR 2".into(),
+                author: "dev1".into(),
+                ..Default::default()
+            },
+            PullRequest {
+                number: 3,
+                title: "PR 3".into(),
+                author: "octocat".into(),
+                ..Default::default()
+            },
         ];
         data.set_items(items, &mut selection);
         let panel = PullsPanelItem::default();
@@ -662,7 +736,11 @@ mod tests {
         let theme = Theme::default();
 
         let lines = item.detail_lines(&pr, &theme);
-        let text: String = lines.iter().map(|l| l.to_string()).collect::<Vec<_>>().join("\n");
+        let text: String = lines
+            .iter()
+            .map(|l| l.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
 
         assert!(
             text.contains("1:open 2:closed 3:all | o:browser | c:checkout | a:approve | m:merge"),
@@ -681,7 +759,11 @@ mod tests {
         let state = item.empty_state(&data);
 
         assert!(
-            state.hint.as_deref().unwrap_or("").contains("Press 1 for open, 2 for closed, 3 for all · r to refresh"),
+            state
+                .hint
+                .as_deref()
+                .unwrap_or("")
+                .contains("Press 1 for open, 2 for closed, 3 for all · r to refresh"),
             "empty state hint should show prose, got: {:?}",
             state.hint
         );
@@ -758,72 +840,90 @@ mod tests {
     #[test]
     fn detail_lines_shows_reviews_when_present() {
         let pr = PullRequest {
-            reviews: Some(vec![
-                crate::domain::PrReview {
-                    id: 1,
-                    author: "reviewer".into(),
-                    state: "APPROVED".into(),
-                    body: None,
-                    submitted_at: "2024-01-15T10:30:00Z".into(),
-                },
-            ]),
+            reviews: Some(vec![crate::domain::PrReview {
+                id: 1,
+                author: "reviewer".into(),
+                state: "APPROVED".into(),
+                body: None,
+                submitted_at: "2024-01-15T10:30:00Z".into(),
+            }]),
             ..test_pr()
         };
         let item = PullsPanelItem::default();
         let theme = Theme::default();
 
         let lines = item.detail_lines(&pr, &theme);
-        let text: String = lines.iter().map(|l| l.to_string()).collect::<Vec<_>>().join("\n");
+        let text: String = lines
+            .iter()
+            .map(|l| l.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
 
-        assert!(text.contains("Reviews (1)"), "should contain reviews header");
-        assert!(text.contains("✓ reviewer: APPROVED"), "should contain approval");
+        assert!(
+            text.contains("Reviews (1)"),
+            "should contain reviews header"
+        );
+        assert!(
+            text.contains("✓ reviewer: APPROVED"),
+            "should contain approval"
+        );
     }
 
     #[test]
     fn detail_lines_shows_comments_when_present() {
         let pr = PullRequest {
-            comments: Some(vec![
-                crate::domain::PrComment {
-                    id: 1,
-                    author: "user".into(),
-                    body: "Looks good!".into(),
-                    created_at: "2024-01-15T10:30:00Z".into(),
-                },
-            ]),
+            comments: Some(vec![crate::domain::PrComment {
+                id: 1,
+                author: "user".into(),
+                body: "Looks good!".into(),
+                created_at: "2024-01-15T10:30:00Z".into(),
+            }]),
             ..test_pr()
         };
         let item = PullsPanelItem::default();
         let theme = Theme::default();
 
         let lines = item.detail_lines(&pr, &theme);
-        let text: String = lines.iter().map(|l| l.to_string()).collect::<Vec<_>>().join("\n");
+        let text: String = lines
+            .iter()
+            .map(|l| l.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
 
-        assert!(text.contains("Comments (1)"), "should contain comments header");
+        assert!(
+            text.contains("Comments (1)"),
+            "should contain comments header"
+        );
         assert!(text.contains("user: Looks good!"), "should contain comment");
     }
 
     #[test]
     fn detail_lines_shows_code_comments_when_present() {
         let pr = PullRequest {
-            code_comments: Some(vec![
-                crate::domain::PrCodeComment {
-                    id: 1,
-                    author: "reviewer".into(),
-                    body: "Fix this".into(),
-                    path: "src/main.rs".into(),
-                    line: Some(42),
-                    created_at: "2024-01-15T10:30:00Z".into(),
-                },
-            ]),
+            code_comments: Some(vec![crate::domain::PrCodeComment {
+                id: 1,
+                author: "reviewer".into(),
+                body: "Fix this".into(),
+                path: "src/main.rs".into(),
+                line: Some(42),
+                created_at: "2024-01-15T10:30:00Z".into(),
+            }]),
             ..test_pr()
         };
         let item = PullsPanelItem::default();
         let theme = Theme::default();
 
         let lines = item.detail_lines(&pr, &theme);
-        let text: String = lines.iter().map(|l| l.to_string()).collect::<Vec<_>>().join("\n");
+        let text: String = lines
+            .iter()
+            .map(|l| l.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
 
-        assert!(text.contains("Code Comments (1)"), "should contain code comments header");
+        assert!(
+            text.contains("Code Comments (1)"),
+            "should contain code comments header"
+        );
         assert!(text.contains("src/main.rs:42"), "should contain file:line");
         assert!(text.contains("Fix this"), "should contain comment body");
     }
@@ -835,11 +935,24 @@ mod tests {
         let theme = Theme::default();
 
         let lines = item.detail_lines(&pr, &theme);
-        let text: String = lines.iter().map(|l| l.to_string()).collect::<Vec<_>>().join("\n");
+        let text: String = lines
+            .iter()
+            .map(|l| l.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
 
-        assert!(!text.contains("Reviews"), "should not contain reviews header");
-        assert!(!text.contains("Comments"), "should not contain comments header");
-        assert!(!text.contains("Code Comments"), "should not contain code comments header");
+        assert!(
+            !text.contains("Reviews"),
+            "should not contain reviews header"
+        );
+        assert!(
+            !text.contains("Comments"),
+            "should not contain comments header"
+        );
+        assert!(
+            !text.contains("Code Comments"),
+            "should not contain code comments header"
+        );
     }
 
     #[test]
@@ -854,11 +967,24 @@ mod tests {
         let theme = Theme::default();
 
         let lines = item.detail_lines(&pr, &theme);
-        let text: String = lines.iter().map(|l| l.to_string()).collect::<Vec<_>>().join("\n");
+        let text: String = lines
+            .iter()
+            .map(|l| l.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
 
-        assert!(!text.contains("Reviews"), "should not contain reviews header");
-        assert!(!text.contains("Comments"), "should not contain comments header");
-        assert!(!text.contains("Code Comments"), "should not contain code comments header");
+        assert!(
+            !text.contains("Reviews"),
+            "should not contain reviews header"
+        );
+        assert!(
+            !text.contains("Comments"),
+            "should not contain comments header"
+        );
+        assert!(
+            !text.contains("Code Comments"),
+            "should not contain code comments header"
+        );
     }
 
     #[test]
@@ -873,13 +999,22 @@ mod tests {
 
         // Same PR within debounce — should be None
         let cmd2 = item.on_select(selected, &data);
-        assert!(cmd2.is_none(), "same PR within debounce window should return None");
+        assert!(
+            cmd2.is_none(),
+            "same PR within debounce window should return None"
+        );
     }
 
     #[test]
     fn on_select_different_pr_bypasses_debounce() {
-        let pr1 = PullRequest { number: 1, ..test_pr() };
-        let pr2 = PullRequest { number: 2, ..test_pr() };
+        let pr1 = PullRequest {
+            number: 1,
+            ..test_pr()
+        };
+        let pr2 = PullRequest {
+            number: 2,
+            ..test_pr()
+        };
         let mut data = ListPanelData::<PullRequest>::new();
         data.items = vec![pr1, pr2];
         data.filtered_indices = vec![0, 1];
@@ -906,7 +1041,10 @@ mod tests {
         let lines = PullsPanelItem::default().detail_lines(&pr, &Theme::default());
         let text: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
         let all = text.join("\n");
-        assert!(all.contains("Reviews: failed to load"), "should show review error");
+        assert!(
+            all.contains("Reviews: failed to load"),
+            "should show review error"
+        );
         assert!(all.contains("rate limited"), "should show error detail");
     }
 
@@ -917,7 +1055,10 @@ mod tests {
         let lines = PullsPanelItem::default().detail_lines(&pr, &Theme::default());
         let text: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
         let all = text.join("\n");
-        assert!(all.contains("Comments: failed to load"), "should show comment error");
+        assert!(
+            all.contains("Comments: failed to load"),
+            "should show comment error"
+        );
     }
 
     #[test]
@@ -927,7 +1068,10 @@ mod tests {
         let lines = PullsPanelItem::default().detail_lines(&pr, &Theme::default());
         let text: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
         let all = text.join("\n");
-        assert!(all.contains("Code Comments: failed to load"), "should show code comment error");
+        assert!(
+            all.contains("Code Comments: failed to load"),
+            "should show code comment error"
+        );
     }
 
     #[test]
@@ -940,7 +1084,10 @@ mod tests {
         let lines = PullsPanelItem::default().detail_lines(&pr, &Theme::default());
         let text: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
         let all = text.join("\n");
-        assert!(!all.contains("failed to load"), "should not show errors when all succeed");
+        assert!(
+            !all.contains("failed to load"),
+            "should not show errors when all succeed"
+        );
     }
 
     #[test]
@@ -960,8 +1107,14 @@ mod tests {
         let lines = PullsPanelItem::default().detail_lines(&pr, &Theme::default());
         let text: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
         let all = text.join("\n");
-        assert!(all.contains("Code Comments: failed to load"), "should show code comment error");
-        assert!(!all.contains("Reviews: failed"), "should not show review error");
+        assert!(
+            all.contains("Code Comments: failed to load"),
+            "should show code comment error"
+        );
+        assert!(
+            !all.contains("Reviews: failed"),
+            "should not show review error"
+        );
     }
 
     #[test]
@@ -975,7 +1128,10 @@ mod tests {
         let cmd = item.on_select(selected, &data);
 
         // With error-clearing fix: first select triggers retry (no debounce entry yet)
-        assert!(cmd.is_some(), "should retry on first select even when error exists");
+        assert!(
+            cmd.is_some(),
+            "should retry on first select even when error exists"
+        );
     }
 
     #[test]

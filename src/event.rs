@@ -66,7 +66,6 @@ pub fn process_event(event: Event, app: &App) -> Vec<Message> {
                 return vec![Message::Noop];
             }
 
-
             if app.confirmation.is_some() {
                 return match key.code {
                     KeyCode::Char('y') => vec![Message::ConfirmYes],
@@ -115,7 +114,13 @@ pub fn process_event(event: Event, app: &App) -> Vec<Message> {
                 let dur = inst.saturating_duration_since(std::time::Instant::now());
                 dur.as_secs()
             });
-            vec![Message::RateLimitUpdate { remaining, reset_secs }, Message::Tick]
+            vec![
+                Message::RateLimitUpdate {
+                    remaining,
+                    reset_secs,
+                },
+                Message::Tick,
+            ]
         }
         _ => vec![Message::Noop],
     }
@@ -142,7 +147,10 @@ mod tests {
     #[test]
     fn ctrl_c_quits() {
         let app = test_app();
-        let msgs = process_event(Event::Input(key_event_mod(KeyCode::Char('c'), KeyModifiers::CONTROL)), &app);
+        let msgs = process_event(
+            Event::Input(key_event_mod(KeyCode::Char('c'), KeyModifiers::CONTROL)),
+            &app,
+        );
         assert_eq!(msgs.len(), 1);
         assert!(matches!(msgs[0], Message::Quit));
     }
@@ -233,7 +241,12 @@ mod tests {
     #[test]
     fn api_result_success_produces_loaded_and_refresh() {
         let app = test_app();
-        let msgs = process_event(Event::ApiResult { payload: ApiPayload::Success("ok".into()) }, &app);
+        let msgs = process_event(
+            Event::ApiResult {
+                payload: ApiPayload::Success("ok".into()),
+            },
+            &app,
+        );
         assert_eq!(msgs.len(), 2);
         assert!(matches!(&msgs[0], Message::ApiLoaded(_)));
         assert!(matches!(msgs[1], Message::Refresh));
@@ -242,7 +255,12 @@ mod tests {
     #[test]
     fn api_result_data_produces_loaded_only() {
         let app = test_app();
-        let msgs = process_event(Event::ApiResult { payload: ApiPayload::Repos(vec![]) }, &app);
+        let msgs = process_event(
+            Event::ApiResult {
+                payload: ApiPayload::Repos(vec![]),
+            },
+            &app,
+        );
         assert_eq!(msgs.len(), 1);
         assert!(matches!(&msgs[0], Message::ApiLoaded(_)));
     }
