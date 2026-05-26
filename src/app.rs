@@ -11,6 +11,14 @@ use crate::panels::panel::{ListPanel, ListPanelData, SelectionState};
 use crate::theme::Theme;
 use crate::widgets::detail_pane::DetailPane;
 
+pub struct PrCommentUpdate {
+    pub comments: Option<Vec<crate::domain::PrComment>>,
+    pub reviews: Option<Vec<crate::domain::PrReview>>,
+    pub code_comments: Option<Vec<crate::domain::PrCodeComment>>,
+    pub comment_err: Option<String>,
+    pub review_err: Option<String>,
+    pub code_comment_err: Option<String>,
+}
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PanelKind {
     Repos,
@@ -100,13 +108,32 @@ impl PanelState {
     }
 
     /// Update PR with comment data (Pulls panel only).
-    pub fn update_pr_comments(&mut self, pr_number: u64, comments: Option<Vec<crate::domain::PrComment>>, reviews: Option<Vec<crate::domain::PrReview>>, code_comments: Option<Vec<crate::domain::PrCodeComment>>) {
+    pub fn update_pr_comments(&mut self, pr_number: u64, update: PrCommentUpdate) {
         if let PanelState::Pulls(p) = self {
             if let Some(pr) = p.data.items.iter_mut().find(|pr| pr.number == pr_number as u32) {
-                // Only overwrite if we got data (None means keep existing state for retry)
-                if let Some(c) = comments { pr.comments = Some(c); }
-                if let Some(r) = reviews { pr.reviews = Some(r); }
-                if let Some(cc) = code_comments { pr.code_comments = Some(cc); }
+                // On success: store data, clear error. On error: clear stale data, store error.
+                // Neither: keep existing state for retry.
+                if let Some(c) = update.comments {
+                    pr.comments = Some(c);
+                    pr.comment_errors = None;
+                } else if let Some(e) = update.comment_err {
+                    pr.comments = None;
+                    pr.comment_errors = Some(e);
+                }
+                if let Some(r) = update.reviews {
+                    pr.reviews = Some(r);
+                    pr.review_errors = None;
+                } else if let Some(e) = update.review_err {
+                    pr.reviews = None;
+                    pr.review_errors = Some(e);
+                }
+                if let Some(cc) = update.code_comments {
+                    pr.code_comments = Some(cc);
+                    pr.code_comment_errors = None;
+                } else if let Some(e) = update.code_comment_err {
+                    pr.code_comments = None;
+                    pr.code_comment_errors = Some(e);
+                }
             }
         }
         self.set_loading(false);
@@ -239,7 +266,7 @@ impl App {
                 data: ListPanelData::new(),
                 selection: SelectionState::table(),
                 detail_pane: DetailPane::new(),
-                item: PullsPanelItem { state_filter: FilterState::from(config.defaults.pulls_state.as_str()) },
+                item: PullsPanelItem::new(FilterState::from(config.defaults.pulls_state.as_str())),
             }));
         panels.insert(PanelKind::Issues, PanelState::Issues(ListPanel {
                 data: ListPanelData::new(),

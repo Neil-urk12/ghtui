@@ -29,6 +29,15 @@ fn pull_cache_keys(owner: &str, repo: &str) -> Vec<CacheKey> {
         })
         .collect()
 }
+
+fn invalidate_pr_caches(client: &GitHubClient, owner: &str, repo: &str, pr_number: u64) {
+    for key in pull_cache_keys(owner, repo) {
+        client.invalidate_cache(&key);
+    }
+    client.invalidate_cache(&CacheKey::PrComments { owner: owner.to_string(), repo: repo.to_string(), pr_number });
+    client.invalidate_cache(&CacheKey::PrReviews { owner: owner.to_string(), repo: repo.to_string(), pr_number });
+    client.invalidate_cache(&CacheKey::PrCodeComments { owner: owner.to_string(), repo: repo.to_string(), pr_number });
+}
 pub async fn run(app: &mut App, terminal: &mut DefaultTerminal) -> Result<()> {
     tracing::debug!("entering run loop");
     let mut event_stream = EventStream::new();
@@ -245,9 +254,9 @@ fn spawn_cmd(cmd: Cmd, client: &Arc<GitHubClient>, tx: mpsc::Sender<Result<ApiPa
                 );
                 let _ = tx.send(Ok(ApiPayload::PrComments {
                     pr_number,
-                    comments: comments.map_err(|e| e.to_string()),
-                    reviews: reviews.map_err(|e| e.to_string()),
-                    code_comments: code_comments.map_err(|e| e.to_string()),
+                    comments: comments.map_err(|e| format!("{:#}", e)),
+                    reviews: reviews.map_err(|e| format!("{:#}", e)),
+                    code_comments: code_comments.map_err(|e| format!("{:#}", e)),
                 })).await;
             });
         }
@@ -255,12 +264,7 @@ fn spawn_cmd(cmd: Cmd, client: &Arc<GitHubClient>, tx: mpsc::Sender<Result<ApiPa
             tokio::spawn(async move {
                 let result = client.close_pr(&owner, &repo, pr_number).await;
                 if result.is_ok() {
-                    for key in pull_cache_keys(&owner, &repo) {
-                        client.invalidate_cache(&key);
-                    }
-                    client.invalidate_cache(&CacheKey::PrComments { owner: owner.clone(), repo: repo.clone(), pr_number });
-                    client.invalidate_cache(&CacheKey::PrReviews { owner: owner.clone(), repo: repo.clone(), pr_number });
-                    client.invalidate_cache(&CacheKey::PrCodeComments { owner: owner.clone(), repo: repo.clone(), pr_number });
+                    invalidate_pr_caches(&client, &owner, &repo, pr_number);
                 }
                 let _ = tx.send(result.map(|_| ApiPayload::Success(format!("PR #{} closed", pr_number)))).await;
             });
@@ -269,12 +273,7 @@ fn spawn_cmd(cmd: Cmd, client: &Arc<GitHubClient>, tx: mpsc::Sender<Result<ApiPa
             tokio::spawn(async move {
                 let result = client.reopen_pr(&owner, &repo, pr_number).await;
                 if result.is_ok() {
-                    for key in pull_cache_keys(&owner, &repo) {
-                        client.invalidate_cache(&key);
-                    }
-                    client.invalidate_cache(&CacheKey::PrComments { owner: owner.clone(), repo: repo.clone(), pr_number });
-                    client.invalidate_cache(&CacheKey::PrReviews { owner: owner.clone(), repo: repo.clone(), pr_number });
-                    client.invalidate_cache(&CacheKey::PrCodeComments { owner: owner.clone(), repo: repo.clone(), pr_number });
+                    invalidate_pr_caches(&client, &owner, &repo, pr_number);
                 }
                 let _ = tx.send(result.map(|_| ApiPayload::Success(format!("PR #{} reopened", pr_number)))).await;
             });

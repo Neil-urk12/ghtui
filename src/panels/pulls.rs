@@ -1,3 +1,7 @@
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::time::Instant;
+
 use ratatui::prelude::*;
 use ratatui::widgets::{Cell, Row};
 
@@ -116,6 +120,17 @@ fn pr_to_detail(pr: &PullRequest, theme: &Theme) -> Vec<Line<'static>> {
         }
     }
 
+    // Render partial error indicators
+    if let Some(err) = &pr.review_errors {
+        lines.push(Line::from(format!("[WARN] Reviews: failed to load ({})", err)));
+    }
+    if let Some(err) = &pr.comment_errors {
+        lines.push(Line::from(format!("[WARN] Comments: failed to load ({})", err)));
+    }
+    if let Some(err) = &pr.code_comment_errors {
+        lines.push(Line::from(format!("[WARN] Code Comments: failed to load ({})", err)));
+    }
+
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
         "1:open 2:closed 3:all | o:browser | c:checkout | a:approve | m:merge | x:close | X:reopen",
@@ -125,9 +140,28 @@ fn pr_to_detail(pr: &PullRequest, theme: &Theme) -> Vec<Line<'static>> {
     lines
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct PullsPanelItem {
     pub state_filter: FilterState,
+    last_fetch_attempts: RefCell<HashMap<u32, Instant>>,
+}
+
+impl Default for PullsPanelItem {
+    fn default() -> Self {
+        Self {
+            state_filter: FilterState::default(),
+            last_fetch_attempts: RefCell::new(HashMap::new()),
+        }
+    }
+}
+
+impl PullsPanelItem {
+    pub fn new(state_filter: FilterState) -> Self {
+        Self {
+            state_filter,
+            last_fetch_attempts: RefCell::new(HashMap::new()),
+        }
+    }
 }
 
 impl PanelItem for PullsPanelItem {
@@ -269,13 +303,27 @@ impl PanelItem for PullsPanelItem {
     }
 
     fn on_select(&self, selected: Option<&Self::Item>, data: &ListPanelData<Self::Item>) -> Option<Cmd> {
+        const DEBOUNCE_MS: u128 = 500;
+
         if let Some(pr) = selected {
-            if pr.comments.is_none() || pr.reviews.is_none() || pr.code_comments.is_none() {
+            let needs_fetch = pr.comments.is_none() || pr.reviews.is_none() || pr.code_comments.is_none();            let has_error = pr.comment_errors.is_some() || pr.review_errors.is_some() || pr.code_comment_errors.is_some();            if needs_fetch && !has_error {
+                let pr_number = pr.number;
+                let within_debounce = self.last_fetch_attempts
+                    .borrow()
+                    .get(&pr_number)
+                    .map(|last| last.elapsed().as_millis() < DEBOUNCE_MS)
+                    .unwrap_or(false);
+
+                if within_debounce {
+                    return None;
+                }
+
                 if let Some((owner, repo)) = data.owner_repo() {
+                    self.last_fetch_attempts.borrow_mut().insert(pr_number, Instant::now());
                     return Some(Cmd::FetchPrComments {
                         owner: owner.to_string(),
                         repo: repo.to_string(),
-                        pr_number: pr.number as u64,
+                        pr_number: pr_number as u64,
                     });
                 }
             }
@@ -359,6 +407,9 @@ mod tests {
             comments: None,
             reviews: None,
             code_comments: None,
+            comment_errors: None,
+            review_errors: None,
+            code_comment_errors: None,
         }
     }
 
@@ -425,6 +476,9 @@ mod tests {
             comments: None,
             reviews: None,
             code_comments: None,
+            comment_errors: None,
+            review_errors: None,
+            code_comment_errors: None,
         };
         let item = PullsPanelItem::default();
         let theme = Theme::default();
@@ -803,5 +857,121 @@ mod tests {
         assert!(!text.contains("Reviews"), "should not contain reviews header");
         assert!(!text.contains("Comments"), "should not contain comments header");
         assert!(!text.contains("Code Comments"), "should not contain code comments header");
+    }
+
+    #[test]
+    fn on_select_returns_none_within_debounce_window() {
+        let pr = test_pr();
+        let data = make_data(pr);
+        let item = PullsPanelItem::default();
+
+        let selected = data.items.first();
+        let cmd1 = item.on_select(selected, &data);
+        assert!(cmd1.is_some(), "first on_select should trigger fetch");
+
+        // Same PR within debounce — should be None
+        let cmd2 = item.on_select(selected, &data);
+        assert!(cmd2.is_none(), "same PR within debounce window should return None");
+    }
+
+    #[test]
+    fn on_select_different_pr_bypasses_debounce() {
+        let pr1 = PullRequest { number: 1, ..test_pr() };
+        let pr2 = PullRequest { number: 2, ..test_pr() };
+        let mut data = ListPanelData::<PullRequest>::new();
+        data.items = vec![pr1, pr2];
+        data.filtered_indices = vec![0, 1];
+        data.owner = Some("octocat".into());
+        data.repo = Some("hello-world".into());
+
+        let item = PullsPanelItem::default();
+
+        // Select PR 1
+        let selected = Some(&data.items[0]);
+        let cmd1 = item.on_select(selected, &data);
+        assert!(cmd1.is_some());
+
+        // Select PR 2 immediately — different PR, should NOT be debounced
+        let selected = Some(&data.items[1]);
+        let cmd2 = item.on_select(selected, &data);
+        assert!(cmd2.is_some(), "different PR should bypass debounce");
+    }
+
+    #[test]
+    fn detail_lines_renders_review_error() {
+        let mut pr = test_pr();
+        pr.review_errors = Some("rate limited".to_string());
+        let lines = PullsPanelItem::default().detail_lines(&pr, &Theme::default());
+        let text: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
+        let all = text.join("\n");
+        assert!(all.contains("Reviews: failed to load"), "should show review error");
+        assert!(all.contains("rate limited"), "should show error detail");
+    }
+
+    #[test]
+    fn detail_lines_renders_comment_error() {
+        let mut pr = test_pr();
+        pr.comment_errors = Some("403 forbidden".to_string());
+        let lines = PullsPanelItem::default().detail_lines(&pr, &Theme::default());
+        let text: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
+        let all = text.join("\n");
+        assert!(all.contains("Comments: failed to load"), "should show comment error");
+    }
+
+    #[test]
+    fn detail_lines_renders_code_comment_error() {
+        let mut pr = test_pr();
+        pr.code_comment_errors = Some("timeout".to_string());
+        let lines = PullsPanelItem::default().detail_lines(&pr, &Theme::default());
+        let text: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
+        let all = text.join("\n");
+        assert!(all.contains("Code Comments: failed to load"), "should show code comment error");
+    }
+
+    #[test]
+    fn detail_lines_no_errors_when_all_succeed() {
+        let mut pr = test_pr();
+        pr.reviews = Some(vec![]);
+        pr.comments = Some(vec![]);
+        pr.code_comments = Some(vec![]);
+        // error fields are None by default from test_pr()
+        let lines = PullsPanelItem::default().detail_lines(&pr, &Theme::default());
+        let text: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
+        let all = text.join("\n");
+        assert!(!all.contains("failed to load"), "should not show errors when all succeed");
+    }
+
+    #[test]
+    fn detail_lines_shows_partial_errors_with_mixed_results() {
+        let mut pr = test_pr();
+        pr.reviews = Some(vec![crate::domain::PrReview {
+            id: 1,
+            author: "r".to_string(),
+            state: "APPROVED".to_string(),
+            body: None,
+            submitted_at: String::new(),
+        }]);
+        pr.comments = Some(vec![]);
+        pr.review_errors = None;
+        pr.comment_errors = None;
+        pr.code_comment_errors = Some("500".to_string());
+        let lines = PullsPanelItem::default().detail_lines(&pr, &Theme::default());
+        let text: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
+        let all = text.join("\n");
+        assert!(all.contains("Code Comments: failed to load"), "should show code comment error");
+        assert!(!all.contains("Reviews: failed"), "should not show review error");
+    }
+
+    #[test]
+    fn on_select_does_not_retry_after_error() {
+        let mut pr = test_pr();
+        pr.review_errors = Some("403 rate limited".to_string());
+        let data = make_data(pr);
+        let item = PullsPanelItem::default();
+
+        let selected = data.items.first();
+        let cmd = item.on_select(selected, &data);
+
+        assert!(cmd.is_none(), "should not auto-retry when error already stored");
     }
 }

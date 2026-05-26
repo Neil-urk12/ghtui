@@ -23,6 +23,9 @@ pub struct PullRequest {
     pub comments: Option<Vec<PrComment>>,
     pub reviews: Option<Vec<PrReview>>,
     pub code_comments: Option<Vec<PrCodeComment>>,
+    pub comment_errors: Option<String>,
+    pub review_errors: Option<String>,
+    pub code_comment_errors: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -38,6 +41,7 @@ pub struct Issue {
     pub body: Option<String>,
 }
 #[derive(Debug, Default, Clone)]
+#[allow(dead_code)]
 pub struct PrComment {
     pub id: u64,
     pub author: String,
@@ -46,6 +50,7 @@ pub struct PrComment {
 }
 
 #[derive(Debug, Default, Clone)]
+#[allow(dead_code)]
 pub struct PrReview {
     pub id: u64,
     pub author: String,
@@ -55,6 +60,7 @@ pub struct PrReview {
 }
 
 #[derive(Debug, Default, Clone)]
+#[allow(dead_code)]
 pub struct PrCodeComment {
     pub id: u64,
     pub author: String,
