@@ -514,8 +514,8 @@ impl GitHubClient {
             .map(|f| domain::PrFile {
                 filename: f.filename,
                 status: f.status,
-                additions: safe_u32(f.additions as u64),
-                deletions: safe_u32(f.deletions as u64),
+                additions: f.additions,
+                deletions: f.deletions,
                 patch: f.patch,
                 previous_filename: f.previous_filename,
             })
