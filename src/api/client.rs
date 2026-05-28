@@ -675,9 +675,20 @@ mod tests {
         }));
         // Call with_cache — should recover and log
         client.with_cache(|_cache| {});
-        // Assert WARN level log (not ERROR — recovery succeeds)
-        assert!(logs_contain("cache mutex poisoned"), "Expected poisoned mutex log message");
-        assert!(logs_contain("WARN"), "Expected WARN level for mutex poison recovery");
-        assert!(!logs_contain("ERROR"), "Should not log at ERROR level — recovery succeeds");
+        // Assert message logged at correct level
+        logs_assert(|lines: &[&str]| {
+            let relevant: Vec<_> = lines.iter()
+                .filter(|l| l.contains("cache mutex poisoned"))
+                .collect();
+            if relevant.is_empty() {
+                Err("Expected 'cache mutex poisoned' log message".into())
+            } else if relevant.iter().any(|l| l.contains("ERROR")) {
+                Err("Should not log at ERROR level — recovery succeeds".into())
+            } else if !relevant.iter().any(|l| l.contains("WARN")) {
+                Err("Expected WARN level for mutex poison recovery".into())
+            } else {
+                Ok(())
+            }
+        });
     }
 }
