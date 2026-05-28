@@ -20,6 +20,9 @@ pub struct ThemeConfig {
     pub muted_color: String,
     pub success_color: String,
     pub error_color: String,
+    pub diff_addition_color: String,
+    pub diff_deletion_color: String,
+    pub diff_header_color: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -60,6 +63,9 @@ impl Default for ThemeConfig {
             muted_color: "gray".to_string(),
             success_color: "green".to_string(),
             error_color: "red".to_string(),
+            diff_addition_color: "green".to_string(),
+            diff_deletion_color: "red".to_string(),
+            diff_header_color: "cyan".to_string(),
         }
     }
 }

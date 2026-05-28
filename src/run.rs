@@ -237,10 +237,11 @@ fn spawn_cmd(cmd: Cmd, client: &Arc<GitHubClient>, tx: mpsc::Sender<Result<ApiPa
             pr_number,
         } => {
             tokio::spawn(async move {
-                let (comments, reviews, code_comments) = tokio::join!(
+                let (comments, reviews, code_comments, files) = tokio::join!(
                     client.get_issue_comments(&owner, &repo, pr_number),
                     client.get_reviews(&owner, &repo, pr_number),
                     client.get_review_comments(&owner, &repo, pr_number),
+                    client.get_pr_files(&owner, &repo, pr_number),
                 );
                 let _ = tx
                     .send(Ok(ApiPayload::PrComments {
@@ -248,6 +249,7 @@ fn spawn_cmd(cmd: Cmd, client: &Arc<GitHubClient>, tx: mpsc::Sender<Result<ApiPa
                         comments: comments.map_err(|e| format!("{:#}", e)),
                         reviews: reviews.map_err(|e| format!("{:#}", e)),
                         code_comments: code_comments.map_err(|e| format!("{:#}", e)),
+                        files: files.map_err(|e| format!("{:#}", e)),
                     }))
                     .await;
             });

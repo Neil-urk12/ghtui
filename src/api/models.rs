@@ -130,6 +130,16 @@ pub struct ReviewComment {
     pub created_at: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PullRequestFile {
+    pub filename: String,
+    pub status: String,
+    pub additions: u32,
+    pub deletions: u32,
+    pub patch: Option<String>,
+    pub previous_filename: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

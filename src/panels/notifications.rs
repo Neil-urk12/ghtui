@@ -137,7 +137,7 @@ impl PanelItem for NotificationsPanelItem {
 
     extract_items!(Notifications);
 
-    fn detail_title(&self) -> String {
+    fn detail_title(&self, _showing_diff: bool) -> String {
         " Detail ".to_string()
     }
 

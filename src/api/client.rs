@@ -224,6 +224,8 @@ impl GitHubClient {
                 comment_errors: None,
                 review_errors: None,
                 code_comment_errors: None,
+                files: None,
+                file_errors: None,
             })
             .collect())
     }
@@ -460,6 +462,72 @@ impl GitHubClient {
             .collect())
     }
 
+    pub async fn get_pr_files(
+        &self,
+        owner: &str,
+        repo: &str,
+        pr_number: u64,
+    ) -> Result<Vec<domain::PrFile>> {
+        let cache_key = CacheKey::PrFiles {
+            owner: owner.to_string(),
+            repo: repo.to_string(),
+            pr_number,
+        };
+        {
+            let cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(cached) = cache.get::<Vec<domain::PrFile>>(&cache_key) {
+                return Ok(cached.clone());
+            }
+        }
+
+        let mut all_models: Vec<PullRequestFile> = Vec::new();
+        let mut page = 1u32;
+        const MAX_PAGES: u32 = 100;
+        loop {
+            if page > MAX_PAGES {
+                tracing::warn!("pr files pagination exceeded {MAX_PAGES} pages for {owner}/{repo}#{pr_number}");
+                break;
+            }
+            let path = format!(
+                "/repos/{owner}/{repo}/pulls/{pr_number}/files?per_page=100&page={page}"
+            );
+            let resp = self
+                .send_and_check(self.request(Method::GET, &path))
+                .await?;
+            let has_next = resp
+                .headers()
+                .get("link")
+                .and_then(|v| v.to_str().ok())
+                .map(|v| v.contains("rel=\"next\""))
+                .unwrap_or(false);
+            let mut models: Vec<PullRequestFile> = resp.json().await?;
+            all_models.append(&mut models);
+            if has_next {
+                page += 1;
+            } else {
+                break;
+            }
+        }
+
+        let result: Vec<domain::PrFile> = all_models
+            .into_iter()
+            .map(|f| domain::PrFile {
+                filename: f.filename,
+                status: f.status,
+                additions: safe_u32(f.additions as u64),
+                deletions: safe_u32(f.deletions as u64),
+                patch: f.patch,
+                previous_filename: f.previous_filename,
+            })
+            .collect();
+
+        {
+            let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+            cache.insert(cache_key, result.clone(), Duration::from_secs(PR_COMMENTS_CACHE_TTL_SECS));
+        }
+        Ok(result)
+    }
+
     pub async fn close_pr(&self, owner: &str, repo: &str, pr_number: u64) -> Result<()> {
         let body = serde_json::json!({ "state": "closed" });
         self.patch_json(&format!("/repos/{owner}/{repo}/pulls/{pr_number}"), &body)
@@ -543,7 +611,7 @@ mod tests {
     }
 
     use wiremock::{MockServer, Mock, ResponseTemplate};
-    use wiremock::matchers::{method, path};
+    use wiremock::matchers::{method, path, query_param};
 
     async fn mock_and_client(method_match: &str, path_match: &str) -> (MockServer, GitHubClient) {
         let server = MockServer::start().await;
@@ -690,5 +758,104 @@ mod tests {
                 Ok(())
             }
         });
+    }
+
+    #[tokio::test]
+    async fn get_pr_files_returns_mapped_data() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET")).and(path("/repos/o/r/pulls/1/files"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+                {
+                    "filename": "src/main.rs",
+                    "status": "modified",
+                    "additions": 10,
+                    "deletions": 5,
+                    "patch": "@@ -1,3 +1,3 @@",
+                    "previous_filename": null
+                },
+                {
+                    "filename": "old.txt",
+                    "status": "renamed",
+                    "additions": 0,
+                    "deletions": 0,
+                    "patch": null,
+                    "previous_filename": "new.txt"
+                }
+            ])))
+            .mount(&server).await;
+        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let files = client.get_pr_files("o", "r", 1).await.unwrap();
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].filename, "src/main.rs");
+        assert_eq!(files[0].status, "modified");
+        assert_eq!(files[0].additions, 10);
+        assert_eq!(files[0].deletions, 5);
+        assert_eq!(files[0].patch.as_deref(), Some("@@ -1,3 +1,3 @@"));
+        assert!(files[0].previous_filename.is_none());
+        assert_eq!(files[1].filename, "old.txt");
+        assert_eq!(files[1].previous_filename.as_deref(), Some("new.txt"));
+    }
+
+    #[tokio::test]
+    async fn get_pr_files_cache_hit() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET")).and(path("/repos/o/r/pulls/1/files"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+                { "filename": "a.rs", "status": "added", "additions": 1, "deletions": 0, "patch": null, "previous_filename": null }
+            ])))
+            .mount(&server).await;
+        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        // First call populates cache
+        let files = client.get_pr_files("o", "r", 1).await.unwrap();
+        assert_eq!(files.len(), 1);
+        // Second call should return cached data
+        let files2 = client.get_pr_files("o", "r", 1).await.unwrap();
+        assert_eq!(files2.len(), 1);
+        assert_eq!(files2[0].filename, "a.rs");
+    }
+
+    #[tokio::test]
+    async fn get_pr_files_cache_invalidation() {
+        let (_s, client) = mock_and_client("POST", "/repos/o/r/pulls/1/reviews").await;
+        seed(&client, CacheKey::PrFiles { owner: "o".into(), repo: "r".into(), pr_number: 1 }, vec!["stale".to_string()]);
+        client.approve_pr("o", "r", 1).await.unwrap();
+        let c = client.cache.lock().unwrap();
+        assert!(c.get::<Vec<String>>(&CacheKey::PrFiles { owner: "o".into(), repo: "r".into(), pr_number: 1 }).is_none());
+    }
+
+    #[tokio::test]
+    async fn get_pr_files_paginates_when_link_header_present() {
+        let server = MockServer::start().await;
+
+        // Page 1: 2 files + Link header pointing to page 2
+        Mock::given(method("GET")).and(path("/repos/o/r/pulls/1/files")).and(query_param("page", "1"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!([
+                        { "filename": "a.rs", "status": "added", "additions": 1, "deletions": 0, "patch": null, "previous_filename": null },
+                        { "filename": "b.rs", "status": "modified", "additions": 2, "deletions": 1, "patch": "@@ -1 +1 @@", "previous_filename": null }
+                    ]))
+                    .insert_header("Link", format!(r#"<{}/repos/o/r/pulls/1/files?page=2&per_page=100>; rel="next""#, server.uri()))
+            )
+            .mount(&server).await;
+
+        // Page 2: 1 file, no Link header
+        Mock::given(method("GET")).and(path("/repos/o/r/pulls/1/files"))
+            .and(query_param("page", "2"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!([
+                        { "filename": "c.rs", "status": "deleted", "additions": 0, "deletions": 5, "patch": null, "previous_filename": null }
+                    ]))
+            )
+            .mount(&server).await;
+
+        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let files = client.get_pr_files("o", "r", 1).await.unwrap();
+
+        assert_eq!(files.len(), 3, "should return all files from both pages");
+        assert_eq!(files[0].filename, "a.rs");
+        assert_eq!(files[1].filename, "b.rs");
+        assert_eq!(files[2].filename, "c.rs");
     }
 }

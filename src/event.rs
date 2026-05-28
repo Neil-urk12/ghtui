@@ -24,6 +24,7 @@ pub enum ApiPayload {
         comments: Result<Vec<crate::domain::PrComment>, String>,
         reviews: Result<Vec<crate::domain::PrReview>, String>,
         code_comments: Result<Vec<crate::domain::PrCodeComment>, String>,
+        files: Result<Vec<crate::domain::PrFile>, String>,
     },
     Success(String),
 }

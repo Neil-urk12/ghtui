@@ -13,6 +13,9 @@ pub struct Theme {
     pub tab_active: Style,
     pub tab_inactive: Style,
     pub status_bar: Style,
+    pub diff_addition: Style,
+    pub diff_deletion: Style,
+    pub diff_header: Style,
 }
 
 impl Default for Theme {
@@ -31,6 +34,9 @@ impl Default for Theme {
                 .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
             tab_inactive: Style::default().fg(Color::Gray),
             status_bar: Style::default().fg(Color::White).bg(Color::DarkGray),
+            diff_addition: Style::default().fg(Color::Green),
+            diff_deletion: Style::default().fg(Color::Red),
+            diff_header: Style::default().fg(Color::Cyan),
         }
     }
 }
@@ -51,6 +57,9 @@ impl Theme {
                 .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
             tab_inactive: Style::default().fg(parse_color(&config.muted_color)),
             status_bar: Style::default().fg(Color::White).bg(Color::DarkGray),
+            diff_addition: Style::default().fg(parse_color(&config.diff_addition_color)),
+            diff_deletion: Style::default().fg(parse_color(&config.diff_deletion_color)),
+            diff_header: Style::default().fg(parse_color(&config.diff_header_color)),
         }
     }
 }

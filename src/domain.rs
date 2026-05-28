@@ -26,6 +26,8 @@ pub struct PullRequest {
     pub comment_errors: Option<String>,
     pub review_errors: Option<String>,
     pub code_comment_errors: Option<String>,
+    pub files: Option<Vec<PrFile>>,
+    pub file_errors: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -72,6 +74,16 @@ pub struct PrCodeComment {
     pub line: Option<u32>,
     #[allow(dead_code)]
     pub created_at: String,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct PrFile {
+    pub filename: String,
+    pub status: String,
+    pub additions: u32,
+    pub deletions: u32,
+    pub patch: Option<String>,
+    pub previous_filename: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]

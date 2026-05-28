@@ -152,6 +152,17 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
                 }
                 return Cmd::None;
             }
+            // Handle 'd' toggle for diff view (Pulls panel only)
+            if c == 'd' && app.active_panel == PanelKind::Pulls {
+                if let Some(entry) = app.panels.get_mut(&app.active_panel) {
+                    if let crate::app::PanelState::Pulls(ref panel) = entry {
+                        if panel.data.selected(&panel.selection).is_some() {
+                            entry.toggle_diff();
+                        }
+                    }
+                }
+                return Cmd::None;
+            }
             let cmd = if let Some(entry) = app.panels.get_mut(&app.active_panel) {
                 entry.handle_key(c).unwrap_or(Cmd::None)
             } else {
@@ -282,6 +293,7 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
                         comments,
                         reviews,
                         code_comments,
+                        files,
                     } = payload
                     {
                         // Destructure: Ok data stored, Err stored as error string, None keeps existing state for retry
@@ -297,15 +309,21 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
                             Ok(v) => (Some(v), None),
                             Err(e) => (None, Some(e)),
                         };
+                        let (f_ok, f_err) = match files {
+                            Ok(v) => (Some(v), None),
+                            Err(e) => (None, Some(e)),
+                        };
                         entry.update_pr_comments(
                             pr_number,
                             PrCommentUpdate {
                                 comments: c_ok,
                                 reviews: r_ok,
                                 code_comments: cc_ok,
+                                files: f_ok,
                                 comment_err: c_err,
                                 review_err: r_err,
                                 code_comment_err: cc_err,
+                                file_err: f_err,
                             },
                         );
                     } else {

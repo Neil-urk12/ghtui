@@ -20,6 +20,8 @@ pub struct PrCommentUpdate {
     pub comment_err: Option<String>,
     pub review_err: Option<String>,
     pub code_comment_err: Option<String>,
+    pub files: Option<Vec<crate::domain::PrFile>>,
+    pub file_err: Option<String>,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PanelKind {
@@ -135,6 +137,13 @@ impl PanelState {
                     pr.code_comments = None;
                     pr.code_comment_errors = Some(e);
                 }
+                if let Some(f) = update.files {
+                    pr.files = Some(f);
+                    pr.file_errors = None;
+                } else if let Some(e) = update.file_err {
+                    pr.files = None;
+                    pr.file_errors = Some(e);
+                }
             }
         }
         self.set_loading(false);
@@ -197,6 +206,13 @@ impl PanelState {
             PanelState::Issues(p) => p.selected_display(),
             PanelState::Notifications(p) => p.selected_display(),
             PanelState::Actions(p) => p.selected_display(),
+        }
+    }
+
+    pub fn toggle_diff(&mut self) {
+        match self {
+            PanelState::Pulls(p) => p.detail_pane.toggle_diff(),
+            _ => {}
         }
     }
 }

@@ -252,8 +252,14 @@ pub trait PanelItem: std::fmt::Debug + Default {
     }
 
     /// Detail pane title.  Default `" Details "`.
-    fn detail_title(&self) -> String {
+    fn detail_title(&self, showing_diff: bool) -> String {
+        let _ = showing_diff;
         " Details ".into()
+    }
+
+    /// Build diff lines for the selected item. Default returns empty vec.
+    fn diff_lines(&self, _item: &Self::Item, _theme: &Theme) -> Vec<Line<'static>> {
+        vec![]
     }
 
     /// Wrap full (block wraps entire area, split inside). Default `true`.
@@ -393,7 +399,11 @@ impl<T: PanelItem + 'static> ListPanel<T> {
 
         let mut detail_lines: Vec<Line<'static>> = Vec::new();
         if let Some(item) = self.data.selected(&self.selection) {
-            detail_lines = self.item.detail_lines(item, theme);
+            if self.detail_pane.showing_diff {
+                detail_lines = self.item.diff_lines(item, theme);
+            } else {
+                detail_lines = self.item.detail_lines(item, theme);
+            }
         }
 
         let config = ListViewConfig {
@@ -404,7 +414,7 @@ impl<T: PanelItem + 'static> ListPanel<T> {
             wrap_full: self.item.wrap_full(),
             loading: self.data.loading,
             empty_state: self.item.empty_state(&self.data),
-            detail_title: self.item.detail_title(),
+            detail_title: self.item.detail_title(self.detail_pane.showing_diff),
             highlight_symbol: self.item.highlight_symbol(),
             detail_empty_state: self.item.detail_empty_state(),
         };

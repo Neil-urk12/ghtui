@@ -209,7 +209,7 @@ impl PanelItem for IssuesPanelItem {
         (60, 40)
     }
 
-    fn detail_title(&self) -> String {
+    fn detail_title(&self, _showing_diff: bool) -> String {
         " Issue Details ".to_string()
     }
 

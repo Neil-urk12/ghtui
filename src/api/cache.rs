@@ -35,6 +35,11 @@ pub enum CacheKey {
         repo: String,
         pr_number: u64,
     },
+    PrFiles {
+        owner: String,
+        repo: String,
+        pr_number: u64,
+    },
 }
 
 struct CacheEntry {
@@ -84,6 +89,7 @@ impl Cache {
         self.invalidate(&CacheKey::PrComments { owner: owner.to_string(), repo: repo.to_string(), pr_number });
         self.invalidate(&CacheKey::PrReviews { owner: owner.to_string(), repo: repo.to_string(), pr_number });
         self.invalidate(&CacheKey::PrCodeComments { owner: owner.to_string(), repo: repo.to_string(), pr_number });
+        self.invalidate(&CacheKey::PrFiles { owner: owner.to_string(), repo: repo.to_string(), pr_number });
     }
 
     pub fn invalidate_actions(&mut self, owner: &str, repo: &str) {

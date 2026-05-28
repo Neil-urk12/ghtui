@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use ratatui::prelude::*;
+use ratatui::style::Color;
 use ratatui::widgets::{Cell, Row};
 
 use super::panel::{ListPanelData, PanelItem, SelectionState};
@@ -13,6 +14,117 @@ use crate::util::format;
 use crate::widgets::empty_state::EmptyState;
 use crate::widgets::list_view::LeftContent;
 
+/// Parse unified diff patch text into styled lines with line numbers.
+/// Colors: `+` addition, `-` deletion, `@@` header, context default.
+fn parse_diff_patch(patch: &str, theme: &Theme) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    let mut old_line: u32 = 0;
+    let mut new_line: u32 = 0;
+
+    for raw in patch.lines() {
+        if raw.starts_with("@@") {
+            if let Some((old, new)) = parse_hunk_header(raw) {
+                old_line = old;
+                new_line = new;
+            }
+            lines.push(Line::from(Span::styled(
+                raw.to_string(),
+                theme.diff_header,
+            )));
+        } else if raw.starts_with('+') {
+            let prefix = format!("{:>4} | ", new_line);
+            new_line += 1;
+            lines.push(Line::from(vec![
+                Span::styled(prefix, theme.muted),
+                Span::styled(raw.to_string(), theme.diff_addition),
+            ]));
+        } else if raw.starts_with('-') {
+            let prefix = format!("{:>4} | ", old_line);
+            old_line += 1;
+            lines.push(Line::from(vec![
+                Span::styled(prefix, theme.muted),
+                Span::styled(raw.to_string(), theme.diff_deletion),
+            ]));
+        } else if raw.starts_with('\\') {
+            lines.push(Line::from(Span::styled(raw.to_string(), theme.muted)));
+        } else {
+            let prefix = format!("{:>4} | ", new_line);
+            if !raw.is_empty() {
+                old_line += 1;
+                new_line += 1;
+            }
+            lines.push(Line::from(vec![
+                Span::styled(prefix, theme.muted),
+                Span::raw(raw.to_string()),
+            ]));
+        }
+    }
+
+    lines
+}
+
+/// Parse @@ -old_start,count +new_start,count @@ header.
+/// Returns (old_start, new_start) line numbers.
+fn parse_hunk_header(line: &str) -> Option<(u32, u32)> {
+    let parts: Vec<&str> = line.split_whitespace().collect();
+    if parts.len() < 3 {
+        return None;
+    }
+    let old = parts[1].strip_prefix('-').unwrap_or(parts[1]);
+    let new = parts[2].strip_prefix('+').unwrap_or(parts[2]);
+    let old_start = old.split(',').next()?.parse::<u32>().ok()?;
+    let new_start = new.split(',').next()?.parse::<u32>().ok()?;
+    Some((old_start, new_start))
+}
+
+fn pr_to_diff(pr: &PullRequest, theme: &Theme) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+
+    if let Some(files) = &pr.files {
+        for (i, file) in files.iter().enumerate() {
+            let header = if file.status == "renamed" {
+                if let Some(old_name) = &file.previous_filename {
+                    format!("{} → {}  (+{} -{})  {}", old_name, file.filename, file.additions, file.deletions, file.status)
+                } else {
+                    format!("{}  (+{} -{})  {}", file.filename, file.additions, file.deletions, file.status)
+                }
+            } else {
+                format!("{}  (+{} -{})  {}", file.filename, file.additions, file.deletions, file.status)
+            };
+            lines.push(Line::from(Span::styled(
+                header,
+                Style::default().add_modifier(Modifier::BOLD),
+            )));
+            lines.push(Line::from(""));
+
+            if let Some(patch) = &file.patch {
+                lines.extend(parse_diff_patch(patch, theme));
+            } else {
+                lines.push(Line::from(Span::styled(
+                    "(diff too large — view on GitHub)",
+                    theme.muted,
+                )));
+            }
+
+            if i + 1 < files.len() {
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled(
+                    "─".repeat(60),
+                    theme.muted,
+                )));
+                lines.push(Line::from(""));
+            }
+        }
+
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "d:overview | o:browser | j/k:scroll",
+            theme.muted,
+        )));
+    }
+
+    lines
+}
 fn pr_to_row(pr: &PullRequest, theme: &Theme) -> Row<'static> {
     let status_str = if pr.state == "closed" {
         "closed"
@@ -150,7 +262,7 @@ fn pr_to_detail(pr: &PullRequest, theme: &Theme) -> Vec<Line<'static>> {
 
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        "1:open 2:closed 3:all | o:browser | c:checkout | a:approve | m:merge | x:close | X:reopen",
+        "1:open 2:closed 3:all | o:browser | d:diff | c:checkout | a:approve | m:merge | x:close | X:reopen",
         theme.muted,
     )));
 
@@ -211,6 +323,12 @@ impl PanelItem for PullsPanelItem {
         pr_to_detail(item, theme)
     }
 
+    fn diff_lines(&self, item: &Self::Item, theme: &Theme) -> Vec<Line<'static>> {
+        match &item.files {
+            Some(files) if !files.is_empty() => pr_to_diff(item, theme),
+            _ => vec![],
+        }
+    }
     fn handle_key(
         &mut self,
         key: char,
@@ -328,7 +446,7 @@ impl PanelItem for PullsPanelItem {
 
         if let Some(pr) = selected {
             let needs_fetch =
-                pr.comments.is_none() || pr.reviews.is_none() || pr.code_comments.is_none();
+                pr.comments.is_none() || pr.reviews.is_none() || pr.code_comments.is_none() || pr.files.is_none();
             if needs_fetch {
                 let pr_number = pr.number;
                 let within_debounce = self
@@ -391,8 +509,12 @@ impl PanelItem for PullsPanelItem {
         (60, 40)
     }
 
-    fn detail_title(&self) -> String {
-        " PR Details ".to_string()
+    fn detail_title(&self, showing_diff: bool) -> String {
+        if showing_diff {
+            " PR Diff ".to_string()
+        } else {
+            " PR Details ".to_string()
+        }
     }
 
     fn detail_empty_state(&self) -> EmptyState {
@@ -449,6 +571,8 @@ mod tests {
             comment_errors: None,
             review_errors: None,
             code_comment_errors: None,
+            files: None,
+            file_errors: None,
         }
     }
 
@@ -526,6 +650,8 @@ mod tests {
             comment_errors: None,
             review_errors: None,
             code_comment_errors: None,
+            files: None,
+            file_errors: None,
         };
         let item = PullsPanelItem::default();
         let theme = Theme::default();
@@ -743,7 +869,7 @@ mod tests {
             .join("\n");
 
         assert!(
-            text.contains("1:open 2:closed 3:all | o:browser | c:checkout | a:approve | m:merge"),
+            text.contains("1:open 2:closed 3:all | o:browser | d:diff | c:checkout | a:approve | m:merge"),
             "footer should contain self-documenting key hints, got: {text}"
         );
     }
@@ -1180,5 +1306,175 @@ mod tests {
         // Second call — immediate, within debounce window
         let cmd = item.on_select(selected, &data);
         assert!(cmd.is_none(), "should debounce rapid retry");
+    }
+
+    // --- diff rendering ---
+
+    #[test]
+    fn parse_diff_patch_basic_hunk() {
+        let theme = Theme::default();
+        let patch = "@@ -1,3 +1,4 @@\n line1\n+new line\n line2\n line3";
+        let lines = parse_diff_patch(patch, &theme);
+        // 1 hunk header + 4 content lines = 5
+        assert_eq!(lines.len(), 5);
+    }
+
+    #[test]
+    fn parse_diff_patch_line_numbering() {
+        let theme = Theme::default();
+        let patch = "@@ -10,3 +10,4 @@\n context\n+added\n removed";
+        let lines = parse_diff_patch(patch, &theme);
+        // context line should show line 10
+        let context_text = lines[1].to_string();
+        assert!(context_text.contains("10"), "context line should show line 10, got: {context_text}");
+        // added line should show line 11
+        let added_text = lines[2].to_string();
+        assert!(added_text.contains("11"), "added line should show line 11, got: {added_text}");
+    }
+
+    #[test]
+    fn parse_hunk_header_parses_line_numbers() {
+        assert_eq!(parse_hunk_header("@@ -5,10 +20,15 @@"), Some((5, 20)));
+        assert_eq!(parse_hunk_header("@@ -1 +1 @@"), Some((1, 1)));
+        assert_eq!(parse_hunk_header("invalid"), None);
+    }
+
+    // --- diff_lines integration tests ---
+
+    #[test]
+    fn diff_lines_returns_styled_content_when_files_loaded() {
+        let pr = PullRequest {
+            files: Some(vec![crate::domain::PrFile {
+                filename: "src/main.rs".into(),
+                status: "modified".into(),
+                additions: 5,
+                deletions: 2,
+                patch: Some("@@ -1,3 +1,4 @@\n line1\n+added".into()),
+                previous_filename: None,
+            }]),
+            ..test_pr()
+        };
+        let item = PullsPanelItem::default();
+        let theme = Theme::default();
+
+        let lines = item.diff_lines(&pr, &theme);
+
+        assert!(!lines.is_empty(), "should return non-empty content");
+        let text: String = lines.iter().map(|l| l.to_string()).collect::<Vec<_>>().join("\n");
+        assert!(text.contains("src/main.rs"), "should contain file header");
+    }
+
+    #[test]
+    fn diff_lines_returns_empty_when_files_none() {
+        let pr = PullRequest {
+            files: None,
+            ..test_pr()
+        };
+        let item = PullsPanelItem::default();
+        let theme = Theme::default();
+
+        let lines = item.diff_lines(&pr, &theme);
+
+        assert!(lines.is_empty(), "should return empty vec when files is None");
+    }
+
+    #[test]
+    fn detail_title_returns_pr_diff_when_showing_diff_true() {
+        let item = PullsPanelItem::default();
+
+        assert_eq!(item.detail_title(true), " PR Diff ");
+        assert_eq!(item.detail_title(false), " PR Details ");
+    }
+
+    #[test]
+    fn large_patch_placeholder_renders_when_patch_none() {
+        let pr = PullRequest {
+            files: Some(vec![crate::domain::PrFile {
+                filename: "huge_file.rs".into(),
+                status: "modified".into(),
+                additions: 100,
+                deletions: 50,
+                patch: None,
+                previous_filename: None,
+            }]),
+            ..test_pr()
+        };
+        let item = PullsPanelItem::default();
+        let theme = Theme::default();
+
+        let lines = item.diff_lines(&pr, &theme);
+        let text: String = lines.iter().map(|l| l.to_string()).collect::<Vec<_>>().join("\n");
+
+        assert!(
+            text.contains("diff too large"),
+            "should contain large patch placeholder, got: {text}"
+        );
+    }
+
+    #[test]
+    fn renamed_file_shows_old_to_new_in_header() {
+        let pr = PullRequest {
+            files: Some(vec![crate::domain::PrFile {
+                filename: "new.rs".into(),
+                status: "renamed".into(),
+                additions: 0,
+                deletions: 0,
+                patch: None,
+                previous_filename: Some("old.rs".into()),
+            }]),
+            ..test_pr()
+        };
+        let item = PullsPanelItem::default();
+        let theme = Theme::default();
+
+        let lines = item.diff_lines(&pr, &theme);
+        let text: String = lines.iter().map(|l| l.to_string()).collect::<Vec<_>>().join("\n");
+
+        assert!(
+            text.contains("old.rs") && text.contains("new.rs"),
+            "should contain old and new filenames, got: {text}"
+        );
+    }
+
+    #[test]
+    fn detail_footer_contains_diff_hint() {
+        let pr = test_pr();
+        let item = PullsPanelItem::default();
+        let theme = Theme::default();
+
+        let lines = item.detail_lines(&pr, &theme);
+        let text: String = lines
+            .iter()
+            .map(|l| l.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(
+            text.contains("d:diff"),
+            "footer should contain d:diff hint, got: {text}"
+        );
+    }
+
+    #[test]
+    fn parse_diff_patch_no_newline_marker_preserves_line_numbers() {
+        let theme = Theme::default();
+        let patch = "@@ -1,3 +1,3 @@\n line1\n line2\n\\ No newline at end of file\n line3";
+        let lines = parse_diff_patch(patch, &theme);
+        assert_eq!(lines.len(), 5);
+        let line3_text = lines[4].to_string();
+        assert!(line3_text.contains("3"), "line3 should show line 3, got: {line3_text}");
+        assert!(!line3_text.contains("4"), "line3 should NOT show line 4, got: {line3_text}");
+    }
+
+    #[test]
+    fn parse_diff_patch_no_newline_marker_does_not_count_as_content() {
+        let theme = Theme::default();
+        let patch = "@@ -1,2 +1,2 @@\n+added\n\\ No newline at end of file\n-removed";
+        let lines = parse_diff_patch(patch, &theme);
+        // hunk header + added + marker + removed = 4
+        assert_eq!(lines.len(), 4);
+        // removed line should show line 1 (old_line), not line 2
+        let removed_text = lines[3].to_string();
+        assert!(removed_text.contains("1"), "removed should show old line 1, got: {removed_text}");
     }
 }
