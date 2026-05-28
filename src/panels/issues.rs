@@ -128,6 +128,9 @@ impl PanelItem for IssuesPanelItem {
     ) -> Option<Cmd> {
         match key {
             '1' => {
+                if self.state_filter == FilterState::Open {
+                    return None;
+                }
                 self.state_filter = FilterState::Open;
                 if let Some((owner, repo)) = data.owner_repo() {
                     Some(Cmd::FetchIssues {
@@ -140,6 +143,9 @@ impl PanelItem for IssuesPanelItem {
                 }
             }
             '2' => {
+                if self.state_filter == FilterState::Closed {
+                    return None;
+                }
                 self.state_filter = FilterState::Closed;
                 if let Some((owner, repo)) = data.owner_repo() {
                     Some(Cmd::FetchIssues {
@@ -152,6 +158,9 @@ impl PanelItem for IssuesPanelItem {
                 }
             }
             '3' => {
+                if self.state_filter == FilterState::All {
+                    return None;
+                }
                 self.state_filter = FilterState::All;
                 if let Some((owner, repo)) = data.owner_repo() {
                     Some(Cmd::FetchIssues {
@@ -302,11 +311,18 @@ mod tests {
     }
 
     #[test]
-    fn handle_key_1_fetches_open_issues() {
+    fn handle_key_1_noop_when_already_open() {
         let mut panel = IssuesPanelItem::default();
         let mut data = ListPanelData::<Issue>::new();
         data.set_repo("owner".into(), "repo".into());
 
+        // Default is Open, pressing '1' again is a no-op
+        let cmd = panel.handle_key('1', None, &data);
+        assert!(cmd.is_none());
+        assert_eq!(panel.state_filter, FilterState::Open);
+
+        // Switch to Closed, then pressing '1' fetches open
+        panel.handle_key('2', None, &data);
         let cmd = panel.handle_key('1', None, &data);
         assert!(matches!(cmd, Some(Cmd::FetchIssues { state, .. }) if state.as_str() == "open"));
         assert_eq!(panel.state_filter, FilterState::Open);

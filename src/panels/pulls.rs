@@ -337,6 +337,9 @@ impl PanelItem for PullsPanelItem {
     ) -> Option<Cmd> {
         match key {
             '1' => {
+                if self.state_filter == FilterState::Open {
+                    return None;
+                }
                 self.state_filter = FilterState::Open;
                 if let Some((owner, repo)) = data.owner_repo() {
                     Some(Cmd::FetchPulls {
@@ -349,6 +352,9 @@ impl PanelItem for PullsPanelItem {
                 }
             }
             '2' => {
+                if self.state_filter == FilterState::Closed {
+                    return None;
+                }
                 self.state_filter = FilterState::Closed;
                 if let Some((owner, repo)) = data.owner_repo() {
                     Some(Cmd::FetchPulls {
@@ -361,6 +367,9 @@ impl PanelItem for PullsPanelItem {
                 }
             }
             '3' => {
+                if self.state_filter == FilterState::All {
+                    return None;
+                }
                 self.state_filter = FilterState::All;
                 if let Some((owner, repo)) = data.owner_repo() {
                     Some(Cmd::FetchPulls {
@@ -744,13 +753,23 @@ mod tests {
     }
 
     #[test]
-    fn handle_key_filter_1_with_repo_returns_fetch_cmd() {
+    fn handle_key_filter_1_with_repo_returns_none_when_already_open() {
         let pr = test_pr();
         let data = make_data(pr);
         let mut item = PullsPanelItem::default();
 
+        // Default is Open, pressing '1' again is a no-op
         let cmd = item.handle_key('1', None, &data);
+        assert_eq!(item.state_filter, FilterState::Open);
+        assert!(cmd.is_none());
 
+        // Pressing '2' switches to Closed
+        let cmd = item.handle_key('2', None, &data);
+        assert_eq!(item.state_filter, FilterState::Closed);
+        assert!(cmd.is_some());
+
+        // Pressing '1' now switches back to Open and fetches
+        let cmd = item.handle_key('1', None, &data);
         assert_eq!(item.state_filter, FilterState::Open);
         assert!(matches!(
             cmd.unwrap(),
