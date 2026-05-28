@@ -68,7 +68,7 @@ impl GitHubClient {
         self.with_cache(|cache| cache.invalidate_pr_related(owner, repo, pr_number));
     }
 
-    pub fn invalidate_cache(&self, key: &CacheKey) {
+    pub(crate) fn invalidate_cache(&self, key: &CacheKey) {
         self.with_cache(|cache| cache.invalidate(key));
     }
 
@@ -556,11 +556,15 @@ mod tests {
         (server, client)
     }
 
+    fn seed<T: Send + Sync + 'static>(client: &GitHubClient, key: CacheKey, val: T) {
+        let mut c = client.cache.lock().unwrap();
+        c.insert(key, val, Duration::from_secs(60));
+    }
+
     #[tokio::test]
     async fn approve_pr_invalidates_pr_caches() {
         let (_s, client) = mock_and_client("POST", "/repos/o/r/pulls/1/reviews").await;
-        { let mut c = client.cache.lock().unwrap();
-          c.insert(CacheKey::Pulls { owner: "o".into(), repo: "r".into(), state: "open".into() }, vec!["stale".to_string()], Duration::from_secs(60)); }
+        seed(&client, CacheKey::Pulls { owner: "o".into(), repo: "r".into(), state: "open".into() }, vec!["stale".to_string()]);
         client.approve_pr("o", "r", 1).await.unwrap();
         let c = client.cache.lock().unwrap();
         assert!(c.get::<Vec<String>>(&CacheKey::Pulls { owner: "o".into(), repo: "r".into(), state: "open".into() }).is_none());
@@ -569,8 +573,7 @@ mod tests {
     #[tokio::test]
     async fn merge_pr_invalidates_pr_caches() {
         let (_s, client) = mock_and_client("PUT", "/repos/o/r/pulls/1/merge").await;
-        { let mut c = client.cache.lock().unwrap();
-          c.insert(CacheKey::PrComments { owner: "o".into(), repo: "r".into(), pr_number: 1 }, "stale".to_string(), Duration::from_secs(60)); }
+        seed(&client, CacheKey::PrComments { owner: "o".into(), repo: "r".into(), pr_number: 1 }, "stale".to_string());
         client.merge_pr("o", "r", 1).await.unwrap();
         let c = client.cache.lock().unwrap();
         assert!(c.get::<String>(&CacheKey::PrComments { owner: "o".into(), repo: "r".into(), pr_number: 1 }).is_none());
@@ -579,8 +582,7 @@ mod tests {
     #[tokio::test]
     async fn close_pr_invalidates_pr_caches() {
         let (_s, client) = mock_and_client("PATCH", "/repos/o/r/pulls/1").await;
-        { let mut c = client.cache.lock().unwrap();
-          c.insert(CacheKey::Pulls { owner: "o".into(), repo: "r".into(), state: "closed".into() }, vec!["stale".to_string()], Duration::from_secs(60)); }
+        seed(&client, CacheKey::Pulls { owner: "o".into(), repo: "r".into(), state: "closed".into() }, vec!["stale".to_string()]);
         client.close_pr("o", "r", 1).await.unwrap();
         let c = client.cache.lock().unwrap();
         assert!(c.get::<Vec<String>>(&CacheKey::Pulls { owner: "o".into(), repo: "r".into(), state: "closed".into() }).is_none());
@@ -589,8 +591,7 @@ mod tests {
     #[tokio::test]
     async fn reopen_pr_invalidates_pr_caches() {
         let (_s, client) = mock_and_client("PATCH", "/repos/o/r/pulls/1").await;
-        { let mut c = client.cache.lock().unwrap();
-          c.insert(CacheKey::PrReviews { owner: "o".into(), repo: "r".into(), pr_number: 1 }, "stale".to_string(), Duration::from_secs(60)); }
+        seed(&client, CacheKey::PrReviews { owner: "o".into(), repo: "r".into(), pr_number: 1 }, "stale".to_string());
         client.reopen_pr("o", "r", 1).await.unwrap();
         let c = client.cache.lock().unwrap();
         assert!(c.get::<String>(&CacheKey::PrReviews { owner: "o".into(), repo: "r".into(), pr_number: 1 }).is_none());
@@ -599,8 +600,7 @@ mod tests {
     #[tokio::test]
     async fn mark_notification_read_invalidates_notifications() {
         let (_s, client) = mock_and_client("PATCH", "/notifications/threads/abc").await;
-        { let mut c = client.cache.lock().unwrap();
-          c.insert(CacheKey::Notifications, vec!["stale".to_string()], Duration::from_secs(60)); }
+        seed(&client, CacheKey::Notifications, vec!["stale".to_string()]);
         client.mark_notification_read("abc").await.unwrap();
         let c = client.cache.lock().unwrap();
         assert!(c.get::<Vec<String>>(&CacheKey::Notifications).is_none());
@@ -609,8 +609,7 @@ mod tests {
     #[tokio::test]
     async fn mark_all_notifications_read_invalidates_notifications() {
         let (_s, client) = mock_and_client("POST", "/notifications").await;
-        { let mut c = client.cache.lock().unwrap();
-          c.insert(CacheKey::Notifications, vec!["stale".to_string()], Duration::from_secs(60)); }
+        seed(&client, CacheKey::Notifications, vec!["stale".to_string()]);
         client.mark_all_notifications_read().await.unwrap();
         let c = client.cache.lock().unwrap();
         assert!(c.get::<Vec<String>>(&CacheKey::Notifications).is_none());
@@ -619,8 +618,7 @@ mod tests {
     #[tokio::test]
     async fn rerun_workflow_invalidates_actions() {
         let (_s, client) = mock_and_client("POST", "/repos/o/r/actions/runs/99/rerun").await;
-        { let mut c = client.cache.lock().unwrap();
-          c.insert(CacheKey::Actions { owner: "o".into(), repo: "r".into() }, vec!["stale".to_string()], Duration::from_secs(60)); }
+        seed(&client, CacheKey::Actions { owner: "o".into(), repo: "r".into() }, vec!["stale".to_string()]);
         client.rerun_workflow("o", "r", 99).await.unwrap();
         let c = client.cache.lock().unwrap();
         assert!(c.get::<Vec<String>>(&CacheKey::Actions { owner: "o".into(), repo: "r".into() }).is_none());
@@ -629,8 +627,7 @@ mod tests {
     #[tokio::test]
     async fn cancel_workflow_invalidates_actions() {
         let (_s, client) = mock_and_client("POST", "/repos/o/r/actions/runs/99/cancel").await;
-        { let mut c = client.cache.lock().unwrap();
-          c.insert(CacheKey::Actions { owner: "o".into(), repo: "r".into() }, vec!["stale".to_string()], Duration::from_secs(60)); }
+        seed(&client, CacheKey::Actions { owner: "o".into(), repo: "r".into() }, vec!["stale".to_string()]);
         client.cancel_workflow("o", "r", 99).await.unwrap();
         let c = client.cache.lock().unwrap();
         assert!(c.get::<Vec<String>>(&CacheKey::Actions { owner: "o".into(), repo: "r".into() }).is_none());
@@ -643,8 +640,7 @@ mod tests {
             .respond_with(ResponseTemplate::new(500).set_body_string("server error"))
             .mount(&server).await;
         let client = GitHubClient::new_for_test("tok".into(), server.uri());
-        { let mut c = client.cache.lock().unwrap();
-          c.insert(CacheKey::Pulls { owner: "o".into(), repo: "r".into(), state: "open".into() }, vec!["stale".to_string()], Duration::from_secs(60)); }
+        seed(&client, CacheKey::Pulls { owner: "o".into(), repo: "r".into(), state: "open".into() }, vec!["stale".to_string()]);
         let result = client.approve_pr("o", "r", 1).await;
         assert!(result.is_err());
         // Cache should still have the stale data
@@ -666,5 +662,22 @@ mod tests {
         // Should work - double slash would cause path mismatch
         let result = client.get_pulls("o", "r", "open").await;
         assert!(result.is_ok());
+    }
+
+    #[test]
+    #[tracing_test::traced_test]
+    fn poisoned_mutex_logs_warn_level() {
+        let client = GitHubClient::new_for_test("tok".into(), "http://localhost".into());
+        // Poison the mutex
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = client.cache.lock().unwrap();
+            panic!("intentional poison");
+        }));
+        // Call with_cache — should recover and log
+        client.with_cache(|_cache| {});
+        // Assert WARN level log (not ERROR — recovery succeeds)
+        assert!(logs_contain("cache mutex poisoned"), "Expected poisoned mutex log message");
+        assert!(logs_contain("WARN"), "Expected WARN level for mutex poison recovery");
+        assert!(!logs_contain("ERROR"), "Should not log at ERROR level — recovery succeeds");
     }
 }
