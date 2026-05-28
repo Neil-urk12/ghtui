@@ -289,6 +289,11 @@ pub trait PanelItem: std::fmt::Debug + Default {
         EmptyState::new("Select an item").hint("j/k to navigate")
     }
 
+    /// Empty state for diff view when files aren't loaded.
+    fn diff_empty_state(&self) -> EmptyState {
+        EmptyState::new("No diff available").hint("Press Enter to load files")
+    }
+
     /// Filter items in data based on search query. Default: no-op.
     /// Override in concrete panels to filter by searchable fields.
     fn apply_filter(
@@ -416,7 +421,11 @@ impl<T: PanelItem + 'static> ListPanel<T> {
             empty_state: self.item.empty_state(&self.data),
             detail_title: self.item.detail_title(self.detail_pane.showing_diff),
             highlight_symbol: self.item.highlight_symbol(),
-            detail_empty_state: self.item.detail_empty_state(),
+            detail_empty_state: if self.detail_pane.showing_diff {
+                self.item.diff_empty_state()
+            } else {
+                self.item.detail_empty_state()
+            },
         };
 
         render_list_view(
@@ -812,5 +821,12 @@ mod tests {
         let data: ListPanelData<Repo> = ListPanelData::new();
         let es = data.repo_aware_empty_state("No pulls found", " ", "Hint");
         assert_eq!(es.message, "Select a repository first");
+    }
+
+    #[test]
+    fn panel_item_default_diff_empty_state() {
+        let item = DummyItem;
+        let diff_es = item.diff_empty_state();
+        assert_eq!(diff_es.message, "No diff available");
     }
 }

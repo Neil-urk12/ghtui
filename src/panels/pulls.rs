@@ -523,6 +523,12 @@ impl PanelItem for PullsPanelItem {
             .hint("j/k to navigate")
     }
 
+    fn diff_empty_state(&self) -> EmptyState {
+        EmptyState::new("No diff loaded")
+            .icon(" ")
+            .hint("Press Enter to fetch PR files, then 'd' for diff")
+    }
+
     fn apply_filter(
         &self,
         data: &mut ListPanelData<Self::Item>,
@@ -1476,5 +1482,13 @@ mod tests {
         // removed line should show line 1 (old_line), not line 2
         let removed_text = lines[3].to_string();
         assert!(removed_text.contains("1"), "removed should show old line 1, got: {removed_text}");
+    }
+
+    #[test]
+    fn diff_empty_state_is_distinct_from_detail_empty_state() {
+        let item = PullsPanelItem::default();
+        let detail_es = item.detail_empty_state();
+        let diff_es = item.diff_empty_state();
+        assert_ne!(diff_es.message, detail_es.message, "diff empty state should differ from detail empty state");
     }
 }
