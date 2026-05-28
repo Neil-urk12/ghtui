@@ -3,6 +3,7 @@ use ratatui::widgets::{ListState, TableState};
 
 use crate::cmd::Cmd;
 use crate::event::ApiPayload;
+use crate::domain::FilterState;
 use crate::theme::Theme;
 use crate::widgets::detail_pane::DetailPane;
 use crate::widgets::empty_state::EmptyState;
@@ -313,6 +314,24 @@ pub trait PanelItem: std::fmt::Debug + Default {
         _data: &ListPanelData<Self::Item>,
     ) -> Option<crate::cmd::Cmd> {
         None
+    }
+}
+
+/// Shared behavior for panels that filter by state (Open/Closed/All).
+pub trait StateFilterable {
+    /// Returns a reference to the current filter state.
+    fn filter_state(&self) -> &FilterState;
+
+    /// Returns a mutable reference to the filter state field.
+    fn filter_state_mut(&mut self) -> &mut FilterState;
+
+    /// Sets the filter to `new`. Returns `true` if it changed, `false` if already set.
+    fn set_filter(&mut self, new: FilterState) -> bool {
+        if *self.filter_state() == new {
+            return false;
+        }
+        *self.filter_state_mut() = new;
+        true
     }
 }
 

@@ -6,7 +6,7 @@ use ratatui::prelude::*;
 use ratatui::style::Color;
 use ratatui::widgets::{Cell, Row};
 
-use super::panel::{ListPanelData, PanelItem, SelectionState};
+use super::panel::{ListPanelData, PanelItem, SelectionState, StateFilterable};
 use crate::cmd::Cmd;
 use crate::domain::{FilterState, PullRequest};
 use crate::theme::Theme;
@@ -292,13 +292,6 @@ impl PullsPanelItem {
         }
     }
 
-    fn set_filter(&mut self, new: FilterState) -> bool {
-        if self.state_filter == new {
-            return false;
-        }
-        self.state_filter = new;
-        true
-    }
 
     fn fetch_pulls_cmd(
         &self,
@@ -310,6 +303,16 @@ impl PullsPanelItem {
             repo: repo.to_string(),
             state: self.state_filter.as_str().to_string(),
         })
+    }
+}
+
+impl StateFilterable for PullsPanelItem {
+    fn filter_state(&self) -> &FilterState {
+        &self.state_filter
+    }
+
+    fn filter_state_mut(&mut self) -> &mut FilterState {
+        &mut self.state_filter
     }
 }
 
@@ -357,19 +360,19 @@ impl PanelItem for PullsPanelItem {
     ) -> Option<Cmd> {
         match key {
             '1' => {
-                self.set_filter(FilterState::Open)
-                    .then(|| self.fetch_pulls_cmd(data))
-                    .flatten()
+                StateFilterable::set_filter(self, FilterState::Open)
+                    .then_some(())
+                    .and_then(|_| self.fetch_pulls_cmd(data))
             }
             '2' => {
-                self.set_filter(FilterState::Closed)
-                    .then(|| self.fetch_pulls_cmd(data))
-                    .flatten()
+                StateFilterable::set_filter(self, FilterState::Closed)
+                    .then_some(())
+                    .and_then(|_| self.fetch_pulls_cmd(data))
             }
             '3' => {
-                self.set_filter(FilterState::All)
-                    .then(|| self.fetch_pulls_cmd(data))
-                    .flatten()
+                StateFilterable::set_filter(self, FilterState::All)
+                    .then_some(())
+                    .and_then(|_| self.fetch_pulls_cmd(data))
             }
             'o' => {
                 if let Some(pr) = selected {
@@ -1561,5 +1564,21 @@ mod tests {
         let detail_es = item.detail_empty_state();
         let diff_es = item.diff_empty_state();
         assert_ne!(diff_es.message, detail_es.message, "diff empty state should differ from detail empty state");
+    }
+
+    #[test]
+    fn implements_state_filterable_trait() {
+        use crate::panels::panel::StateFilterable;
+
+        let mut item = PullsPanelItem::default();
+        assert_eq!(*item.filter_state(), FilterState::Open);
+
+        let changed = item.set_filter(FilterState::Closed);
+        assert!(changed);
+        assert_eq!(*item.filter_state(), FilterState::Closed);
+
+        // No-op when same filter
+        let changed = item.set_filter(FilterState::Closed);
+        assert!(!changed);
     }
 }
