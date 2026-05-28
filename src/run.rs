@@ -8,7 +8,6 @@ use ratatui::DefaultTerminal;
 use tokio::sync::mpsc;
 use tokio::time;
 
-use crate::api::cache::CacheKey;
 use crate::api::client::GitHubClient;
 use crate::app::{App, AppState};
 use crate::cmd::Cmd;
@@ -19,37 +18,6 @@ use crate::view::view;
 const TICK_INTERVAL_MS: u64 = 250;
 const CHANNEL_BUFFER_SIZE: usize = 128;
 
-fn pull_cache_keys(owner: &str, repo: &str) -> Vec<CacheKey> {
-    ["open", "closed", "all"]
-        .iter()
-        .map(|state| CacheKey::Pulls {
-            owner: owner.to_string(),
-            repo: repo.to_string(),
-            state: state.to_string(),
-        })
-        .collect()
-}
-
-fn invalidate_pr_caches(client: &GitHubClient, owner: &str, repo: &str, pr_number: u64) {
-    for key in pull_cache_keys(owner, repo) {
-        client.invalidate_cache(&key);
-    }
-    client.invalidate_cache(&CacheKey::PrComments {
-        owner: owner.to_string(),
-        repo: repo.to_string(),
-        pr_number,
-    });
-    client.invalidate_cache(&CacheKey::PrReviews {
-        owner: owner.to_string(),
-        repo: repo.to_string(),
-        pr_number,
-    });
-    client.invalidate_cache(&CacheKey::PrCodeComments {
-        owner: owner.to_string(),
-        repo: repo.to_string(),
-        pr_number,
-    });
-}
 pub async fn run(app: &mut App, terminal: &mut DefaultTerminal) -> Result<()> {
     tracing::debug!("entering run loop");
     let mut event_stream = EventStream::new();
@@ -174,6 +142,24 @@ fn spawn_cmd(cmd: Cmd, client: &Arc<GitHubClient>, tx: mpsc::Sender<Result<ApiPa
                 let _ = tx.send(result).await;
             });
         }
+        Cmd::MarkNotificationRead { id } => {
+            tokio::spawn(async move {
+                let result = client.mark_notification_read(&id).await;
+                let _ = tx
+                    .send(result.map(|_| {
+                        ApiPayload::Success(format!("Notification {} marked as read", id))
+                    }))
+                    .await;
+            });
+        }
+        Cmd::MarkAllNotificationsRead => {
+            tokio::spawn(async move {
+                let result = client.mark_all_notifications_read().await;
+                let _ = tx
+                    .send(result.map(|_| ApiPayload::Success("All notifications marked as read".into())))
+                    .await;
+            });
+        }
         Cmd::FetchActions { owner, repo } => {
             tokio::spawn(async move {
                 let result = client
@@ -183,32 +169,6 @@ fn spawn_cmd(cmd: Cmd, client: &Arc<GitHubClient>, tx: mpsc::Sender<Result<ApiPa
                 let _ = tx.send(result).await;
             });
         }
-        Cmd::MarkNotificationRead { id } => {
-            tokio::spawn(async move {
-                let result = client.mark_notification_read(&id).await;
-                if result.is_ok() {
-                    client.invalidate_cache(&CacheKey::Notifications);
-                }
-                let _ = tx
-                    .send(result.map(|_| ApiPayload::Success("Notification marked as read".into())))
-                    .await;
-            });
-        }
-        Cmd::MarkAllNotificationsRead => {
-            tokio::spawn(async move {
-                let result = client.mark_all_notifications_read().await;
-                if result.is_ok() {
-                    client.invalidate_cache(&CacheKey::Notifications);
-                }
-                let _ = tx
-                    .send(
-                        result.map(|_| {
-                            ApiPayload::Success("All notifications marked as read".into())
-                        }),
-                    )
-                    .await;
-            });
-        }
         Cmd::ApprovePr {
             owner,
             repo,
@@ -216,9 +176,6 @@ fn spawn_cmd(cmd: Cmd, client: &Arc<GitHubClient>, tx: mpsc::Sender<Result<ApiPa
         } => {
             tokio::spawn(async move {
                 let result = client.approve_pr(&owner, &repo, pr_number).await;
-                if result.is_ok() {
-                    invalidate_pr_caches(&client, &owner, &repo, pr_number);
-                }
                 let _ = tx
                     .send(
                         result.map(|_| ApiPayload::Success(format!("PR #{} approved", pr_number))),
@@ -233,9 +190,6 @@ fn spawn_cmd(cmd: Cmd, client: &Arc<GitHubClient>, tx: mpsc::Sender<Result<ApiPa
         } => {
             tokio::spawn(async move {
                 let result = client.merge_pr(&owner, &repo, pr_number).await;
-                if result.is_ok() {
-                    invalidate_pr_caches(&client, &owner, &repo, pr_number);
-                }
                 let _ = tx
                     .send(result.map(|_| ApiPayload::Success(format!("PR #{} merged", pr_number))))
                     .await;
@@ -248,12 +202,6 @@ fn spawn_cmd(cmd: Cmd, client: &Arc<GitHubClient>, tx: mpsc::Sender<Result<ApiPa
         } => {
             tokio::spawn(async move {
                 let result = client.rerun_workflow(&owner, &repo, run_id).await;
-                if result.is_ok() {
-                    client.invalidate_cache(&CacheKey::Actions {
-                        owner: owner.clone(),
-                        repo: repo.clone(),
-                    });
-                }
                 let _ = tx
                     .send(result.map(|_| {
                         ApiPayload::Success(format!("Workflow #{} rerun triggered", run_id))
@@ -268,15 +216,8 @@ fn spawn_cmd(cmd: Cmd, client: &Arc<GitHubClient>, tx: mpsc::Sender<Result<ApiPa
         } => {
             tokio::spawn(async move {
                 let result = client.cancel_workflow(&owner, &repo, run_id).await;
-                if result.is_ok() {
-                    client.invalidate_cache(&CacheKey::Actions {
-                        owner: owner.clone(),
-                        repo: repo.clone(),
-                    });
-                }
                 let _ = tx
-                    .send(
-                        result.map(|_| {
+                    .send(result.map(|_| {
                             ApiPayload::Success(format!("Workflow #{} cancelled", run_id))
                         }),
                     )
@@ -318,9 +259,6 @@ fn spawn_cmd(cmd: Cmd, client: &Arc<GitHubClient>, tx: mpsc::Sender<Result<ApiPa
         } => {
             tokio::spawn(async move {
                 let result = client.close_pr(&owner, &repo, pr_number).await;
-                if result.is_ok() {
-                    invalidate_pr_caches(&client, &owner, &repo, pr_number);
-                }
                 let _ = tx
                     .send(result.map(|_| ApiPayload::Success(format!("PR #{} closed", pr_number))))
                     .await;
@@ -333,9 +271,6 @@ fn spawn_cmd(cmd: Cmd, client: &Arc<GitHubClient>, tx: mpsc::Sender<Result<ApiPa
         } => {
             tokio::spawn(async move {
                 let result = client.reopen_pr(&owner, &repo, pr_number).await;
-                if result.is_ok() {
-                    invalidate_pr_caches(&client, &owner, &repo, pr_number);
-                }
                 let _ = tx
                     .send(
                         result.map(|_| ApiPayload::Success(format!("PR #{} reopened", pr_number))),

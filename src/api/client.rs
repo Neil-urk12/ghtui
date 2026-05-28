@@ -20,6 +20,7 @@ const PR_COMMENTS_CACHE_TTL_SECS: u64 = 60;
 pub struct GitHubClient {
     http: Client,
     token: String,
+    base_url: String,
     cache: Mutex<Cache>,
     pub rate_remaining: Mutex<Option<u32>>,
     pub rate_reset: Mutex<Option<Instant>>,
@@ -30,16 +31,45 @@ impl GitHubClient {
         Self {
             http: Client::new(),
             token,
+            base_url: BASE_URL.to_string(),
             cache: Mutex::new(Cache::new()),
             rate_remaining: Mutex::new(None),
             rate_reset: Mutex::new(None),
         }
     }
 
-    pub fn invalidate_cache(&self, key: &CacheKey) {
-        if let Ok(mut cache) = self.cache.lock() {
-            cache.invalidate(key);
+    #[cfg(test)]
+    pub(crate) fn new_for_test(token: String, base_url: String) -> Self {
+        Self {
+            http: Client::new(),
+            token,
+            base_url,
+            cache: Mutex::new(Cache::new()),
+            rate_remaining: Mutex::new(None),
+            rate_reset: Mutex::new(None),
         }
+    }
+
+    fn with_cache(&self, f: impl FnOnce(&mut Cache)) {
+        match self.cache.lock() {
+            Ok(mut cache) => f(&mut cache),
+            Err(poisoned) => {
+                tracing::warn!("cache mutex poisoned, recovering");
+                f(&mut poisoned.into_inner())
+            }
+        }
+    }
+
+    fn invalidate_action_caches(&self, owner: &str, repo: &str) {
+        self.with_cache(|cache| cache.invalidate_actions(owner, repo));
+    }
+
+    fn invalidate_pr_caches(&self, owner: &str, repo: &str, pr_number: u64) {
+        self.with_cache(|cache| cache.invalidate_pr_related(owner, repo, pr_number));
+    }
+
+    pub fn invalidate_cache(&self, key: &CacheKey) {
+        self.with_cache(|cache| cache.invalidate(key));
     }
 
     pub fn rate_info(&self) -> (Option<u32>, Option<Instant>) {
@@ -83,10 +113,15 @@ impl GitHubClient {
     ) -> Result<T> {
         // Check cache first
         if let Some(ref key) = cache_key {
-            if let Ok(cache) = self.cache.lock() {
-                if let Some(cached) = cache.get::<T>(key) {
-                    return Ok(cached.clone());
-                }
+            let hit: Option<T> = {
+                let mut result = None;
+                self.with_cache(|cache| {
+                    result = cache.get::<T>(key).cloned();
+                });
+                result
+            };
+            if let Some(cached) = hit {
+                return Ok(cached);
             }
         }
 
@@ -96,9 +131,9 @@ impl GitHubClient {
 
         // Store in cache
         if let Some(key) = cache_key {
-            if let Ok(mut cache) = self.cache.lock() {
+            self.with_cache(|cache| {
                 cache.insert(key, data.clone(), cache_ttl);
-            }
+            });
         }
 
         Ok(data)
@@ -285,12 +320,15 @@ impl GitHubClient {
     }
 
     pub async fn mark_notification_read(&self, id: &str) -> Result<()> {
-        self.patch_empty(&format!("/notifications/threads/{id}"))
-            .await
+        self.patch_empty(&format!("/notifications/threads/{id}")).await?;
+        self.invalidate_cache(&CacheKey::Notifications);
+        Ok(())
     }
 
     pub async fn mark_all_notifications_read(&self) -> Result<()> {
-        self.post_empty("/notifications").await
+        self.post_empty("/notifications").await?;
+        self.invalidate_cache(&CacheKey::Notifications);
+        Ok(())
     }
 
     pub async fn approve_pr(&self, owner: &str, repo: &str, pr_number: u64) -> Result<()> {
@@ -299,26 +337,34 @@ impl GitHubClient {
             &format!("/repos/{owner}/{repo}/pulls/{pr_number}/reviews"),
             &body,
         )
-        .await
+        .await?;
+        self.invalidate_pr_caches(owner, repo, pr_number);
+        Ok(())
     }
 
     pub async fn merge_pr(&self, owner: &str, repo: &str, pr_number: u64) -> Result<()> {
         self.put_empty(&format!("/repos/{owner}/{repo}/pulls/{pr_number}/merge"))
-            .await
+            .await?;
+        self.invalidate_pr_caches(owner, repo, pr_number);
+        Ok(())
     }
 
     pub async fn rerun_workflow(&self, owner: &str, repo: &str, run_id: u64) -> Result<()> {
         self.post_empty(&format!(
             "/repos/{owner}/{repo}/actions/runs/{run_id}/rerun"
         ))
-        .await
+        .await?;
+        self.invalidate_action_caches(owner, repo);
+        Ok(())
     }
 
     pub async fn cancel_workflow(&self, owner: &str, repo: &str, run_id: u64) -> Result<()> {
         self.post_empty(&format!(
             "/repos/{owner}/{repo}/actions/runs/{run_id}/cancel"
         ))
-        .await
+        .await?;
+        self.invalidate_action_caches(owner, repo);
+        Ok(())
     }
 
     pub async fn get_issue_comments(
@@ -417,13 +463,17 @@ impl GitHubClient {
     pub async fn close_pr(&self, owner: &str, repo: &str, pr_number: u64) -> Result<()> {
         let body = serde_json::json!({ "state": "closed" });
         self.patch_json(&format!("/repos/{owner}/{repo}/pulls/{pr_number}"), &body)
-            .await
+            .await?;
+        self.invalidate_pr_caches(owner, repo, pr_number);
+        Ok(())
     }
 
     pub async fn reopen_pr(&self, owner: &str, repo: &str, pr_number: u64) -> Result<()> {
         let body = serde_json::json!({ "state": "open" });
         self.patch_json(&format!("/repos/{owner}/{repo}/pulls/{pr_number}"), &body)
-            .await
+            .await?;
+        self.invalidate_pr_caches(owner, repo, pr_number);
+        Ok(())
     }
 
     async fn put_empty(&self, path: &str) -> Result<()> {
@@ -432,7 +482,7 @@ impl GitHubClient {
     }
 
     fn request(&self, method: Method, path: &str) -> reqwest::RequestBuilder {
-        let url = format!("{BASE_URL}{path}");
+        let url = format!("{}{}", self.base_url.trim_end_matches('/'), path);
         self.http
             .request(method, &url)
             .bearer_auth(&self.token)
@@ -490,5 +540,131 @@ mod tests {
     #[test]
     fn safe_u32_large_overflow() {
         assert_eq!(safe_u32(u64::MAX), u32::MAX);
+    }
+
+    use wiremock::{MockServer, Mock, ResponseTemplate};
+    use wiremock::matchers::{method, path};
+
+    async fn mock_and_client(method_match: &str, path_match: &str) -> (MockServer, GitHubClient) {
+        let server = MockServer::start().await;
+        Mock::given(method(method_match))
+            .and(path(path_match))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+            .mount(&server)
+            .await;
+        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        (server, client)
+    }
+
+    #[tokio::test]
+    async fn approve_pr_invalidates_pr_caches() {
+        let (_s, client) = mock_and_client("POST", "/repos/o/r/pulls/1/reviews").await;
+        { let mut c = client.cache.lock().unwrap();
+          c.insert(CacheKey::Pulls { owner: "o".into(), repo: "r".into(), state: "open".into() }, vec!["stale".to_string()], Duration::from_secs(60)); }
+        client.approve_pr("o", "r", 1).await.unwrap();
+        let c = client.cache.lock().unwrap();
+        assert!(c.get::<Vec<String>>(&CacheKey::Pulls { owner: "o".into(), repo: "r".into(), state: "open".into() }).is_none());
+    }
+
+    #[tokio::test]
+    async fn merge_pr_invalidates_pr_caches() {
+        let (_s, client) = mock_and_client("PUT", "/repos/o/r/pulls/1/merge").await;
+        { let mut c = client.cache.lock().unwrap();
+          c.insert(CacheKey::PrComments { owner: "o".into(), repo: "r".into(), pr_number: 1 }, "stale".to_string(), Duration::from_secs(60)); }
+        client.merge_pr("o", "r", 1).await.unwrap();
+        let c = client.cache.lock().unwrap();
+        assert!(c.get::<String>(&CacheKey::PrComments { owner: "o".into(), repo: "r".into(), pr_number: 1 }).is_none());
+    }
+
+    #[tokio::test]
+    async fn close_pr_invalidates_pr_caches() {
+        let (_s, client) = mock_and_client("PATCH", "/repos/o/r/pulls/1").await;
+        { let mut c = client.cache.lock().unwrap();
+          c.insert(CacheKey::Pulls { owner: "o".into(), repo: "r".into(), state: "closed".into() }, vec!["stale".to_string()], Duration::from_secs(60)); }
+        client.close_pr("o", "r", 1).await.unwrap();
+        let c = client.cache.lock().unwrap();
+        assert!(c.get::<Vec<String>>(&CacheKey::Pulls { owner: "o".into(), repo: "r".into(), state: "closed".into() }).is_none());
+    }
+
+    #[tokio::test]
+    async fn reopen_pr_invalidates_pr_caches() {
+        let (_s, client) = mock_and_client("PATCH", "/repos/o/r/pulls/1").await;
+        { let mut c = client.cache.lock().unwrap();
+          c.insert(CacheKey::PrReviews { owner: "o".into(), repo: "r".into(), pr_number: 1 }, "stale".to_string(), Duration::from_secs(60)); }
+        client.reopen_pr("o", "r", 1).await.unwrap();
+        let c = client.cache.lock().unwrap();
+        assert!(c.get::<String>(&CacheKey::PrReviews { owner: "o".into(), repo: "r".into(), pr_number: 1 }).is_none());
+    }
+
+    #[tokio::test]
+    async fn mark_notification_read_invalidates_notifications() {
+        let (_s, client) = mock_and_client("PATCH", "/notifications/threads/abc").await;
+        { let mut c = client.cache.lock().unwrap();
+          c.insert(CacheKey::Notifications, vec!["stale".to_string()], Duration::from_secs(60)); }
+        client.mark_notification_read("abc").await.unwrap();
+        let c = client.cache.lock().unwrap();
+        assert!(c.get::<Vec<String>>(&CacheKey::Notifications).is_none());
+    }
+
+    #[tokio::test]
+    async fn mark_all_notifications_read_invalidates_notifications() {
+        let (_s, client) = mock_and_client("POST", "/notifications").await;
+        { let mut c = client.cache.lock().unwrap();
+          c.insert(CacheKey::Notifications, vec!["stale".to_string()], Duration::from_secs(60)); }
+        client.mark_all_notifications_read().await.unwrap();
+        let c = client.cache.lock().unwrap();
+        assert!(c.get::<Vec<String>>(&CacheKey::Notifications).is_none());
+    }
+
+    #[tokio::test]
+    async fn rerun_workflow_invalidates_actions() {
+        let (_s, client) = mock_and_client("POST", "/repos/o/r/actions/runs/99/rerun").await;
+        { let mut c = client.cache.lock().unwrap();
+          c.insert(CacheKey::Actions { owner: "o".into(), repo: "r".into() }, vec!["stale".to_string()], Duration::from_secs(60)); }
+        client.rerun_workflow("o", "r", 99).await.unwrap();
+        let c = client.cache.lock().unwrap();
+        assert!(c.get::<Vec<String>>(&CacheKey::Actions { owner: "o".into(), repo: "r".into() }).is_none());
+    }
+
+    #[tokio::test]
+    async fn cancel_workflow_invalidates_actions() {
+        let (_s, client) = mock_and_client("POST", "/repos/o/r/actions/runs/99/cancel").await;
+        { let mut c = client.cache.lock().unwrap();
+          c.insert(CacheKey::Actions { owner: "o".into(), repo: "r".into() }, vec!["stale".to_string()], Duration::from_secs(60)); }
+        client.cancel_workflow("o", "r", 99).await.unwrap();
+        let c = client.cache.lock().unwrap();
+        assert!(c.get::<Vec<String>>(&CacheKey::Actions { owner: "o".into(), repo: "r".into() }).is_none());
+    }
+
+    #[tokio::test]
+    async fn approve_pr_preserves_cache_on_failure() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST")).and(path("/repos/o/r/pulls/1/reviews"))
+            .respond_with(ResponseTemplate::new(500).set_body_string("server error"))
+            .mount(&server).await;
+        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        { let mut c = client.cache.lock().unwrap();
+          c.insert(CacheKey::Pulls { owner: "o".into(), repo: "r".into(), state: "open".into() }, vec!["stale".to_string()], Duration::from_secs(60)); }
+        let result = client.approve_pr("o", "r", 1).await;
+        assert!(result.is_err());
+        // Cache should still have the stale data
+        let c = client.cache.lock().unwrap();
+        assert!(c.get::<Vec<String>>(&CacheKey::Pulls { owner: "o".into(), repo: "r".into(), state: "open".into() }).is_some());
+    }
+
+    #[tokio::test]
+    async fn base_url_trailing_slash_produces_correct_url() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET")).and(path("/repos/o/r/pulls"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
+            .mount(&server).await;
+        
+        // Client with trailing slash on base_url
+        let base_url = format!("{}/", server.uri());
+        let client = GitHubClient::new_for_test("tok".into(), base_url);
+        
+        // Should work - double slash would cause path mismatch
+        let result = client.get_pulls("o", "r", "open").await;
+        assert!(result.is_ok());
     }
 }

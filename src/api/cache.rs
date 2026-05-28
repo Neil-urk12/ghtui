@@ -76,6 +76,19 @@ impl Cache {
     pub fn invalidate(&mut self, key: &CacheKey) {
         self.entries.remove(key);
     }
+
+    pub fn invalidate_pr_related(&mut self, owner: &str, repo: &str, pr_number: u64) {
+        for state in ["open", "closed", "all"] {
+            self.invalidate(&CacheKey::Pulls { owner: owner.to_string(), repo: repo.to_string(), state: state.to_string() });
+        }
+        self.invalidate(&CacheKey::PrComments { owner: owner.to_string(), repo: repo.to_string(), pr_number });
+        self.invalidate(&CacheKey::PrReviews { owner: owner.to_string(), repo: repo.to_string(), pr_number });
+        self.invalidate(&CacheKey::PrCodeComments { owner: owner.to_string(), repo: repo.to_string(), pr_number });
+    }
+
+    pub fn invalidate_actions(&mut self, owner: &str, repo: &str) {
+        self.invalidate(&CacheKey::Actions { owner: owner.to_string(), repo: repo.to_string() });
+    }
 }
 
 #[cfg(test)]
@@ -213,5 +226,51 @@ mod tests {
         let data = vec!["a".to_string(), "b".to_string()];
         cache.insert(key.clone(), data.clone(), Duration::from_secs(60));
         assert_eq!(cache.get::<Vec<String>>(&key), Some(&data));
+    }
+
+    #[test]
+    fn invalidate_pr_related_removes_all_pr_caches() {
+        let mut cache = Cache::new();
+        let ttl = Duration::from_secs(60);
+
+        cache.insert(CacheKey::Pulls { owner: "octocat".into(), repo: "hello-world".into(), state: "open".into() }, "open".to_string(), ttl);
+        cache.insert(CacheKey::Pulls { owner: "octocat".into(), repo: "hello-world".into(), state: "closed".into() }, "closed".to_string(), ttl);
+        cache.insert(CacheKey::Pulls { owner: "octocat".into(), repo: "hello-world".into(), state: "all".into() }, "all".to_string(), ttl);
+        cache.insert(CacheKey::PrComments { owner: "octocat".into(), repo: "hello-world".into(), pr_number: 42 }, "comments".to_string(), ttl);
+        cache.insert(CacheKey::PrReviews { owner: "octocat".into(), repo: "hello-world".into(), pr_number: 42 }, "reviews".to_string(), ttl);
+        cache.insert(CacheKey::PrCodeComments { owner: "octocat".into(), repo: "hello-world".into(), pr_number: 42 }, "code_comments".to_string(), ttl);
+
+        cache.invalidate_pr_related("octocat", "hello-world", 42);
+
+        assert!(cache.get::<String>(&CacheKey::Pulls { owner: "octocat".into(), repo: "hello-world".into(), state: "open".into() }).is_none());
+        assert!(cache.get::<String>(&CacheKey::Pulls { owner: "octocat".into(), repo: "hello-world".into(), state: "closed".into() }).is_none());
+        assert!(cache.get::<String>(&CacheKey::Pulls { owner: "octocat".into(), repo: "hello-world".into(), state: "all".into() }).is_none());
+        assert!(cache.get::<String>(&CacheKey::PrComments { owner: "octocat".into(), repo: "hello-world".into(), pr_number: 42 }).is_none());
+        assert!(cache.get::<String>(&CacheKey::PrReviews { owner: "octocat".into(), repo: "hello-world".into(), pr_number: 42 }).is_none());
+        assert!(cache.get::<String>(&CacheKey::PrCodeComments { owner: "octocat".into(), repo: "hello-world".into(), pr_number: 42 }).is_none());
+    }
+
+    #[test]
+    fn invalidate_pr_related_does_not_touch_other_repos() {
+        let mut cache = Cache::new();
+        let ttl = Duration::from_secs(60);
+
+        cache.insert(CacheKey::Pulls { owner: "other".into(), repo: "repo".into(), state: "open".into() }, "other_data".to_string(), ttl);
+
+        cache.invalidate_pr_related("octocat", "hello-world", 1);
+
+        assert_eq!(cache.get::<String>(&CacheKey::Pulls { owner: "other".into(), repo: "repo".into(), state: "open".into() }), Some(&"other_data".to_string()));
+    }
+
+    #[test]
+    fn invalidate_actions_removes_actions_cache() {
+        let mut cache = Cache::new();
+        let ttl = Duration::from_secs(60);
+
+        cache.insert(CacheKey::Actions { owner: "octocat".into(), repo: "hello-world".into() }, "actions_data".to_string(), ttl);
+
+        cache.invalidate_actions("octocat", "hello-world");
+
+        assert!(cache.get::<String>(&CacheKey::Actions { owner: "octocat".into(), repo: "hello-world".into() }).is_none());
     }
 }
