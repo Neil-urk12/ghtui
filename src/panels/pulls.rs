@@ -291,6 +291,26 @@ impl PullsPanelItem {
             last_fetch_attempts: RefCell::new(HashMap::new()),
         }
     }
+
+    fn set_filter(&mut self, new: FilterState) -> bool {
+        if self.state_filter == new {
+            return false;
+        }
+        self.state_filter = new;
+        true
+    }
+
+    fn fetch_pulls_cmd(
+        &self,
+        data: &ListPanelData<PullRequest>,
+    ) -> Option<Cmd> {
+        let (owner, repo) = data.owner_repo()?;
+        Some(Cmd::FetchPulls {
+            owner: owner.to_string(),
+            repo: repo.to_string(),
+            state: self.state_filter.as_str().to_string(),
+        })
+    }
 }
 
 impl PanelItem for PullsPanelItem {
@@ -337,49 +357,19 @@ impl PanelItem for PullsPanelItem {
     ) -> Option<Cmd> {
         match key {
             '1' => {
-                if self.state_filter == FilterState::Open {
-                    return None;
-                }
-                self.state_filter = FilterState::Open;
-                if let Some((owner, repo)) = data.owner_repo() {
-                    Some(Cmd::FetchPulls {
-                        owner: owner.to_string(),
-                        repo: repo.to_string(),
-                        state: self.state_filter.as_str().to_string(),
-                    })
-                } else {
-                    None
-                }
+                self.set_filter(FilterState::Open)
+                    .then(|| self.fetch_pulls_cmd(data))
+                    .flatten()
             }
             '2' => {
-                if self.state_filter == FilterState::Closed {
-                    return None;
-                }
-                self.state_filter = FilterState::Closed;
-                if let Some((owner, repo)) = data.owner_repo() {
-                    Some(Cmd::FetchPulls {
-                        owner: owner.to_string(),
-                        repo: repo.to_string(),
-                        state: self.state_filter.as_str().to_string(),
-                    })
-                } else {
-                    None
-                }
+                self.set_filter(FilterState::Closed)
+                    .then(|| self.fetch_pulls_cmd(data))
+                    .flatten()
             }
             '3' => {
-                if self.state_filter == FilterState::All {
-                    return None;
-                }
-                self.state_filter = FilterState::All;
-                if let Some((owner, repo)) = data.owner_repo() {
-                    Some(Cmd::FetchPulls {
-                        owner: owner.to_string(),
-                        repo: repo.to_string(),
-                        state: self.state_filter.as_str().to_string(),
-                    })
-                } else {
-                    None
-                }
+                self.set_filter(FilterState::All)
+                    .then(|| self.fetch_pulls_cmd(data))
+                    .flatten()
             }
             'o' => {
                 if let Some(pr) = selected {
@@ -775,6 +765,68 @@ mod tests {
             cmd.unwrap(),
             Cmd::FetchPulls { owner, repo, state }
                 if owner == "octocat" && repo == "hello-world" && state == "open"
+        ));
+    }
+
+    #[test]
+    fn handle_key_filter_2_noop_when_already_closed() {
+        let pr = test_pr();
+        let data = make_data(pr);
+        let mut item = PullsPanelItem::default();
+
+        // Switch to Closed first
+        let cmd = item.handle_key('2', None, &data);
+        assert_eq!(item.state_filter, FilterState::Closed);
+        assert!(cmd.is_some());
+
+        // Pressing '2' again is a no-op
+        let cmd = item.handle_key('2', None, &data);
+        assert_eq!(item.state_filter, FilterState::Closed);
+        assert!(cmd.is_none());
+
+        // Switch to All
+        let cmd = item.handle_key('3', None, &data);
+        assert_eq!(item.state_filter, FilterState::All);
+        assert!(cmd.is_some());
+
+        // Pressing '2' switches back to Closed and fetches
+        let cmd = item.handle_key('2', None, &data);
+        assert_eq!(item.state_filter, FilterState::Closed);
+        assert!(matches!(
+            cmd.unwrap(),
+            Cmd::FetchPulls { owner, repo, state }
+                if owner == "octocat" && repo == "hello-world" && state == "closed"
+        ));
+    }
+
+    #[test]
+    fn handle_key_filter_3_noop_when_already_all() {
+        let pr = test_pr();
+        let data = make_data(pr);
+        let mut item = PullsPanelItem::default();
+
+        // Switch to All first
+        let cmd = item.handle_key('3', None, &data);
+        assert_eq!(item.state_filter, FilterState::All);
+        assert!(cmd.is_some());
+
+        // Pressing '3' again is a no-op
+        let cmd = item.handle_key('3', None, &data);
+        assert_eq!(item.state_filter, FilterState::All);
+        assert!(cmd.is_none());
+
+        // Switch to Open
+        let cmd = item.handle_key('1', None, &data);
+        assert_eq!(item.state_filter, FilterState::Open);
+        assert!(cmd.is_some());
+
+        // Pressing '3' switches back to All and fetches
+        let cmd = item.handle_key('3', None, &data);
+        assert_eq!(item.state_filter, FilterState::All);
+        assert!(matches!(
+            cmd.unwrap(),
+            Cmd::FetchPulls { owner, repo, state }
+                if owner == "octocat" && repo == "hello-world" && state == "all"
         ));
     }
 

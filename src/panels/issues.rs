@@ -100,6 +100,28 @@ pub struct IssuesPanelItem {
     pub state_filter: FilterState,
 }
 
+impl IssuesPanelItem {
+    fn set_filter(&mut self, new: FilterState) -> bool {
+        if self.state_filter == new {
+            return false;
+        }
+        self.state_filter = new;
+        true
+    }
+
+    fn fetch_issues_cmd(
+        &self,
+        data: &ListPanelData<Issue>,
+    ) -> Option<Cmd> {
+        let (owner, repo) = data.owner_repo()?;
+        Some(Cmd::FetchIssues {
+            owner: owner.to_string(),
+            repo: repo.to_string(),
+            state: self.state_filter.as_str().to_string(),
+        })
+    }
+}
+
 impl PanelItem for IssuesPanelItem {
     type Item = Issue;
 
@@ -128,49 +150,19 @@ impl PanelItem for IssuesPanelItem {
     ) -> Option<Cmd> {
         match key {
             '1' => {
-                if self.state_filter == FilterState::Open {
-                    return None;
-                }
-                self.state_filter = FilterState::Open;
-                if let Some((owner, repo)) = data.owner_repo() {
-                    Some(Cmd::FetchIssues {
-                        owner: owner.to_string(),
-                        repo: repo.to_string(),
-                        state: self.state_filter.as_str().to_string(),
-                    })
-                } else {
-                    None
-                }
+                self.set_filter(FilterState::Open)
+                    .then(|| self.fetch_issues_cmd(data))
+                    .flatten()
             }
             '2' => {
-                if self.state_filter == FilterState::Closed {
-                    return None;
-                }
-                self.state_filter = FilterState::Closed;
-                if let Some((owner, repo)) = data.owner_repo() {
-                    Some(Cmd::FetchIssues {
-                        owner: owner.to_string(),
-                        repo: repo.to_string(),
-                        state: self.state_filter.as_str().to_string(),
-                    })
-                } else {
-                    None
-                }
+                self.set_filter(FilterState::Closed)
+                    .then(|| self.fetch_issues_cmd(data))
+                    .flatten()
             }
             '3' => {
-                if self.state_filter == FilterState::All {
-                    return None;
-                }
-                self.state_filter = FilterState::All;
-                if let Some((owner, repo)) = data.owner_repo() {
-                    Some(Cmd::FetchIssues {
-                        owner: owner.to_string(),
-                        repo: repo.to_string(),
-                        state: self.state_filter.as_str().to_string(),
-                    })
-                } else {
-                    None
-                }
+                self.set_filter(FilterState::All)
+                    .then(|| self.fetch_issues_cmd(data))
+                    .flatten()
             }
             'o' => {
                 if let Some(issue) = selected {
@@ -326,6 +318,44 @@ mod tests {
         let cmd = panel.handle_key('1', None, &data);
         assert!(matches!(cmd, Some(Cmd::FetchIssues { state, .. }) if state.as_str() == "open"));
         assert_eq!(panel.state_filter, FilterState::Open);
+    }
+
+    #[test]
+    fn handle_key_2_noop_when_already_closed() {
+        let mut panel = IssuesPanelItem::default();
+        let mut data = ListPanelData::<Issue>::new();
+        data.set_repo("owner".into(), "repo".into());
+
+        // Switch to Closed, then pressing '2' again is a no-op
+        panel.handle_key('2', None, &data);
+        let cmd = panel.handle_key('2', None, &data);
+        assert!(cmd.is_none());
+        assert_eq!(panel.state_filter, FilterState::Closed);
+
+        // Switch to All, then pressing '2' fetches closed
+        panel.handle_key('3', None, &data);
+        let cmd = panel.handle_key('2', None, &data);
+        assert!(matches!(cmd, Some(Cmd::FetchIssues { state, .. }) if state.as_str() == "closed"));
+        assert_eq!(panel.state_filter, FilterState::Closed);
+    }
+
+    #[test]
+    fn handle_key_3_noop_when_already_all() {
+        let mut panel = IssuesPanelItem::default();
+        let mut data = ListPanelData::<Issue>::new();
+        data.set_repo("owner".into(), "repo".into());
+
+        // Switch to All, then pressing '3' again is a no-op
+        panel.handle_key('3', None, &data);
+        let cmd = panel.handle_key('3', None, &data);
+        assert!(cmd.is_none());
+        assert_eq!(panel.state_filter, FilterState::All);
+
+        // Switch to Open, then pressing '3' fetches all
+        panel.handle_key('1', None, &data);
+        let cmd = panel.handle_key('3', None, &data);
+        assert!(matches!(cmd, Some(Cmd::FetchIssues { state, .. }) if state.as_str() == "all"));
+        assert_eq!(panel.state_filter, FilterState::All);
     }
 
     #[test]
