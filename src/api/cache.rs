@@ -101,6 +101,7 @@ impl Cache {
 mod tests {
     use super::*;
     use std::time::Duration;
+    use crate::constants::TEST_CACHE_TTL;
 
     #[test]
     fn insert_and_get() {
@@ -110,7 +111,7 @@ mod tests {
             repo: "r".into(),
             pr_number: 1,
         };
-        cache.insert(key.clone(), "hello".to_string(), Duration::from_secs(60));
+        cache.insert(key.clone(), "hello".to_string(), TEST_CACHE_TTL);
         let val = cache.get::<String>(&key);
         assert_eq!(val, Some(&"hello".to_string()));
     }
@@ -134,7 +135,7 @@ mod tests {
             repo: "r".into(),
             pr_number: 1,
         };
-        cache.insert(key.clone(), "data".to_string(), Duration::from_secs(60));
+        cache.insert(key.clone(), "data".to_string(), TEST_CACHE_TTL);
         cache.invalidate(&key);
         assert!(cache.get::<String>(&key).is_none());
     }
@@ -183,9 +184,9 @@ mod tests {
             pr_number: 1,
         };
 
-        cache.insert(comments_key.clone(), "comments".to_string(), Duration::from_secs(60));
-        cache.insert(reviews_key.clone(), "reviews".to_string(), Duration::from_secs(60));
-        cache.insert(code_comments_key.clone(), "code_comments".to_string(), Duration::from_secs(60));
+        cache.insert(comments_key.clone(), "comments".to_string(), TEST_CACHE_TTL);
+        cache.insert(reviews_key.clone(), "reviews".to_string(), TEST_CACHE_TTL);
+        cache.insert(code_comments_key.clone(), "code_comments".to_string(), TEST_CACHE_TTL);
 
         cache.invalidate(&comments_key);
 
@@ -202,8 +203,8 @@ mod tests {
             repo: "r".into(),
             pr_number: 1,
         };
-        cache.insert(key.clone(), "first".to_string(), Duration::from_secs(60));
-        cache.insert(key.clone(), "second".to_string(), Duration::from_secs(60));
+        cache.insert(key.clone(), "first".to_string(), TEST_CACHE_TTL);
+        cache.insert(key.clone(), "second".to_string(), TEST_CACHE_TTL);
         assert_eq!(cache.get::<String>(&key), Some(&"second".to_string()));
     }
 
@@ -215,7 +216,7 @@ mod tests {
             repo: "r".into(),
             pr_number: 1,
         };
-        cache.insert(key.clone(), "hello".to_string(), Duration::from_secs(60));
+        cache.insert(key.clone(), "hello".to_string(), TEST_CACHE_TTL);
         assert!(cache.get::<Vec<u8>>(&key).is_none());
         // Entry still exists with correct type — cache didn't clear it
         assert!(cache.get::<String>(&key).is_some());
@@ -230,14 +231,14 @@ mod tests {
             state: "open".into(),
         };
         let data = vec!["a".to_string(), "b".to_string()];
-        cache.insert(key.clone(), data.clone(), Duration::from_secs(60));
+        cache.insert(key.clone(), data.clone(), TEST_CACHE_TTL);
         assert_eq!(cache.get::<Vec<String>>(&key), Some(&data));
     }
 
     #[test]
     fn invalidate_pr_related_removes_all_pr_caches() {
         let mut cache = Cache::new();
-        let ttl = Duration::from_secs(60);
+        let ttl = TEST_CACHE_TTL;
 
         cache.insert(CacheKey::Pulls { owner: "octocat".into(), repo: "hello-world".into(), state: "open".into() }, "open".to_string(), ttl);
         cache.insert(CacheKey::Pulls { owner: "octocat".into(), repo: "hello-world".into(), state: "closed".into() }, "closed".to_string(), ttl);
@@ -259,7 +260,7 @@ mod tests {
     #[test]
     fn invalidate_pr_related_does_not_touch_other_repos() {
         let mut cache = Cache::new();
-        let ttl = Duration::from_secs(60);
+        let ttl = TEST_CACHE_TTL;
 
         cache.insert(CacheKey::Pulls { owner: "other".into(), repo: "repo".into(), state: "open".into() }, "other_data".to_string(), ttl);
 
@@ -271,7 +272,7 @@ mod tests {
     #[test]
     fn invalidate_actions_removes_actions_cache() {
         let mut cache = Cache::new();
-        let ttl = Duration::from_secs(60);
+        let ttl = TEST_CACHE_TTL;
 
         cache.insert(CacheKey::Actions { owner: "octocat".into(), repo: "hello-world".into() }, "actions_data".to_string(), ttl);
 

@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::time::Duration;
 
 use color_eyre::Result;
 use crossterm::event::EventStream;
@@ -15,13 +14,12 @@ use crate::event::{self, ApiPayload, Event};
 use crate::update::{update, Message};
 use crate::view::view;
 
-const TICK_INTERVAL_MS: u64 = 250;
 const CHANNEL_BUFFER_SIZE: usize = 128;
 
 pub async fn run(app: &mut App, terminal: &mut DefaultTerminal) -> Result<()> {
     tracing::debug!("entering run loop");
     let mut event_stream = EventStream::new();
-    let mut tick_interval = time::interval(Duration::from_millis(TICK_INTERVAL_MS));
+    let mut tick_interval = time::interval(crate::constants::TICK_INTERVAL);
     let (tx, mut rx) = mpsc::channel::<Result<ApiPayload>>(CHANNEL_BUFFER_SIZE);
 
     // Initialize login if no token found

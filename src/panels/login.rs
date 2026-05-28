@@ -205,7 +205,7 @@ mod tests {
 
     #[test]
     fn is_expired_returns_false_when_future() {
-        let expires_at = Instant::now() + Duration::from_secs(60);
+        let expires_at = Instant::now() + crate::constants::AUTH_EXPIRE_TTL;
         assert!(!is_expired(expires_at));
     }
 
@@ -222,21 +222,21 @@ mod tests {
     #[test]
     fn should_poll_returns_false_when_interval_not_elapsed() {
         let last_poll = Instant::now();
-        let poll_interval = Duration::from_secs(10);
+        let poll_interval = crate::constants::AUTH_POLL_INTERVAL;
         assert!(!should_poll(last_poll, poll_interval));
     }
 
     #[test]
     fn should_poll_returns_true_when_interval_elapsed() {
         let last_poll = Instant::now() - Duration::from_secs(11);
-        let poll_interval = Duration::from_secs(10);
+        let poll_interval = crate::constants::AUTH_POLL_INTERVAL;
         assert!(should_poll(last_poll, poll_interval));
     }
 
     #[test]
     fn should_poll_returns_true_at_exact_boundary() {
         let last_poll = Instant::now() - Duration::from_secs(10);
-        let poll_interval = Duration::from_secs(10);
+        let poll_interval = crate::constants::AUTH_POLL_INTERVAL;
         assert!(should_poll(last_poll, poll_interval));
     }
 
@@ -244,7 +244,7 @@ mod tests {
 
     #[test]
     fn remaining_until_returns_duration_when_future() {
-        let expires_at = Instant::now() + Duration::from_secs(120);
+        let expires_at = Instant::now() + crate::constants::AUTH_MAX_WAIT;
         let remaining = remaining_until(expires_at);
         // Should be close to 120s (allow 1s tolerance for test execution)
         assert!(remaining.as_secs() >= 119);
@@ -253,7 +253,7 @@ mod tests {
 
     #[test]
     fn remaining_until_returns_zero_when_past() {
-        let expires_at = Instant::now() - Duration::from_secs(10);
+        let expires_at = Instant::now() - crate::constants::AUTH_INITIAL_WAIT;
         let remaining = remaining_until(expires_at);
         assert_eq!(remaining, Duration::ZERO);
     }

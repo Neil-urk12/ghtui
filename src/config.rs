@@ -86,20 +86,24 @@ impl Default for KeybindingsConfig {
 impl Config {
     pub fn load() -> Self {
         let config_path = config_path();
-        if !config_path.exists() {
+        Self::load_from_file(&config_path)
+    }
+
+    pub fn load_from_file(path: &std::path::Path) -> Self {
+        if !path.exists() {
             return Config::default();
         }
 
-        match fs::read_to_string(&config_path) {
+        match fs::read_to_string(path) {
             Ok(contents) => match toml::from_str::<Config>(&contents) {
                 Ok(config) => config,
                 Err(e) => {
-                    warn!("Failed to parse config at {}: {}", config_path.display(), e);
+                    warn!("Failed to parse config at {}: {}", path.display(), e);
                     Config::default()
                 }
             },
             Err(e) => {
-                warn!("Failed to read config at {}: {}", config_path.display(), e);
+                warn!("Failed to read config at {}: {}", path.display(), e);
                 Config::default()
             }
         }
@@ -158,5 +162,17 @@ active_border_color = "red"
         let config: Config = toml::from_str("").unwrap();
         assert_eq!(config.keybindings.quit, "q");
         assert_eq!(config.defaults.pulls_state, "open");
+    }
+
+    #[test]
+    #[tracing_test::traced_test]
+    fn invalid_toml_logs_warning() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("config.toml");
+        std::fs::write(&config_path, "invalid [[[").unwrap();
+
+        let _config = Config::load_from_file(&config_path);
+
+        assert!(logs_contain("Failed to parse config"));
     }
 }

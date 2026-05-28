@@ -626,7 +626,7 @@ mod tests {
 
     fn seed<T: Send + Sync + 'static>(client: &GitHubClient, key: CacheKey, val: T) {
         let mut c = client.cache.lock().unwrap();
-        c.insert(key, val, Duration::from_secs(60));
+        c.insert(key, val, crate::constants::TEST_CACHE_TTL);
     }
 
     #[tokio::test]

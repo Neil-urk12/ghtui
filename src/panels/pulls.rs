@@ -444,7 +444,6 @@ impl PanelItem for PullsPanelItem {
         selected: Option<&Self::Item>,
         data: &ListPanelData<Self::Item>,
     ) -> Option<Cmd> {
-        const DEBOUNCE_MS: u128 = 500;
 
         if let Some(pr) = selected {
             let needs_fetch =
@@ -455,7 +454,7 @@ impl PanelItem for PullsPanelItem {
                     .last_fetch_attempts
                     .borrow()
                     .get(&pr_number)
-                    .map(|last| last.elapsed().as_millis() < DEBOUNCE_MS)
+                    .map(|last| last.elapsed() < crate::constants::FETCH_DEBOUNCE)
                     .unwrap_or(false);
 
                 if within_debounce {
