@@ -1,6 +1,7 @@
 use color_eyre::Result;
 use std::fs;
 use std::path::PathBuf;
+use std::time::Duration;
 use std::process::Command;
 
 use serde::{Deserialize, Serialize};
@@ -132,15 +133,40 @@ impl std::fmt::Debug for TokenResponse {
     }
 }
 
+/// Timeout for device flow HTTP requests (30 seconds).
+const DEVICE_FLOW_TIMEOUT: Duration = Duration::from_secs(30);
 /// Check HTTP response status, preserving the response body in error messages.
-async fn check_response(resp: reqwest::Response) -> Result<reqwest::Response> {
+/// Error body is capped at 4KB to prevent unbounded memory usage.
+async fn check_response(mut resp: reqwest::Response) -> Result<reqwest::Response> {
+    const MAX_ERROR_BODY: usize = 4096;
+    const MAX_BODY_READ: usize = MAX_ERROR_BODY * 2; // buffer extra for UTF-8 boundary alignment
+
     let status = resp.status();
     if !status.is_success() {
-        let body = resp.text().await.unwrap_or_default();
+        // Read errors are swallowed; error body is best-effort diagnostics.
+        let mut body_bytes = Vec::with_capacity(MAX_ERROR_BODY);
+        while let Ok(Some(chunk)) = resp.chunk().await {
+            body_bytes.extend_from_slice(&chunk);
+            if body_bytes.len() >= MAX_BODY_READ {
+                break;
+            }
+        }
+        let body = String::from_utf8_lossy(&body_bytes);
+        let display = if body.len() > MAX_ERROR_BODY {
+            // Find a valid UTF-8 boundary after MAX_ERROR_BODY, or use full length
+            let end = body
+                .char_indices()
+                .find(|&(i, _)| i > MAX_ERROR_BODY)
+                .map(|(i, _)| i)
+                .unwrap_or(body.len());
+            format!("{}... (truncated, {} bytes total)", &body[..end], body_bytes.len())
+        } else {
+            body.into_owned()
+        };
         return Err(color_eyre::eyre::eyre!(
             "HTTP {} error: {}",
             status,
-            body.trim()
+            display.trim()
         ));
     }
     Ok(resp)
@@ -157,6 +183,7 @@ pub async fn request_device_code(
         .post(GITHUB_DEVICE_CODE_URL)
         .header("Accept", "application/json")
         .form(&[("client_id", client_id), ("scope", scopes)])
+        .timeout(DEVICE_FLOW_TIMEOUT)
         .send()
         .await?;
     let resp = check_response(resp).await?;
@@ -177,6 +204,7 @@ pub async fn poll_for_token(
             ("device_code", device_code),
             ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
         ])
+        .timeout(DEVICE_FLOW_TIMEOUT)
         .send()
         .await?;
     let resp = check_response(resp).await?;
@@ -611,6 +639,187 @@ mod tests {
             debug.contains("repo,read:org"),
             "StoredAuth debug should show scopes: {}",
             debug
+        );
+    }
+
+    #[tokio::test]
+    async fn check_response_truncates_large_error_body() {
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        use wiremock::matchers::method;
+
+        let server = MockServer::start().await;
+        // 10KB body - should be truncated to ~4KB
+        let large_body = "x".repeat(10_240);
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(500).set_body_string(&large_body))
+            .mount(&server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let resp = client.post(server.uri()).send().await.unwrap();
+
+        let result = check_response(resp).await;
+        assert!(result.is_err(), "Expected error for 500 response");
+        let err_msg = result.unwrap_err().to_string();
+        // Error message should be capped, not contain full 10KB
+        assert!(
+            err_msg.len() < 10_000,
+            "Error message should be truncated, got length: {}",
+            err_msg.len()
+        );
+        assert!(
+            err_msg.contains("500"),
+            "Error should include status code, got: {}",
+            err_msg
+        );
+    }
+
+    #[tokio::test]
+    async fn check_response_truncates_multibyte_utf8_body() {
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        use wiremock::matchers::method;
+
+        let server = MockServer::start().await;
+        // 5000 CJK characters = 15000 bytes (3 bytes each) - should truncate
+        let large_body = "\u{4e00}".repeat(5_000);
+        assert!(large_body.len() > 4096, "Test body should exceed 4KB");
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(500).set_body_string(&large_body))
+            .mount(&server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let resp = client.post(server.uri()).send().await.unwrap();
+
+        let result = check_response(resp).await;
+        assert!(result.is_err(), "Expected error for 500 response");
+        let err_msg = result.unwrap_err().to_string();
+        // Should be truncated, not full 15KB
+        assert!(
+            err_msg.len() < 15_000,
+            "Error message should be truncated, got length: {}",
+            err_msg.len()
+        );
+        // Should not panic on multi-byte boundary
+        assert!(
+            err_msg.contains("500"),
+            "Error should include status code, got: {}",
+            err_msg
+        );
+        // Verify truncation notice present
+        assert!(
+            err_msg.contains("truncated"),
+            "Error should indicate truncation, got: {}",
+            err_msg
+        );
+    }
+
+    #[tokio::test]
+    async fn check_response_bounded_read_large_body() {
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        use wiremock::matchers::method;
+
+        let server = MockServer::start().await;
+        // 20KB body - should be read-bounded, not fully buffered
+        let large_body = "x".repeat(20_480);
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(500).set_body_string(&large_body))
+            .mount(&server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let resp = client.post(server.uri()).send().await.unwrap();
+
+        let result = check_response(resp).await;
+        assert!(result.is_err(), "Expected error for 500 response");
+        let err_msg = result.unwrap_err().to_string();
+        // Error bounded by MAX_BODY_READ (8KB), not full 20KB
+        assert!(
+            err_msg.len() < 10_000,
+            "Error message should be body-read-bounded, got length: {}",
+            err_msg.len()
+        );
+        assert!(err_msg.contains("500"), "Should include status code");
+        assert!(err_msg.contains("truncated"), "Should indicate truncation");
+    }
+
+    #[tokio::test]
+    async fn reqwest_client_timeout_works() {
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        use wiremock::matchers::method;
+        use std::time::Duration;
+
+        let server = MockServer::start().await;
+        // Delay response by 5 seconds - should timeout with 1s client
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_delay(Duration::from_secs(5))
+                    .set_body_json(serde_json::json!({
+                        "device_code": "test",
+                        "user_code": "TEST",
+                        "verification_uri": "https://github.com",
+                        "interval": 5,
+                        "expires_in": 900
+                    })),
+            )
+            .mount(&server)
+            .await;
+
+        // Create client with 1 second timeout
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(1))
+            .build()
+            .unwrap();
+
+        // This should fail - either because the URL is wrong or timeout
+        // We're testing the pattern, not the actual GitHub URL
+        let resp = client
+            .post(server.uri())
+            .header("Accept", "application/json")
+            .form(&[("client_id", "test"), ("scope", "repo")])
+            .send()
+            .await;
+
+        // With a 1s timeout and 5s delay, this should fail
+        let err = resp.unwrap_err();
+        assert!(err.is_timeout(), "Expected timeout error, got: {:?}", err);
+    }
+
+    #[tokio::test]
+    async fn check_response_reports_actual_byte_count_for_invalid_utf8() {
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        use wiremock::matchers::method;
+
+        let server = MockServer::start().await;
+        // 5000 invalid UTF-8 bytes (0xFF) — each becomes 3-byte U+FFFD after from_utf8_lossy
+        // So body.len() would be 15000, but body_bytes.len() is 5000
+        let invalid_bytes = vec![0xFFu8; 5_000];
+        assert!(invalid_bytes.len() > 4096, "Test body should exceed MAX_ERROR_BODY");
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(500)
+                    .set_body_raw(invalid_bytes, "application/octet-stream"),
+            )
+            .mount(&server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let resp = client.post(server.uri()).send().await.unwrap();
+
+        let result = check_response(resp).await;
+        assert!(result.is_err(), "Expected error for 500 response");
+        let err_msg = result.unwrap_err().to_string();
+        // Should report actual bytes received (5000), not lossy string length (15000)
+        assert!(
+            err_msg.contains("5000 bytes total"),
+            "Should report actual byte count (5000), got: {}",
+            err_msg
+        );
+        assert!(
+            !err_msg.contains("15000 bytes total"),
+            "Should NOT report lossy string length (15000), got: {}",
+            err_msg
         );
     }
 }
