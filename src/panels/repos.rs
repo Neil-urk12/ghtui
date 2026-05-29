@@ -2,7 +2,7 @@ use ratatui::prelude::*;
 use ratatui::widgets::{Cell, Row};
 
 use super::panel::{ListPanelData, PanelItem, SelectionState};
-use crate::cmd::Cmd;
+use crate::cmd::{Cmd, RepoContext};
 use crate::domain::Repo;
 use crate::theme::Theme;
 use crate::util::format;
@@ -140,8 +140,7 @@ impl PanelItem for ReposPanelItem {
                 if let Some(repo) = selected {
                     if let Some((owner, repo_name)) = repo.name.split_once('/') {
                         return Some(Cmd::OpenRepoDetail {
-                            owner: owner.to_string(),
-                            repo: repo_name.to_string(),
+                            ctx: RepoContext::new(owner.to_string(), repo_name.to_string()),
                         });
                     }
                 }
@@ -304,12 +303,9 @@ mod tests {
         let cmd = item.handle_key('\n', Some(&repo), &data);
 
         match cmd {
-            Some(Cmd::OpenRepoDetail {
-                owner,
-                repo: repo_name,
-            }) => {
-                assert_eq!(owner, "octocat");
-                assert_eq!(repo_name, "hello-world");
+            Some(Cmd::OpenRepoDetail { ctx }) => {
+                assert_eq!(ctx.owner, "octocat");
+                assert_eq!(ctx.repo, "hello-world");
             }
             other => panic!("Expected OpenRepoDetail, got {:?}", other),
         }

@@ -18,6 +18,12 @@ pub const AUTH_POLL_INTERVAL: Duration = Duration::from_secs(10);
 #[cfg(test)]
 pub const AUTH_EXPIRE_TTL: Duration = Duration::from_secs(60);
 
+/// GitHub OAuth device code endpoint
+pub const GITHUB_DEVICE_CODE_URL: &str = "https://github.com/login/device/code";
+
+/// GitHub OAuth access token endpoint
+pub const GITHUB_ACCESS_TOKEN_URL: &str = "https://github.com/login/oauth/access_token";
+
 /// Initial wait before first auth poll (test default)
 #[cfg(test)]
 pub const AUTH_INITIAL_WAIT: Duration = Duration::from_secs(1);

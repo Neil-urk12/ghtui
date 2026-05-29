@@ -2,7 +2,7 @@ use ratatui::prelude::*;
 use ratatui::widgets::*;
 
 use super::panel::{ListPanelData, PanelItem, SelectionState};
-use crate::cmd::Cmd;
+use crate::cmd::{Cmd, RepoContext};
 use crate::domain::WorkflowRun;
 use crate::theme::Theme;
 use crate::util::format::relative_time;
@@ -171,8 +171,7 @@ impl PanelItem for ActionsPanelItem {
                 if let Some(run) = selected {
                     if let Some((owner, repo)) = data.owner_repo() {
                         return Some(Cmd::RerunWorkflow {
-                            owner: owner.to_string(),
-                            repo: repo.to_string(),
+                            ctx: RepoContext::new(owner.to_string(), repo.to_string()),
                             run_id: run.id,
                         });
                     }
@@ -183,8 +182,7 @@ impl PanelItem for ActionsPanelItem {
                 if let Some(run) = selected {
                     if let Some((owner, repo)) = data.owner_repo() {
                         return Some(Cmd::CancelWorkflow {
-                            owner: owner.to_string(),
-                            repo: repo.to_string(),
+                            ctx: RepoContext::new(owner.to_string(), repo.to_string()),
                             run_id: run.id,
                         });
                     }
@@ -216,8 +214,7 @@ impl PanelItem for ActionsPanelItem {
     fn fetch_cmd(&self, data: &ListPanelData<Self::Item>) -> Cmd {
         if let Some((owner, repo)) = data.owner_repo() {
             Cmd::FetchActions {
-                owner: owner.to_string(),
-                repo: repo.to_string(),
+                ctx: RepoContext::new(owner.to_string(), repo.to_string()),
             }
         } else {
             Cmd::None
@@ -419,8 +416,8 @@ mod tests {
         assert!(cmd.is_some());
         assert!(matches!(
             cmd.unwrap(),
-            Cmd::RerunWorkflow { owner, repo, run_id }
-                if owner == "octocat" && repo == "hello-world" && run_id == 1234567890
+            Cmd::RerunWorkflow { ctx, run_id }
+                if ctx.owner == "octocat" && ctx.repo == "hello-world" && run_id == 1234567890
         ));
     }
 
@@ -435,8 +432,8 @@ mod tests {
         assert!(cmd.is_some());
         assert!(matches!(
             cmd.unwrap(),
-            Cmd::CancelWorkflow { owner, repo, run_id }
-                if owner == "octocat" && repo == "hello-world" && run_id == 1234567890
+            Cmd::CancelWorkflow { ctx, run_id }
+                if ctx.owner == "octocat" && ctx.repo == "hello-world" && run_id == 1234567890
         ));
     }
 

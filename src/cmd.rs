@@ -1,65 +1,71 @@
+/// Shared owner/repo context used by multiple Cmd variants.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RepoContext {
+    pub owner: String,
+    pub repo: String,
+}
+
+impl RepoContext {
+    pub fn new(owner: impl Into<String>, repo: impl Into<String>) -> Self {
+        Self {
+            owner: owner.into(),
+            repo: repo.into(),
+        }
+    }
+}
+
+
 pub enum Cmd {
     None,
     FetchRepos,
     FetchPulls {
-        owner: String,
-        repo: String,
+        ctx: RepoContext,
         state: String,
     },
     FetchIssues {
-        owner: String,
-        repo: String,
+        ctx: RepoContext,
         state: String,
     },
     FetchNotifications {
         all: bool,
     },
     FetchActions {
-        owner: String,
-        repo: String,
+        ctx: RepoContext,
     },
     MarkNotificationRead {
         id: String,
     },
     MarkAllNotificationsRead,
     ApprovePr {
-        owner: String,
-        repo: String,
+        ctx: RepoContext,
         pr_number: u64,
     },
     MergePr {
-        owner: String,
-        repo: String,
+        ctx: RepoContext,
         pr_number: u64,
     },
     RerunWorkflow {
-        owner: String,
-        repo: String,
+        ctx: RepoContext,
         run_id: u64,
     },
     CancelWorkflow {
-        owner: String,
-        repo: String,
+        ctx: RepoContext,
         run_id: u64,
     },
     OpenRepoDetail {
-        owner: String,
-        repo: String,
+        ctx: RepoContext,
     },
     CycleRepoSort,
     FetchPrComments {
-        owner: String,
-        repo: String,
+        ctx: RepoContext,
         pr_number: u64,
     },
     ClosePr {
-        owner: String,
-        repo: String,
+        ctx: RepoContext,
         pr_number: u64,
     },
     ReopenPr {
-        owner: String,
-        repo: String,
+        ctx: RepoContext,
         pr_number: u64,
     },
 }
@@ -69,53 +75,39 @@ impl std::fmt::Debug for Cmd {
         match self {
             Cmd::None => write!(f, "None"),
             Cmd::FetchRepos => write!(f, "FetchRepos"),
-            Cmd::FetchPulls { owner, repo, state } => {
-                write!(f, "FetchPulls({}, {}, {})", owner, repo, state)
+            Cmd::FetchPulls { ctx, state } => {
+                write!(f, "FetchPulls({}, {}, {})", ctx.owner, ctx.repo, state)
             }
-            Cmd::FetchIssues { owner, repo, state } => {
-                write!(f, "FetchIssues({}, {}, {})", owner, repo, state)
+            Cmd::FetchIssues { ctx, state } => {
+                write!(f, "FetchIssues({}, {}, {})", ctx.owner, ctx.repo, state)
             }
             Cmd::FetchNotifications { all } => write!(f, "FetchNotifications(all={})", all),
-            Cmd::FetchActions { owner, repo } => write!(f, "FetchActions({}, {})", owner, repo),
+            Cmd::FetchActions { ctx } => write!(f, "FetchActions({}, {})", ctx.owner, ctx.repo),
             Cmd::MarkNotificationRead { id } => write!(f, "MarkNotificationRead({})", id),
             Cmd::MarkAllNotificationsRead => write!(f, "MarkAllNotificationsRead"),
-            Cmd::ApprovePr {
-                owner,
-                repo,
-                pr_number,
-            } => write!(f, "ApprovePr({}/{}/{})", owner, repo, pr_number),
-            Cmd::MergePr {
-                owner,
-                repo,
-                pr_number,
-            } => write!(f, "MergePr({}/{}/{})", owner, repo, pr_number),
-            Cmd::RerunWorkflow {
-                owner,
-                repo,
-                run_id,
-            } => write!(f, "RerunWorkflow({}/{}/{})", owner, repo, run_id),
-            Cmd::CancelWorkflow {
-                owner,
-                repo,
-                run_id,
-            } => write!(f, "CancelWorkflow({}/{}/{})", owner, repo, run_id),
-            Cmd::OpenRepoDetail { owner, repo } => write!(f, "OpenRepoDetail({}/{})", owner, repo),
+            Cmd::ApprovePr { ctx, pr_number } => {
+                write!(f, "ApprovePr({}/{}/{})", ctx.owner, ctx.repo, pr_number)
+            }
+            Cmd::MergePr { ctx, pr_number } => {
+                write!(f, "MergePr({}/{}/{})", ctx.owner, ctx.repo, pr_number)
+            }
+            Cmd::RerunWorkflow { ctx, run_id } => {
+                write!(f, "RerunWorkflow({}/{}/{})", ctx.owner, ctx.repo, run_id)
+            }
+            Cmd::CancelWorkflow { ctx, run_id } => {
+                write!(f, "CancelWorkflow({}/{}/{})", ctx.owner, ctx.repo, run_id)
+            }
+            Cmd::OpenRepoDetail { ctx } => write!(f, "OpenRepoDetail({}/{})", ctx.owner, ctx.repo),
             Cmd::CycleRepoSort => write!(f, "CycleRepoSort"),
-            Cmd::FetchPrComments {
-                owner,
-                repo,
-                pr_number,
-            } => write!(f, "FetchPrComments({}/{}/{})", owner, repo, pr_number),
-            Cmd::ClosePr {
-                owner,
-                repo,
-                pr_number,
-            } => write!(f, "ClosePr({}/{}/{})", owner, repo, pr_number),
-            Cmd::ReopenPr {
-                owner,
-                repo,
-                pr_number,
-            } => write!(f, "ReopenPr({}/{}/{})", owner, repo, pr_number),
+            Cmd::FetchPrComments { ctx, pr_number } => {
+                write!(f, "FetchPrComments({}/{}/{})", ctx.owner, ctx.repo, pr_number)
+            }
+            Cmd::ClosePr { ctx, pr_number } => {
+                write!(f, "ClosePr({}/{}/{})", ctx.owner, ctx.repo, pr_number)
+            }
+            Cmd::ReopenPr { ctx, pr_number } => {
+                write!(f, "ReopenPr({}/{}/{})", ctx.owner, ctx.repo, pr_number)
+            }
         }
     }
 }
@@ -161,29 +153,25 @@ mod tests {
     fn action_label_returns_some_for_destructive_cmds() {
         // Each destructive variant should return Some with its expected label
         let merge = Cmd::MergePr {
-            owner: "o".into(),
-            repo: "r".into(),
+            ctx: RepoContext::new("o", "r"),
             pr_number: 1,
         };
         assert_eq!(merge.action_label(), Some("Merge Pull Request"));
 
         let approve = Cmd::ApprovePr {
-            owner: "o".into(),
-            repo: "r".into(),
+            ctx: RepoContext::new("o", "r"),
             pr_number: 1,
         };
         assert_eq!(approve.action_label(), Some("Approve Pull Request"));
 
         let cancel = Cmd::CancelWorkflow {
-            owner: "o".into(),
-            repo: "r".into(),
+            ctx: RepoContext::new("o", "r"),
             run_id: 1,
         };
         assert_eq!(cancel.action_label(), Some("Cancel Workflow"));
 
         let rerun = Cmd::RerunWorkflow {
-            owner: "o".into(),
-            repo: "r".into(),
+            ctx: RepoContext::new("o", "r"),
             run_id: 1,
         };
         assert_eq!(rerun.action_label(), Some("Rerun Workflow"));
@@ -197,8 +185,7 @@ mod tests {
     #[test]
     fn action_label_returns_some_for_close_pr() {
         let close = Cmd::ClosePr {
-            owner: "o".into(),
-            repo: "r".into(),
+            ctx: RepoContext::new("o", "r"),
             pr_number: 1,
         };
         assert_eq!(close.action_label(), Some("Close Pull Request"));
@@ -210,8 +197,7 @@ mod tests {
 
         assert_eq!(
             Cmd::FetchPulls {
-                owner: "o".into(),
-                repo: "r".into(),
+                ctx: RepoContext::new("o", "r"),
                 state: "open".into(),
             }
             .action_label(),
@@ -220,8 +206,7 @@ mod tests {
 
         assert_eq!(
             Cmd::FetchIssues {
-                owner: "o".into(),
-                repo: "r".into(),
+                ctx: RepoContext::new("o", "r"),
                 state: "open".into(),
             }
             .action_label(),
@@ -232,8 +217,7 @@ mod tests {
 
         assert_eq!(
             Cmd::FetchActions {
-                owner: "o".into(),
-                repo: "r".into(),
+                ctx: RepoContext::new("o", "r"),
             }
             .action_label(),
             None
@@ -246,8 +230,7 @@ mod tests {
 
         assert_eq!(
             Cmd::OpenRepoDetail {
-                owner: "o".into(),
-                repo: "r".into(),
+                ctx: RepoContext::new("o", "r"),
             }
             .action_label(),
             None
@@ -263,60 +246,49 @@ mod tests {
             Cmd::None,
             Cmd::FetchRepos,
             Cmd::FetchPulls {
-                owner: "".into(),
-                repo: "".into(),
+                ctx: RepoContext::new("", ""),
                 state: "".into(),
             },
             Cmd::FetchIssues {
-                owner: "".into(),
-                repo: "".into(),
+                ctx: RepoContext::new("", ""),
                 state: "".into(),
             },
             Cmd::FetchNotifications { all: false },
             Cmd::FetchActions {
-                owner: "".into(),
-                repo: "".into(),
+                ctx: RepoContext::new("", ""),
             },
             Cmd::MarkNotificationRead { id: "".into() },
             Cmd::MarkAllNotificationsRead,
             Cmd::ApprovePr {
-                owner: "".into(),
-                repo: "".into(),
+                ctx: RepoContext::new("", ""),
                 pr_number: 0,
             },
             Cmd::MergePr {
-                owner: "".into(),
-                repo: "".into(),
+                ctx: RepoContext::new("", ""),
                 pr_number: 0,
             },
             Cmd::RerunWorkflow {
-                owner: "".into(),
-                repo: "".into(),
+                ctx: RepoContext::new("", ""),
                 run_id: 0,
             },
             Cmd::FetchPrComments {
-                owner: "".into(),
-                repo: "".into(),
+                ctx: RepoContext::new("", ""),
                 pr_number: 0,
             },
             Cmd::ClosePr {
-                owner: "".into(),
-                repo: "".into(),
+                ctx: RepoContext::new("", ""),
                 pr_number: 0,
             },
             Cmd::ReopenPr {
-                owner: "".into(),
-                repo: "".into(),
+                ctx: RepoContext::new("", ""),
                 pr_number: 0,
             },
             Cmd::CancelWorkflow {
-                owner: "".into(),
-                repo: "".into(),
+                ctx: RepoContext::new("", ""),
                 run_id: 0,
             },
             Cmd::OpenRepoDetail {
-                owner: "".into(),
-                repo: "".into(),
+                ctx: RepoContext::new("", ""),
             },
             Cmd::CycleRepoSort,
         ];
@@ -338,55 +310,45 @@ mod tests {
             Cmd::None,
             Cmd::FetchRepos,
             Cmd::FetchPulls {
-                owner: "".into(),
-                repo: "".into(),
+                ctx: RepoContext::new("", ""),
                 state: "".into(),
             },
             Cmd::FetchIssues {
-                owner: "".into(),
-                repo: "".into(),
+                ctx: RepoContext::new("", ""),
                 state: "".into(),
             },
             Cmd::FetchNotifications { all: false },
             Cmd::FetchActions {
-                owner: "".into(),
-                repo: "".into(),
+                ctx: RepoContext::new("", ""),
             },
             Cmd::MarkNotificationRead { id: "".into() },
             Cmd::MarkAllNotificationsRead,
             Cmd::ApprovePr {
-                owner: "".into(),
-                repo: "".into(),
+                ctx: RepoContext::new("", ""),
                 pr_number: 0,
             },
             Cmd::MergePr {
-                owner: "".into(),
-                repo: "".into(),
+                ctx: RepoContext::new("", ""),
                 pr_number: 0,
             },
             Cmd::FetchPrComments {
-                owner: "".into(),
-                repo: "".into(),
+                ctx: RepoContext::new("", ""),
                 pr_number: 0,
             },
             Cmd::ClosePr {
-                owner: "".into(),
-                repo: "".into(),
+                ctx: RepoContext::new("", ""),
                 pr_number: 0,
             },
             Cmd::RerunWorkflow {
-                owner: "".into(),
-                repo: "".into(),
+                ctx: RepoContext::new("", ""),
                 run_id: 0,
             },
             Cmd::CancelWorkflow {
-                owner: "".into(),
-                repo: "".into(),
+                ctx: RepoContext::new("", ""),
                 run_id: 0,
             },
             Cmd::OpenRepoDetail {
-                owner: "".into(),
-                repo: "".into(),
+                ctx: RepoContext::new("", ""),
             },
             Cmd::CycleRepoSort,
         ];
@@ -405,8 +367,7 @@ mod tests {
     #[test]
     fn reopen_pr_is_destructive() {
         let reopen = Cmd::ReopenPr {
-            owner: "o".into(),
-            repo: "r".into(),
+            ctx: RepoContext::new("o", "r"),
             pr_number: 1,
         };
         assert!(reopen.is_destructive());
@@ -415,8 +376,7 @@ mod tests {
     #[test]
     fn reopen_pr_has_action_label() {
         let reopen = Cmd::ReopenPr {
-            owner: "o".into(),
-            repo: "r".into(),
+            ctx: RepoContext::new("o", "r"),
             pr_number: 1,
         };
         assert_eq!(reopen.action_label(), Some("Reopen Pull Request"));
@@ -425,8 +385,7 @@ mod tests {
     #[test]
     fn debug_format_has_closing_paren() {
         let cmd = Cmd::FetchPrComments {
-            owner: "o".into(),
-            repo: "r".into(),
+            ctx: RepoContext::new("o", "r"),
             pr_number: 1,
         };
         let debug = format!("{:?}", cmd);
@@ -437,8 +396,7 @@ mod tests {
         );
 
         let cmd = Cmd::ClosePr {
-            owner: "o".into(),
-            repo: "r".into(),
+            ctx: RepoContext::new("o", "r"),
             pr_number: 1,
         };
         let debug = format!("{:?}", cmd);
@@ -449,8 +407,7 @@ mod tests {
         );
 
         let cmd = Cmd::ReopenPr {
-            owner: "o".into(),
-            repo: "r".into(),
+            ctx: RepoContext::new("o", "r"),
             pr_number: 1,
         };
         let debug = format!("{:?}", cmd);
@@ -459,5 +416,18 @@ mod tests {
             "Debug should have closing paren: {}",
             debug
         );
+    }
+
+    #[test]
+    fn repo_context_new_from_str_and_string() {
+        let ctx = RepoContext::new("o", String::from("r"));
+        assert_eq!(ctx.owner, "o");
+        assert_eq!(ctx.repo, "r");
+    }
+
+    #[test]
+    fn repo_context_equality() {
+        assert_eq!(RepoContext::new("a", "b"), RepoContext::new("a", "b"));
+        assert_ne!(RepoContext::new("a", "b"), RepoContext::new("a", "c"));
     }
 }

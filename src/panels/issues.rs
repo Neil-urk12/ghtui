@@ -2,7 +2,7 @@ use ratatui::prelude::*;
 use ratatui::widgets::*;
 
 use super::panel::{ListPanelData, PanelItem, SelectionState, StateFilterable};
-use crate::cmd::Cmd;
+use crate::cmd::{Cmd, RepoContext};
 use crate::domain::{FilterState, Issue};
 use crate::theme::Theme;
 use crate::util::format;
@@ -107,8 +107,7 @@ impl IssuesPanelItem {
     ) -> Option<Cmd> {
         let (owner, repo) = data.owner_repo()?;
         Some(Cmd::FetchIssues {
-            owner: owner.to_string(),
-            repo: repo.to_string(),
+            ctx: RepoContext::new(owner.to_string(), repo.to_string()),
             state: self.state_filter.as_str().to_string(),
         })
     }
@@ -181,8 +180,7 @@ impl PanelItem for IssuesPanelItem {
     fn fetch_cmd(&self, data: &ListPanelData<Self::Item>) -> Cmd {
         if let Some((owner, repo)) = data.owner_repo() {
             Cmd::FetchIssues {
-                owner: owner.to_string(),
-                repo: repo.to_string(),
+                ctx: RepoContext::new(owner.to_string(), repo.to_string()),
                 state: self.state_filter.as_str().to_string(),
             }
         } else {

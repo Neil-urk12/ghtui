@@ -210,9 +210,8 @@ impl PanelState {
     }
 
     pub fn toggle_diff(&mut self) {
-        match self {
-            PanelState::Pulls(p) => p.detail_pane.toggle_diff(),
-            _ => {}
+        if let PanelState::Pulls(p) = self {
+            p.detail_pane.toggle_diff();
         }
     }
 }

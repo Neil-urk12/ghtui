@@ -7,7 +7,7 @@ use ratatui::style::Color;
 use ratatui::widgets::{Cell, Row};
 
 use super::panel::{ListPanelData, PanelItem, SelectionState, StateFilterable};
-use crate::cmd::Cmd;
+use crate::cmd::{Cmd, RepoContext};
 use crate::domain::{FilterState, PullRequest};
 use crate::theme::Theme;
 use crate::util::format;
@@ -299,8 +299,7 @@ impl PullsPanelItem {
     ) -> Option<Cmd> {
         let (owner, repo) = data.owner_repo()?;
         Some(Cmd::FetchPulls {
-            owner: owner.to_string(),
-            repo: repo.to_string(),
+            ctx: RepoContext::new(owner.to_string(), repo.to_string()),
             state: self.state_filter.as_str().to_string(),
         })
     }
@@ -386,8 +385,7 @@ impl PanelItem for PullsPanelItem {
                 if let Some(pr) = selected {
                     if let Some((owner, repo)) = data.owner_repo() {
                         return Some(Cmd::ApprovePr {
-                            owner: owner.to_string(),
-                            repo: repo.to_string(),
+                            ctx: RepoContext::new(owner.to_string(), repo.to_string()),
                             pr_number: pr.number,
                         });
                     }
@@ -398,8 +396,7 @@ impl PanelItem for PullsPanelItem {
                 if let Some(pr) = selected {
                     if let Some((owner, repo)) = data.owner_repo() {
                         return Some(Cmd::MergePr {
-                            owner: owner.to_string(),
-                            repo: repo.to_string(),
+                            ctx: RepoContext::new(owner.to_string(), repo.to_string()),
                             pr_number: pr.number,
                         });
                     }
@@ -412,8 +409,7 @@ impl PanelItem for PullsPanelItem {
                     if pr.state == "open" {
                         if let Some((owner, repo)) = data.owner_repo() {
                             return Some(Cmd::ClosePr {
-                                owner: owner.to_string(),
-                                repo: repo.to_string(),
+                                ctx: RepoContext::new(owner.to_string(), repo.to_string()),
                                 pr_number: pr.number,
                             });
                         }
@@ -426,8 +422,7 @@ impl PanelItem for PullsPanelItem {
                     if pr.state == "closed" {
                         if let Some((owner, repo)) = data.owner_repo() {
                             return Some(Cmd::ReopenPr {
-                                owner: owner.to_string(),
-                                repo: repo.to_string(),
+                                ctx: RepoContext::new(owner.to_string(), repo.to_string()),
                                 pr_number: pr.number,
                             });
                         }
@@ -466,8 +461,7 @@ impl PanelItem for PullsPanelItem {
                         .borrow_mut()
                         .insert(pr_number, Instant::now());
                     return Some(Cmd::FetchPrComments {
-                        owner: owner.to_string(),
-                        repo: repo.to_string(),
+                        ctx: RepoContext::new(owner.to_string(), repo.to_string()),
                         pr_number,
                     });
                 }
@@ -479,8 +473,7 @@ impl PanelItem for PullsPanelItem {
     fn fetch_cmd(&self, data: &ListPanelData<Self::Item>) -> Cmd {
         if let Some((owner, repo)) = data.owner_repo() {
             Cmd::FetchPulls {
-                owner: owner.to_string(),
-                repo: repo.to_string(),
+                ctx: RepoContext::new(owner.to_string(), repo.to_string()),
                 state: self.state_filter.as_str().to_string(),
             }
         } else {
@@ -685,8 +678,8 @@ mod tests {
         assert!(cmd.is_some());
         assert!(matches!(
             cmd.unwrap(),
-            Cmd::ApprovePr { owner, repo, pr_number }
-                if owner == "octocat" && repo == "hello-world" && pr_number == 42
+            Cmd::ApprovePr { ctx, pr_number }
+                if ctx.owner == "octocat" && ctx.repo == "hello-world" && pr_number == 42
         ));
     }
 
@@ -702,8 +695,8 @@ mod tests {
         assert!(cmd.is_some());
         assert!(matches!(
             cmd.unwrap(),
-            Cmd::MergePr { owner, repo, pr_number }
-                if owner == "octocat" && repo == "hello-world" && pr_number == 42
+            Cmd::MergePr { ctx, pr_number }
+                if ctx.owner == "octocat" && ctx.repo == "hello-world" && pr_number == 42
         ));
     }
 
@@ -765,9 +758,9 @@ mod tests {
         assert_eq!(item.state_filter, FilterState::Open);
         assert!(matches!(
             cmd.unwrap(),
-            Cmd::FetchPulls { owner, repo, state }
-                if owner == "octocat" && repo == "hello-world" && state == "open"
-        ));
+            Cmd::FetchPulls { ctx, state }
+                if ctx.owner == "octocat" && ctx.repo == "hello-world" && state == "open"
+            ));
     }
 
     #[test]
@@ -796,9 +789,9 @@ mod tests {
         assert_eq!(item.state_filter, FilterState::Closed);
         assert!(matches!(
             cmd.unwrap(),
-            Cmd::FetchPulls { owner, repo, state }
-                if owner == "octocat" && repo == "hello-world" && state == "closed"
-        ));
+            Cmd::FetchPulls { ctx, state }
+                if ctx.owner == "octocat" && ctx.repo == "hello-world" && state == "closed"
+            ));
     }
 
     #[test]
@@ -827,9 +820,9 @@ mod tests {
         assert_eq!(item.state_filter, FilterState::All);
         assert!(matches!(
             cmd.unwrap(),
-            Cmd::FetchPulls { owner, repo, state }
-                if owner == "octocat" && repo == "hello-world" && state == "all"
-        ));
+            Cmd::FetchPulls { ctx, state }
+                if ctx.owner == "octocat" && ctx.repo == "hello-world" && state == "all"
+            ));
     }
 
     // --- extract_items ---
@@ -988,8 +981,8 @@ mod tests {
         assert!(cmd.is_some());
         assert!(matches!(
             cmd.unwrap(),
-            Cmd::ClosePr { owner, repo, pr_number }
-                if owner == "octocat" && repo == "hello-world" && pr_number == 42
+            Cmd::ClosePr { ctx, pr_number }
+                if ctx.owner == "octocat" && ctx.repo == "hello-world" && pr_number == 42
         ));
     }
 
@@ -1023,8 +1016,8 @@ mod tests {
         assert!(cmd.is_some());
         assert!(matches!(
             cmd.unwrap(),
-            Cmd::ReopenPr { owner, repo, pr_number }
-                if owner == "octocat" && repo == "hello-world" && pr_number == 42
+            Cmd::ReopenPr { ctx, pr_number }
+                if ctx.owner == "octocat" && ctx.repo == "hello-world" && pr_number == 42
         ));
     }
 

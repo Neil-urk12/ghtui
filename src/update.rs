@@ -169,14 +169,13 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
                 Cmd::None
             };
             match cmd {
-                Cmd::OpenRepoDetail { owner, repo } => {
+                Cmd::OpenRepoDetail { ctx } => {
                     app.active_panel = PanelKind::Pulls;
                     for entry in app.panels.values_mut() {
-                        entry.set_repo_context(&owner, &repo);
+                        entry.set_repo_context(&ctx.owner, &ctx.repo);
                     }
                     let cmd = Cmd::FetchPulls {
-                        owner,
-                        repo,
+                        ctx: ctx.clone(),
                         state: "open".to_string(),
                     };
                     if let Some(entry) = app.panels.get_mut(&PanelKind::Pulls) {

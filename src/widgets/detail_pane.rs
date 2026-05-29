@@ -1,20 +1,12 @@
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Paragraph};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct DetailPane {
     pub scroll: u16,
     pub showing_diff: bool,
 }
 
-impl Default for DetailPane {
-    fn default() -> Self {
-        Self {
-            scroll: 0,
-            showing_diff: false,
-        }
-    }
-}
 
 impl DetailPane {
     pub fn new() -> Self {

@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use serde::{Deserialize, Serialize};
+use crate::constants::{GITHUB_ACCESS_TOKEN_URL, GITHUB_DEVICE_CODE_URL};
 
 pub const GHTUI_CLIENT_ID: &str = "Iv1.b507a08c1255a797";
 pub const GHTUI_SCOPES: &str = "repo notifications read:org";
@@ -87,7 +88,7 @@ pub async fn request_device_code(
     scopes: &str,
 ) -> Result<DeviceCodeResponse> {
     let resp = client
-        .post("https://github.com/login/device/code")
+        .post(GITHUB_DEVICE_CODE_URL)
         .header("Accept", "application/json")
         .form(&[("client_id", client_id), ("scope", scopes)])
         .send()
@@ -102,7 +103,7 @@ pub async fn poll_for_token(
     device_code: &str,
 ) -> Result<TokenResponse> {
     let resp = client
-        .post("https://github.com/login/oauth/access_token")
+        .post(GITHUB_ACCESS_TOKEN_URL)
         .header("Accept", "application/json")
         .form(&[
             ("client_id", client_id),

@@ -113,19 +113,19 @@ fn spawn_cmd(cmd: Cmd, client: &Arc<GitHubClient>, tx: mpsc::Sender<Result<ApiPa
                 let _ = tx.send(result).await;
             });
         }
-        Cmd::FetchPulls { owner, repo, state } => {
+        Cmd::FetchPulls { ctx, state } => {
             tokio::spawn(async move {
                 let result = client
-                    .get_pulls(&owner, &repo, &state)
+                    .get_pulls(&ctx.owner, &ctx.repo, &state)
                     .await
                     .map(ApiPayload::Pulls);
                 let _ = tx.send(result).await;
             });
         }
-        Cmd::FetchIssues { owner, repo, state } => {
+        Cmd::FetchIssues { ctx, state } => {
             tokio::spawn(async move {
                 let result = client
-                    .get_issues(&owner, &repo, &state)
+                    .get_issues(&ctx.owner, &ctx.repo, &state)
                     .await
                     .map(ApiPayload::Issues);
                 let _ = tx.send(result).await;
@@ -158,22 +158,18 @@ fn spawn_cmd(cmd: Cmd, client: &Arc<GitHubClient>, tx: mpsc::Sender<Result<ApiPa
                     .await;
             });
         }
-        Cmd::FetchActions { owner, repo } => {
+        Cmd::FetchActions { ctx } => {
             tokio::spawn(async move {
                 let result = client
-                    .get_actions(&owner, &repo)
+                    .get_actions(&ctx.owner, &ctx.repo)
                     .await
                     .map(ApiPayload::Actions);
                 let _ = tx.send(result).await;
             });
         }
-        Cmd::ApprovePr {
-            owner,
-            repo,
-            pr_number,
-        } => {
+        Cmd::ApprovePr { ctx, pr_number } => {
             tokio::spawn(async move {
-                let result = client.approve_pr(&owner, &repo, pr_number).await;
+                let result = client.approve_pr(&ctx.owner, &ctx.repo, pr_number).await;
                 let _ = tx
                     .send(
                         result.map(|_| ApiPayload::Success(format!("PR #{} approved", pr_number))),
@@ -181,25 +177,17 @@ fn spawn_cmd(cmd: Cmd, client: &Arc<GitHubClient>, tx: mpsc::Sender<Result<ApiPa
                     .await;
             });
         }
-        Cmd::MergePr {
-            owner,
-            repo,
-            pr_number,
-        } => {
+        Cmd::MergePr { ctx, pr_number } => {
             tokio::spawn(async move {
-                let result = client.merge_pr(&owner, &repo, pr_number).await;
+                let result = client.merge_pr(&ctx.owner, &ctx.repo, pr_number).await;
                 let _ = tx
                     .send(result.map(|_| ApiPayload::Success(format!("PR #{} merged", pr_number))))
                     .await;
             });
         }
-        Cmd::RerunWorkflow {
-            owner,
-            repo,
-            run_id,
-        } => {
+        Cmd::RerunWorkflow { ctx, run_id } => {
             tokio::spawn(async move {
-                let result = client.rerun_workflow(&owner, &repo, run_id).await;
+                let result = client.rerun_workflow(&ctx.owner, &ctx.repo, run_id).await;
                 let _ = tx
                     .send(result.map(|_| {
                         ApiPayload::Success(format!("Workflow #{} rerun triggered", run_id))
@@ -207,13 +195,9 @@ fn spawn_cmd(cmd: Cmd, client: &Arc<GitHubClient>, tx: mpsc::Sender<Result<ApiPa
                     .await;
             });
         }
-        Cmd::CancelWorkflow {
-            owner,
-            repo,
-            run_id,
-        } => {
+        Cmd::CancelWorkflow { ctx, run_id } => {
             tokio::spawn(async move {
-                let result = client.cancel_workflow(&owner, &repo, run_id).await;
+                let result = client.cancel_workflow(&ctx.owner, &ctx.repo, run_id).await;
                 let _ = tx
                     .send(result.map(|_| {
                             ApiPayload::Success(format!("Workflow #{} cancelled", run_id))
@@ -229,17 +213,13 @@ fn spawn_cmd(cmd: Cmd, client: &Arc<GitHubClient>, tx: mpsc::Sender<Result<ApiPa
             // Handled in update(), should not reach spawn_cmd
         }
 
-        Cmd::FetchPrComments {
-            owner,
-            repo,
-            pr_number,
-        } => {
+        Cmd::FetchPrComments { ctx, pr_number } => {
             tokio::spawn(async move {
                 let (comments, reviews, code_comments, files) = tokio::join!(
-                    client.get_issue_comments(&owner, &repo, pr_number),
-                    client.get_reviews(&owner, &repo, pr_number),
-                    client.get_review_comments(&owner, &repo, pr_number),
-                    client.get_pr_files(&owner, &repo, pr_number),
+                    client.get_issue_comments(&ctx.owner, &ctx.repo, pr_number),
+                    client.get_reviews(&ctx.owner, &ctx.repo, pr_number),
+                    client.get_review_comments(&ctx.owner, &ctx.repo, pr_number),
+                    client.get_pr_files(&ctx.owner, &ctx.repo, pr_number),
                 );
                 let _ = tx
                     .send(Ok(ApiPayload::PrComments {
@@ -252,25 +232,17 @@ fn spawn_cmd(cmd: Cmd, client: &Arc<GitHubClient>, tx: mpsc::Sender<Result<ApiPa
                     .await;
             });
         }
-        Cmd::ClosePr {
-            owner,
-            repo,
-            pr_number,
-        } => {
+        Cmd::ClosePr { ctx, pr_number } => {
             tokio::spawn(async move {
-                let result = client.close_pr(&owner, &repo, pr_number).await;
+                let result = client.close_pr(&ctx.owner, &ctx.repo, pr_number).await;
                 let _ = tx
                     .send(result.map(|_| ApiPayload::Success(format!("PR #{} closed", pr_number))))
                     .await;
             });
         }
-        Cmd::ReopenPr {
-            owner,
-            repo,
-            pr_number,
-        } => {
+        Cmd::ReopenPr { ctx, pr_number } => {
             tokio::spawn(async move {
-                let result = client.reopen_pr(&owner, &repo, pr_number).await;
+                let result = client.reopen_pr(&ctx.owner, &ctx.repo, pr_number).await;
                 let _ = tx
                     .send(
                         result.map(|_| ApiPayload::Success(format!("PR #{} reopened", pr_number))),
