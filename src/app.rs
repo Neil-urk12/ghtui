@@ -13,6 +13,59 @@ use crate::panels::{
 use crate::theme::Theme;
 use crate::widgets::detail_pane::DetailPane;
 
+/// Macro to delegate method calls across all PanelState variants.
+/// Eliminates repetitive match statements for common panel operations.
+macro_rules! panel_delegate {
+    // &mut self with args, returning a value
+    (fn $method:ident(&mut self, $($arg:ident : $ty:ty),*) -> $ret:ty) => {
+        pub fn $method(&mut self, $($arg: $ty),*) -> $ret {
+            match self {
+                PanelState::Repos(p) => p.$method($($arg),*),
+                PanelState::Pulls(p) => p.$method($($arg),*),
+                PanelState::Issues(p) => p.$method($($arg),*),
+                PanelState::Notifications(p) => p.$method($($arg),*),
+                PanelState::Actions(p) => p.$method($($arg),*),
+            }
+        }
+    };
+    // &mut self with args, returning nothing
+    (fn $method:ident(&mut self, $($arg:ident : $ty:ty),*)) => {
+        pub fn $method(&mut self, $($arg: $ty),*) {
+            match self {
+                PanelState::Repos(p) => p.$method($($arg),*),
+                PanelState::Pulls(p) => p.$method($($arg),*),
+                PanelState::Issues(p) => p.$method($($arg),*),
+                PanelState::Notifications(p) => p.$method($($arg),*),
+                PanelState::Actions(p) => p.$method($($arg),*),
+            }
+        }
+    };
+    // &mut self without args, returning nothing
+    (fn $method:ident(&mut self)) => {
+        pub fn $method(&mut self) {
+            match self {
+                PanelState::Repos(p) => p.$method(),
+                PanelState::Pulls(p) => p.$method(),
+                PanelState::Issues(p) => p.$method(),
+                PanelState::Notifications(p) => p.$method(),
+                PanelState::Actions(p) => p.$method(),
+            }
+        }
+    };
+    // &self without args, returning a value
+    (fn $method:ident(&self) -> $ret:ty) => {
+        pub fn $method(&self) -> $ret {
+            match self {
+                PanelState::Repos(p) => p.$method(),
+                PanelState::Pulls(p) => p.$method(),
+                PanelState::Issues(p) => p.$method(),
+                PanelState::Notifications(p) => p.$method(),
+                PanelState::Actions(p) => p.$method(),
+            }
+        }
+    };
+}
+
 pub struct PrCommentUpdate {
     pub comments: Option<Vec<crate::domain::PrComment>>,
     pub reviews: Option<Vec<crate::domain::PrReview>>,
@@ -63,52 +116,17 @@ pub enum PanelState {
 }
 
 impl PanelState {
-    pub fn apply_filter(&mut self, query: &str) {
-        match self {
-            PanelState::Repos(p) => p.apply_filter(query),
-            PanelState::Pulls(p) => p.apply_filter(query),
-            PanelState::Issues(p) => p.apply_filter(query),
-            PanelState::Notifications(p) => p.apply_filter(query),
-            PanelState::Actions(p) => p.apply_filter(query),
-        }
-    }
-
-    pub fn handle_key(&mut self, key: char) -> Option<crate::cmd::Cmd> {
-        match self {
-            PanelState::Repos(p) => p.handle_key(key),
-            PanelState::Pulls(p) => p.handle_key(key),
-            PanelState::Issues(p) => p.handle_key(key),
-            PanelState::Notifications(p) => p.handle_key(key),
-            PanelState::Actions(p) => p.handle_key(key),
-        }
-    }
-
-    pub fn render(
-        &mut self,
-        frame: &mut ratatui::Frame,
-        area: ratatui::prelude::Rect,
-        has_focus: bool,
-        theme: &crate::theme::Theme,
-        tick: u64,
-    ) {
-        match self {
-            PanelState::Repos(p) => p.render(frame, area, has_focus, theme, tick),
-            PanelState::Pulls(p) => p.render(frame, area, has_focus, theme, tick),
-            PanelState::Issues(p) => p.render(frame, area, has_focus, theme, tick),
-            PanelState::Notifications(p) => p.render(frame, area, has_focus, theme, tick),
-            PanelState::Actions(p) => p.render(frame, area, has_focus, theme, tick),
-        }
-    }
-
-    pub fn fetch_cmd(&self) -> crate::cmd::Cmd {
-        match self {
-            PanelState::Repos(p) => p.fetch_cmd(),
-            PanelState::Pulls(p) => p.fetch_cmd(),
-            PanelState::Issues(p) => p.fetch_cmd(),
-            PanelState::Notifications(p) => p.fetch_cmd(),
-            PanelState::Actions(p) => p.fetch_cmd(),
-        }
-    }
+    // Delegated methods — all variants share the same ListPanel<T> API.
+    panel_delegate!(fn apply_filter(&mut self, query: &str));
+    panel_delegate!(fn handle_key(&mut self, key: char) -> Option<crate::cmd::Cmd>);
+    panel_delegate!(fn render(&mut self, frame: &mut ratatui::Frame, area: ratatui::prelude::Rect, has_focus: bool, theme: &crate::theme::Theme, tick: u64));
+    panel_delegate!(fn fetch_cmd(&self) -> crate::cmd::Cmd);
+    panel_delegate!(fn set_loading(&mut self, loading: bool));
+    panel_delegate!(fn set_repo_context(&mut self, owner: &str, repo: &str));
+    panel_delegate!(fn load_data(&mut self, payload: crate::event::ApiPayload));
+    panel_delegate!(fn scroll_detail_up(&mut self));
+    panel_delegate!(fn scroll_detail_down(&mut self));
+    panel_delegate!(fn selected_display(&self) -> Option<String>);
 
     /// Update PR with comment data (Pulls panel only).
     pub fn update_pr_comments(&mut self, pr_number: u64, update: PrCommentUpdate) {
@@ -149,66 +167,7 @@ impl PanelState {
         self.set_loading(false);
     }
 
-    pub fn set_loading(&mut self, loading: bool) {
-        match self {
-            PanelState::Repos(p) => p.set_loading(loading),
-            PanelState::Pulls(p) => p.set_loading(loading),
-            PanelState::Issues(p) => p.set_loading(loading),
-            PanelState::Notifications(p) => p.set_loading(loading),
-            PanelState::Actions(p) => p.set_loading(loading),
-        }
-    }
-
-    pub fn set_repo_context(&mut self, owner: &str, repo: &str) {
-        match self {
-            PanelState::Repos(p) => p.set_repo_context(owner, repo),
-            PanelState::Pulls(p) => p.set_repo_context(owner, repo),
-            PanelState::Issues(p) => p.set_repo_context(owner, repo),
-            PanelState::Notifications(p) => p.set_repo_context(owner, repo),
-            PanelState::Actions(p) => p.set_repo_context(owner, repo),
-        }
-    }
-
-    pub fn load_data(&mut self, payload: crate::event::ApiPayload) {
-        match self {
-            PanelState::Repos(p) => p.load_data(payload),
-            PanelState::Pulls(p) => p.load_data(payload),
-            PanelState::Issues(p) => p.load_data(payload),
-            PanelState::Notifications(p) => p.load_data(payload),
-            PanelState::Actions(p) => p.load_data(payload),
-        }
-    }
-
-    pub fn scroll_detail_up(&mut self) {
-        match self {
-            PanelState::Repos(p) => p.scroll_detail_up(),
-            PanelState::Pulls(p) => p.scroll_detail_up(),
-            PanelState::Issues(p) => p.scroll_detail_up(),
-            PanelState::Notifications(p) => p.scroll_detail_up(),
-            PanelState::Actions(p) => p.scroll_detail_up(),
-        }
-    }
-
-    pub fn scroll_detail_down(&mut self) {
-        match self {
-            PanelState::Repos(p) => p.scroll_detail_down(),
-            PanelState::Pulls(p) => p.scroll_detail_down(),
-            PanelState::Issues(p) => p.scroll_detail_down(),
-            PanelState::Notifications(p) => p.scroll_detail_down(),
-            PanelState::Actions(p) => p.scroll_detail_down(),
-        }
-    }
-
-    pub fn selected_display(&self) -> Option<String> {
-        match self {
-            PanelState::Repos(p) => p.selected_display(),
-            PanelState::Pulls(p) => p.selected_display(),
-            PanelState::Issues(p) => p.selected_display(),
-            PanelState::Notifications(p) => p.selected_display(),
-            PanelState::Actions(p) => p.selected_display(),
-        }
-    }
-
+    // Pulls-only detail pane toggles.
     pub fn toggle_diff(&mut self) {
         if let PanelState::Pulls(p) = self {
             p.detail_pane.toggle_diff();
