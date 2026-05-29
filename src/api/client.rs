@@ -26,19 +26,22 @@ pub struct GitHubClient {
     pub rate_reset: Mutex<Option<Instant>>,
 }
 
+pub(crate) fn build_http_client() -> Client {
+    Client::builder()
+        .redirect(Policy::custom(|attempt| {
+            if attempt.previous().last().and_then(|u| u.host_str()) == attempt.url().host_str() {
+                attempt.follow()
+            } else {
+                attempt.stop()
+            }
+        }))
+        .build()
+        .expect("failed to build HTTP client")
+}
 impl GitHubClient {
     pub fn new(token: String) -> Self {
         Self {
-            http: Client::builder()
-                .redirect(Policy::custom(|attempt| {
-                    if attempt.previous().last().and_then(|u| u.host_str()) == attempt.url().host_str() {
-                        attempt.follow()
-                    } else {
-                        attempt.stop()
-                    }
-                }))
-                .build()
-                .expect("failed to build HTTP client"),
+            http: build_http_client(),
             token,
             base_url: BASE_URL.to_string(),
             cache: Mutex::new(Cache::new()),
@@ -50,16 +53,7 @@ impl GitHubClient {
     #[cfg(test)]
     pub(crate) fn new_for_test(token: String, base_url: String) -> Self {
         Self {
-            http: Client::builder()
-                .redirect(Policy::custom(|attempt| {
-                    if attempt.previous().last().and_then(|u| u.host_str()) == attempt.url().host_str() {
-                        attempt.follow()
-                    } else {
-                        attempt.stop()
-                    }
-                }))
-                .build()
-                .expect("failed to build HTTP client"),
+            http: build_http_client(),
             token,
             base_url,
             cache: Mutex::new(Cache::new()),

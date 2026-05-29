@@ -7,7 +7,7 @@ use ratatui::DefaultTerminal;
 use tokio::sync::mpsc;
 use tokio::time;
 
-use crate::api::client::GitHubClient;
+use crate::api::client::{GitHubClient, build_http_client};
 use crate::app::{App, AppState};
 use crate::cmd::Cmd;
 use crate::event::{self, ApiPayload, Event};
@@ -24,7 +24,7 @@ pub async fn run(app: &mut App, terminal: &mut DefaultTerminal) -> Result<()> {
 
     // Initialize login if no token found
     if matches!(app.state, AppState::Login) {
-        let http = reqwest::Client::new();
+        let http = build_http_client();
         match crate::panels::login::LoginState::new(http).await {
             Ok(login) => {
                 let _ = update(app, Message::LoginInit(login));
@@ -79,7 +79,7 @@ pub async fn run(app: &mut App, terminal: &mut DefaultTerminal) -> Result<()> {
                         let _ = update(app, Message::LoginError(msg));
                     }
                     crate::panels::login::LoginStatus::Expired => {
-                        let http = reqwest::Client::new();
+                        let http = build_http_client();
                         if let Ok(new_login) = crate::panels::login::LoginState::new(http).await {
                             app.login = Some(new_login);
                         }
