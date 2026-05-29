@@ -17,6 +17,15 @@ struct StoredAuth {
     scopes: String,
 }
 
+impl std::fmt::Debug for StoredAuth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StoredAuth")
+            .field("token", &"[REDACTED]")
+            .field("scopes", &self.scopes)
+            .finish()
+    }
+}
+
 fn auth_file_path_in(base_dir: &std::path::Path) -> PathBuf {
     base_dir.join("ghtui").join("auth.json")
 }
@@ -24,8 +33,6 @@ fn auth_file_path_in(base_dir: &std::path::Path) -> PathBuf {
 fn config_base() -> PathBuf {
     dirs::config_dir().unwrap_or_else(|| PathBuf::from("."))
 }
-
-
 pub fn save_token(token: &str, scopes: &str) -> Result<()> {
     save_token_in(token, scopes, &config_base())
 }
@@ -100,6 +107,45 @@ pub struct TokenResponse {
     pub interval: Option<u64>,
 }
 
+impl std::fmt::Debug for DeviceCodeResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DeviceCodeResponse")
+            .field("device_code", &"[REDACTED]")
+            .field("user_code", &self.user_code)
+            .field("verification_uri", &self.verification_uri)
+            .field("interval", &self.interval)
+            .field("expires_in", &self.expires_in)
+            .finish()
+    }
+}
+
+impl std::fmt::Debug for TokenResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TokenResponse")
+            .field("access_token", &self.access_token.as_deref().map(|_| "[REDACTED]"))
+            .field("token_type", &self.token_type)
+            .field("scope", &self.scope)
+            .field("error", &self.error)
+            .field("error_description", &self.error_description)
+            .field("interval", &self.interval)
+            .finish()
+    }
+}
+
+/// Check HTTP response status, preserving the response body in error messages.
+async fn check_response(resp: reqwest::Response) -> Result<reqwest::Response> {
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(color_eyre::eyre::eyre!(
+            "HTTP {} error: {}",
+            status,
+            body.trim()
+        ));
+    }
+    Ok(resp)
+}
+
 // --- Device Flow Functions ---
 
 pub async fn request_device_code(
@@ -113,6 +159,7 @@ pub async fn request_device_code(
         .form(&[("client_id", client_id), ("scope", scopes)])
         .send()
         .await?;
+    let resp = check_response(resp).await?;
     let device_code: DeviceCodeResponse = resp.json().await?;
     Ok(device_code)
 }
@@ -132,6 +179,7 @@ pub async fn poll_for_token(
         ])
         .send()
         .await?;
+    let resp = check_response(resp).await?;
     let token_resp: TokenResponse = resp.json().await?;
     Ok(token_resp)
 }
@@ -168,8 +216,9 @@ pub fn resolve_token() -> Result<Option<String>> {
             return Ok(Some(token));
         }
     }
-    if let Ok(token) = try_gh_token() {
-        return Ok(Some(token));
+    match try_gh_token() {
+        Ok(token) => return Ok(Some(token)),
+        Err(e) => tracing::debug!("gh auth token failed, falling through: {}", e),
     }
     if let Some(token) = load_stored_token() {
         return Ok(Some(token));
@@ -411,5 +460,157 @@ mod tests {
         save_token_in("second", "repo notifications", tmp.path()).unwrap();
         let loaded = load_stored_token_in(tmp.path());
         assert_eq!(loaded, Some("second".to_string()));
+    }
+
+    #[test]
+    fn device_code_debug_redacts_device_code_without_trailing_space() {
+        let resp = DeviceCodeResponse {
+            device_code: "abc123".to_string(),
+            user_code: "ABCD-EFGH".to_string(),
+            verification_uri: "https://github.com/login/device".to_string(),
+            expires_in: 900,
+            interval: 5,
+        };
+        let debug = format!("{:?}", resp);
+        assert!(debug.contains("[REDACTED]"));
+        assert!(!debug.contains("[REDACTED] "), "Debug should not have trailing space after [REDACTED]: {}", debug);
+        assert!(!debug.contains("abc123"), "Secret value leaked in debug output: {}", debug);
+    }
+
+    #[test]
+    fn token_response_debug_redacts_access_token_without_trailing_space() {
+        let resp = TokenResponse {
+            access_token: Some("gho_secret123".to_string()),
+            token_type: None,
+            scope: None,
+            error: None,
+            error_description: None,
+            interval: None,
+        };
+        let debug = format!("{:?}", resp);
+        assert!(debug.contains("[REDACTED]"));
+        assert!(!debug.contains("[REDACTED] "), "Debug should not have trailing space after [REDACTED]: {}", debug);
+        assert!(!debug.contains("gho_secret123"), "Token value leaked in debug output: {}", debug);
+    }
+
+    #[test]
+    fn token_response_debug_shows_none_for_absent_token() {
+        let resp = TokenResponse {
+            access_token: None,
+            token_type: None,
+            scope: None,
+            error: None,
+            error_description: None,
+            interval: None,
+        };
+        let debug = format!("{:?}", resp);
+        assert!(debug.contains("access_token: None"), "Expected 'access_token: None' in debug output: {}", debug);
+    }
+
+    #[tokio::test]
+    async fn check_response_passes_through_successful_response() {
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        use wiremock::matchers::method;
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("ok"))
+            .mount(&server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let resp = client.get(server.uri()).send().await.unwrap();
+
+        let result = check_response(resp).await;
+        assert!(result.is_ok());
+        let body = result.unwrap().text().await.unwrap();
+        assert_eq!(body, "ok");
+    }
+
+    #[tokio::test]
+    async fn check_response_includes_body_on_http_error() {
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        use wiremock::matchers::method;
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(401).set_body_json(serde_json::json!({
+                    "message": "Bad credentials",
+                    "documentation_url": "https://docs.github.com/rest"
+                })),
+            )
+            .mount(&server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let resp = client
+            .post(server.uri())
+            .header("Accept", "application/json")
+            .send()
+            .await
+            .unwrap();
+
+        let result = check_response(resp).await;
+        assert!(result.is_err(), "Expected error for 401 response");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("Bad credentials"),
+            "Error should include response body, got: {}",
+            err_msg
+        );
+        assert!(
+            err_msg.contains("401"),
+            "Error should include status code, got: {}",
+            err_msg
+        );
+    }
+
+    #[tokio::test]
+    async fn check_response_handles_empty_error_body() {
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        use wiremock::matchers::method;
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(500).set_body_string(""))
+            .mount(&server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let resp = client.post(server.uri()).send().await.unwrap();
+
+        let result = check_response(resp).await;
+        assert!(result.is_err(), "Expected error for 500 response");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("500"),
+            "Error should include status code, got: {}",
+            err_msg
+        );
+    }
+
+    #[test]
+    fn stored_auth_debug_redacts_token() {
+        let auth = StoredAuth {
+            token: "ghp_supersecret123".to_string(),
+            scopes: "repo,read:org".to_string(),
+        };
+        let debug = format!("{:?}", auth);
+        assert!(
+            !debug.contains("ghp_supersecret123"),
+            "Token leaked in StoredAuth debug: {}",
+            debug
+        );
+        assert!(
+            debug.contains("[REDACTED]"),
+            "StoredAuth debug should redact token: {}",
+            debug
+        );
+        assert!(
+            debug.contains("repo,read:org"),
+            "StoredAuth debug should show scopes: {}",
+            debug
+        );
     }
 }
