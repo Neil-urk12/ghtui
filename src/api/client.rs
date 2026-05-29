@@ -195,7 +195,7 @@ impl GitHubClient {
                 .headers()
                 .get("link")
                 .and_then(|v| v.to_str().ok())
-                .and_then(parse_next_link);
+                .and_then(|v| parse_next_link(v, Some(&self.base_url)));
 
             let mut items: Vec<T> = resp.json().await?;
             all_items.append(&mut items);
@@ -284,7 +284,7 @@ impl GitHubClient {
                 .headers()
                 .get("link")
                 .and_then(|v| v.to_str().ok())
-                .and_then(parse_next_link);
+                .and_then(|v| parse_next_link(v, Some(&self.base_url)));
 
             let wrapper: W = resp.json().await?;
             let mut items = extract(wrapper);
@@ -676,7 +676,7 @@ impl GitHubClient {
                 .headers()
                 .get("link")
                 .and_then(|v| v.to_str().ok())
-                .and_then(parse_next_link)
+                .and_then(|v| parse_next_link(v, Some(&self.base_url)))
                 .is_some();
             let mut models: Vec<PullRequestFile> = resp.json().await?;
             all_models.append(&mut models);
@@ -759,7 +759,7 @@ fn safe_u32(value: u64) -> u32 {
     })
 }
 
-fn parse_next_link(header_value: &str) -> Option<String> {
+fn parse_next_link(header_value: &str, expected_prefix: Option<&str>) -> Option<String> {
     for link in header_value.split(',').map(str::trim) {
         if !link.contains("rel=\"next\"") {
             continue;
@@ -768,6 +768,18 @@ fn parse_next_link(header_value: &str) -> Option<String> {
             if let Some(end) = link[start + 1..].find('>') {
                 let url = &link[start + 1..start + 1 + end];
                 if url.starts_with("https://") || url.starts_with("http://") {
+                    if let Some(prefix) = expected_prefix {
+                        // Extract host from both URLs for comparison (not string prefix — avoids subdomain injection)
+                        let url_host = url.split("://").nth(1).and_then(|s| s.split('/').next());
+                        let prefix_host = prefix.split("://").nth(1).and_then(|s| s.split('/').next());
+                        match (url_host, prefix_host) {
+                            (Some(uh), Some(ph)) if uh == ph => {}
+                            _ => {
+                                tracing::warn!("parse_next_link: rejecting URL with unexpected host: {}", url);
+                                return None;
+                            }
+                        }
+                    }
                     return Some(url.to_string());
                 }
             }
@@ -1059,41 +1071,61 @@ mod tests {
     #[test]
     fn parse_next_link_with_next() {
         let header = r#"<https://api.github.com/repos?page=2>; rel="next", <https://api.github.com/repos?page=5>; rel="last""#;
-        let result = parse_next_link(header);
+        let result = parse_next_link(header, None);
         assert_eq!(result.as_deref(), Some("https://api.github.com/repos?page=2"));
     }
 
     #[test]
     fn parse_next_link_without_next() {
         let header = r#"<https://api.github.com/repos?page=5>; rel="last""#;
-        let result = parse_next_link(header);
+        let result = parse_next_link(header, None);
         assert!(result.is_none());
     }
 
     #[test]
     fn parse_next_link_empty_string() {
-        assert!(parse_next_link("").is_none());
+        assert!(parse_next_link("", None).is_none());
     }
 
     #[test]
     fn parse_next_link_multiple_next_picks_first() {
         let header = r#"<https://api.github.com/repos?page=2>; rel="next", <https://api.github.com/repos?page=3>; rel="next""#;
-        let result = parse_next_link(header);
+        let result = parse_next_link(header, None);
         assert_eq!(result.as_deref(), Some("https://api.github.com/repos?page=2"));
     }
 
     #[test]
     fn parse_next_link_rejects_non_http_scheme() {
         let header = r#"<ftp://evil.com/page>; rel="next""#;
-        assert!(parse_next_link(header).is_none());
+        assert!(parse_next_link(header, None).is_none());
     }
 
     #[test]
     fn parse_next_link_rejects_no_scheme() {
         let header = r#"//evil.com/page>; rel="next""#;
-        assert!(parse_next_link(header).is_none());
+        assert!(parse_next_link(header, None).is_none());
     }
 
+    #[test]
+    fn parse_next_link_rejects_different_host_prefix() {
+        let header = r#"<https://evil.com/repos?page=2>; rel="next""#;
+        assert_eq!(parse_next_link(header, Some("https://api.github.com")), None);
+    }
+
+    #[test]
+    fn parse_next_link_accepts_matching_host_prefix() {
+        let header = r#"<https://api.github.com/repos?page=2>; rel="next""#;
+        assert_eq!(
+            parse_next_link(header, Some("https://api.github.com")),
+            Some("https://api.github.com/repos?page=2".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_next_link_rejects_subdomain_injection() {
+        let header = r#"<https://api.github.com.evil.com/repos?page=2>; rel="next""#;
+        assert_eq!(parse_next_link(header, Some("https://api.github.com")), None);
+    }
     // --- get_all tests ---
 
     #[tokio::test]
@@ -1165,6 +1197,28 @@ mod tests {
 
         let client = GitHubClient::new_for_test("tok".into(), server.uri());
         let result: Vec<String> = client.get_all("/items?page=1", None, Duration::from_secs(60), Some(2)).await.unwrap();
+        assert_eq!(result, vec!["a".to_string(), "b".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn get_all_rejects_cross_host_next_link() {
+        let server = MockServer::start().await;
+
+        // Page 1 returns items with a next-link pointing to a DIFFERENT host
+        Mock::given(method("GET")).and(path("/items"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!(["a", "b"]))
+                    .insert_header("Link", r#"<https://evil.com/items?page=2>; rel="next""#)
+            )
+            .mount(&server).await;
+
+        // No second mock needed — the cross-host link is rejected by parse_next_link,
+        // so the server only receives one request (page 1).
+
+        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let result: Vec<String> = client.get_all("/items", None, Duration::from_secs(60), None).await.unwrap();
+        // Should return only page 1 items — cross-host link is ignored
         assert_eq!(result, vec!["a".to_string(), "b".to_string()]);
     }
 
