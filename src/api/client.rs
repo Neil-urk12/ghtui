@@ -2,7 +2,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use color_eyre::Result;
-use reqwest::{Client, Method};
+use reqwest::{Client, Method, redirect::Policy};
 
 use super::cache::{Cache, CacheKey};
 use super::models::*;
@@ -29,7 +29,16 @@ pub struct GitHubClient {
 impl GitHubClient {
     pub fn new(token: String) -> Self {
         Self {
-            http: Client::new(),
+            http: Client::builder()
+                .redirect(Policy::custom(|attempt| {
+                    if attempt.previous().last().and_then(|u| u.host_str()) == attempt.url().host_str() {
+                        attempt.follow()
+                    } else {
+                        attempt.stop()
+                    }
+                }))
+                .build()
+                .expect("failed to build HTTP client"),
             token,
             base_url: BASE_URL.to_string(),
             cache: Mutex::new(Cache::new()),
@@ -41,7 +50,16 @@ impl GitHubClient {
     #[cfg(test)]
     pub(crate) fn new_for_test(token: String, base_url: String) -> Self {
         Self {
-            http: Client::new(),
+            http: Client::builder()
+                .redirect(Policy::custom(|attempt| {
+                    if attempt.previous().last().and_then(|u| u.host_str()) == attempt.url().host_str() {
+                        attempt.follow()
+                    } else {
+                        attempt.stop()
+                    }
+                }))
+                .build()
+                .expect("failed to build HTTP client"),
             token,
             base_url,
             cache: Mutex::new(Cache::new()),
@@ -1066,6 +1084,29 @@ mod tests {
         assert_eq!(files[2].filename, "c.rs");
     }
 
+    #[tokio::test]
+    async fn get_pr_files_rejects_cross_host_next_link() {
+        let server = MockServer::start().await;
+
+        // Page 1 returns files with a next-link pointing to a different host
+        Mock::given(method("GET")).and(path("/repos/o/r/pulls/1/files"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!([
+                        { "filename": "a.rs", "status": "modified", "additions": 1, "deletions": 0, "patch": null, "previous_filename": null }
+                    ]))
+                    .insert_header("Link", r#"<https://evil.com/repos/o/r/pulls/1/files?page=2>; rel="next""#)
+            )
+            .mount(&server).await;
+
+        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let files = client.get_pr_files("o", "r", 1).await.unwrap();
+
+        // Should return only page 1 files — cross-host link is ignored
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].filename, "a.rs");
+    }
+
     // --- parse_next_link tests ---
 
     #[test]
@@ -1353,5 +1394,111 @@ mod tests {
         let client = GitHubClient::new_for_test("tok".into(), server.uri());
         let result: Vec<String> = client.get_all_wrapped("/items", None, Duration::from_secs(60), None, |w: TestWrapper| w.items).await.unwrap();
         assert!(result.is_empty());
+    }
+
+    #[tokio::test]
+    async fn get_all_wrapped_rejects_cross_host_next_link() {
+        let server = MockServer::start().await;
+
+        // Page 1 returns wrapped data with a next-link pointing to a different host
+        Mock::given(method("GET")).and(path("/runs"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({ "items": ["run1"] }))
+                    .insert_header("Link", r#"<https://evil.com/runs?page=2>; rel="next""#)
+            )
+            .mount(&server).await;
+
+        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let result: Vec<String> = client
+            .get_all_wrapped(
+                "/runs",
+                None,
+                Duration::from_secs(60),
+                None,
+                |w: TestWrapper| w.items,
+            )
+            .await
+            .unwrap();
+
+        // Should return only page 1 — cross-host link is ignored
+        assert_eq!(result, vec!["run1".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn get_all_blocks_cross_host_redirect() {
+        let server = MockServer::start().await;
+
+        // Page 1: returns a next-link pointing to a redirect endpoint on the same mock server
+        Mock::given(method("GET")).and(path("/items"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!(["a"]))
+                    .insert_header("Link", format!(r#"<{}/redirect>; rel="next""#, server.uri()))
+            )
+            .mount(&server).await;
+
+        // The redirect endpoint sends a 302 to an external host
+        Mock::given(method("GET")).and(path("/redirect"))
+            .respond_with(
+                ResponseTemplate::new(302)
+                    .insert_header("Location", "https://evil.com/steal-token")
+            )
+            .mount(&server).await;
+
+        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let result: Vec<String> = client.get_all("/items", None, Duration::from_secs(60), None).await.unwrap();
+        // Should return only page 1 — redirect to different host is blocked
+        assert_eq!(result, vec!["a".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn redirect_policy_blocks_different_host() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET")).and(path("/redirect"))
+            .respond_with(
+                ResponseTemplate::new(302)
+                    .insert_header("Location", "https://evil.com/target")
+            )
+            .mount(&server).await;
+
+        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let result = client.send_and_check(
+            client.request(Method::GET, "/redirect")
+        ).await;
+
+        // Should fail because redirect to different host is blocked
+        // reqwest returns the 302 response, which send_and_check treats as non-2xx
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn redirect_policy_allows_same_host() {
+        let server = MockServer::start().await;
+
+        // Redirect to same host
+        Mock::given(method("GET")).and(path("/redirect"))
+            .respond_with(
+                ResponseTemplate::new(302)
+                    .insert_header("Location", format!("{}/final", server.uri()))
+            )
+            .mount(&server).await;
+
+        // Final destination returns 200
+        Mock::given(method("GET")).and(path("/final"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!("ok"))
+            )
+            .mount(&server).await;
+
+        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let result = client.send_and_check(
+            client.request(Method::GET, "/redirect")
+        ).await;
+
+        // Should succeed — same-host redirect is followed
+        assert!(result.is_ok());
     }
 }
