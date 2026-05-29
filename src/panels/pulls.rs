@@ -262,7 +262,7 @@ fn pr_to_detail(pr: &PullRequest, theme: &Theme) -> Vec<Line<'static>> {
 
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
-        "1:open 2:closed 3:all | o:browser | d:diff | c:checkout | a:approve | m:merge | x:close | X:reopen",
+        "1:open 2:closed 3:all | o:browser | d:diff | f:fullscreen | c:collapse | a:approve | m:merge | x:close | X:reopen",
         theme.muted,
     )));
 
@@ -500,7 +500,7 @@ impl PanelItem for PullsPanelItem {
     extract_items!(Pulls);
 
     fn split_ratio(&self) -> (u16, u16) {
-        (60, 40)
+        (50, 50)
     }
 
     fn detail_title(&self, showing_diff: bool) -> String {
@@ -941,7 +941,7 @@ mod tests {
             .join("\n");
 
         assert!(
-            text.contains("1:open 2:closed 3:all | o:browser | d:diff | c:checkout | a:approve | m:merge"),
+            text.contains("1:open 2:closed 3:all | o:browser | d:diff | f:fullscreen | c:collapse | a:approve | m:merge"),
             "footer should contain self-documenting key hints, got: {text}"
         );
     }

@@ -214,6 +214,18 @@ impl PanelState {
             p.detail_pane.toggle_diff();
         }
     }
+
+    pub fn toggle_fullscreen(&mut self) {
+        if let PanelState::Pulls(p) = self {
+            p.detail_pane.toggle_fullscreen();
+        }
+    }
+
+    pub fn toggle_collapse(&mut self) {
+        if let PanelState::Pulls(p) = self {
+            p.detail_pane.toggle_collapse();
+        }
+    }
 }
 
 #[derive(Debug, Default)]

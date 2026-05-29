@@ -163,6 +163,20 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
                 }
                 return Cmd::None;
             }
+            // Handle 'f' toggle for fullscreen detail (Pulls panel only)
+            if c == 'f' && app.active_panel == PanelKind::Pulls {
+                if let Some(entry) = app.panels.get_mut(&app.active_panel) {
+                    entry.toggle_fullscreen();
+                }
+                return Cmd::None;
+            }
+            // Handle 'c' toggle for collapsed detail (Pulls panel only)
+            if c == 'c' && app.active_panel == PanelKind::Pulls {
+                if let Some(entry) = app.panels.get_mut(&app.active_panel) {
+                    entry.toggle_collapse();
+                }
+                return Cmd::None;
+            }
             let cmd = if let Some(entry) = app.panels.get_mut(&app.active_panel) {
                 entry.handle_key(c).unwrap_or(Cmd::None)
             } else {
@@ -943,6 +957,144 @@ mod tests {
                 );
             }
             _ => panic!("Expected Pulls panel"),
+        }
+    }
+
+    #[test]
+    fn f_key_toggles_fullscreen_on_pulls_panel() {
+        use crate::domain;
+        use crate::event::ApiPayload;
+        use crate::widgets::detail_pane::DetailPaneMode;
+
+        let mut app = test_app();
+
+        // Load PRs and switch to Pulls panel
+        let pulls = vec![domain::PullRequest {
+            number: 1,
+            title: "Fix bug".into(),
+            ..Default::default()
+        }];
+        update(&mut app, Message::ApiLoaded(ApiPayload::Pulls(pulls)));
+        update(&mut app, Message::NextTab);
+        assert_eq!(app.active_panel, PanelKind::Pulls);
+
+        // Verify starts at Normal
+        if let Some(crate::app::PanelState::Pulls(panel)) = app.panels.get(&PanelKind::Pulls) {
+            assert_eq!(panel.detail_pane.mode, DetailPaneMode::Normal);
+        } else {
+            panic!("Expected Pulls panel");
+        }
+
+        // Press 'f' to enter fullscreen
+        update(&mut app, Message::PanelKeyInput('f'));
+        if let Some(crate::app::PanelState::Pulls(panel)) = app.panels.get(&PanelKind::Pulls) {
+            assert_eq!(panel.detail_pane.mode, DetailPaneMode::Fullscreen);
+        } else {
+            panic!("Expected Pulls panel");
+        }
+
+        // Press 'f' again to exit fullscreen
+        update(&mut app, Message::PanelKeyInput('f'));
+        if let Some(crate::app::PanelState::Pulls(panel)) = app.panels.get(&PanelKind::Pulls) {
+            assert_eq!(panel.detail_pane.mode, DetailPaneMode::Normal);
+        } else {
+            panic!("Expected Pulls panel");
+        }
+    }
+
+    #[test]
+    fn c_key_toggles_collapse_on_pulls_panel() {
+        use crate::domain;
+        use crate::event::ApiPayload;
+        use crate::widgets::detail_pane::DetailPaneMode;
+
+        let mut app = test_app();
+
+        // Load PRs and switch to Pulls panel
+        let pulls = vec![domain::PullRequest {
+            number: 1,
+            title: "Fix bug".into(),
+            ..Default::default()
+        }];
+        update(&mut app, Message::ApiLoaded(ApiPayload::Pulls(pulls)));
+        update(&mut app, Message::NextTab);
+        assert_eq!(app.active_panel, PanelKind::Pulls);
+
+        // Verify starts at Normal
+        if let Some(crate::app::PanelState::Pulls(panel)) = app.panels.get(&PanelKind::Pulls) {
+            assert_eq!(panel.detail_pane.mode, DetailPaneMode::Normal);
+        } else {
+            panic!("Expected Pulls panel");
+        }
+
+        // Press 'c' to enter collapsed
+        update(&mut app, Message::PanelKeyInput('c'));
+        if let Some(crate::app::PanelState::Pulls(panel)) = app.panels.get(&PanelKind::Pulls) {
+            assert_eq!(panel.detail_pane.mode, DetailPaneMode::Collapsed);
+        } else {
+            panic!("Expected Pulls panel");
+        }
+
+        // Press 'c' again to exit collapsed
+        update(&mut app, Message::PanelKeyInput('c'));
+        if let Some(crate::app::PanelState::Pulls(panel)) = app.panels.get(&PanelKind::Pulls) {
+            assert_eq!(panel.detail_pane.mode, DetailPaneMode::Normal);
+        } else {
+            panic!("Expected Pulls panel");
+        }
+    }
+
+    #[test]
+    fn f_key_works_with_empty_pulls_list() {
+        use crate::event::ApiPayload;
+        use crate::widgets::detail_pane::DetailPaneMode;
+
+        let mut app = test_app();
+
+        // Switch to Pulls panel with no PRs loaded
+        update(&mut app, Message::NextTab);
+        assert_eq!(app.active_panel, PanelKind::Pulls);
+
+        // Clear any PRs that may have loaded from NextTab fetch
+        update(&mut app, Message::ApiLoaded(ApiPayload::Pulls(vec![])));
+
+        // Press 'f' — should work even with no selection
+        update(&mut app, Message::PanelKeyInput('f'));
+        if let Some(crate::app::PanelState::Pulls(panel)) = app.panels.get(&PanelKind::Pulls) {
+            assert_eq!(
+                panel.detail_pane.mode,
+                DetailPaneMode::Fullscreen,
+                "f should toggle fullscreen even with empty list"
+            );
+        } else {
+            panic!("Expected Pulls panel");
+        }
+    }
+
+    #[test]
+    fn c_key_works_with_empty_pulls_list() {
+        use crate::event::ApiPayload;
+        use crate::widgets::detail_pane::DetailPaneMode;
+
+        let mut app = test_app();
+
+        // Switch to Pulls panel with no PRs loaded
+        update(&mut app, Message::NextTab);
+        assert_eq!(app.active_panel, PanelKind::Pulls);
+
+        // Clear any PRs that may have loaded from NextTab fetch
+        update(&mut app, Message::ApiLoaded(ApiPayload::Pulls(vec![])));
+
+        // Press 'c' — should work even with no selection
+        update(&mut app, Message::PanelKeyInput('c'));
+        if let Some(crate::app::PanelState::Pulls(panel)) = app.panels.get(&PanelKind::Pulls) {
+            assert_eq!(
+                panel.detail_pane.mode,
+                DetailPaneMode::Collapsed,
+                "c should toggle collapse even with empty list"
+            );
+        } else {
+            panic!("Expected Pulls panel");
         }
     }
 }

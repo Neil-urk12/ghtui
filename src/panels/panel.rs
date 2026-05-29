@@ -445,6 +445,7 @@ impl<T: PanelItem + 'static> ListPanel<T> {
             } else {
                 self.item.detail_empty_state()
             },
+            detail_mode: self.detail_pane.mode,
         };
 
         render_list_view(
