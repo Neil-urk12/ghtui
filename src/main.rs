@@ -67,7 +67,7 @@ fn main() -> color_eyre::Result<()> {
 
     rt.block_on(async {
         let mut terminal = ratatui::init();
-        let mut app = app::App::new(config, token);
+        let mut app = app::App::new(config, token)?;
 
         let result = run::run(&mut app, &mut terminal).await;
 

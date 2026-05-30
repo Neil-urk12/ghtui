@@ -95,6 +95,7 @@ pub fn render_list_view(
                     frame,
                     left_area,
                     left,
+                    None,
                     selection,
                     theme,
                     &config.highlight_symbol,
@@ -135,11 +136,11 @@ pub fn render_list_view(
             detail_lines,
             detail_block,
             |frame, left_area| {
-                render_left_with_block(
+                render_left(
                     frame,
                     left_area,
                     left,
-                    block,
+                    Some(block),
                     selection,
                     theme,
                     &config.highlight_symbol,
@@ -211,6 +212,7 @@ fn render_left(
     frame: &mut Frame,
     area: Rect,
     left: LeftContent<'_>,
+    block: Option<Block<'_>>,
     selection: &mut SelectionState,
     theme: &Theme,
     highlight_symbol: &str,
@@ -222,53 +224,23 @@ fn render_left(
             widths,
         } => {
             let header = Row::new(headers).style(theme.muted);
-            let table = Table::new(rows, widths)
+            let mut table = Table::new(rows, widths)
                 .header(header)
                 .row_highlight_style(theme.highlight);
+            if let Some(b) = block {
+                table = table.block(b);
+            }
             if let SelectionState::Table(inner) = selection {
                 StatefulWidget::render(table, area, frame.buffer_mut(), &mut inner.state);
             }
         }
         LeftContent::List { items } => {
-            let list = List::new(items)
+            let mut list = List::new(items)
                 .highlight_style(theme.highlight)
                 .highlight_symbol(highlight_symbol);
-            if let SelectionState::List(inner) = selection {
-                StatefulWidget::render(list, area, frame.buffer_mut(), &mut inner.state);
+            if let Some(b) = block {
+                list = list.block(b);
             }
-        }
-    }
-}
-
-fn render_left_with_block(
-    frame: &mut Frame,
-    area: Rect,
-    left: LeftContent<'_>,
-    block: Block<'_>,
-    selection: &mut SelectionState,
-    theme: &Theme,
-    highlight_symbol: &str,
-) {
-    match left {
-        LeftContent::Table {
-            headers,
-            rows,
-            widths,
-        } => {
-            let header = Row::new(headers).style(theme.muted);
-            let table = Table::new(rows, widths)
-                .block(block)
-                .header(header)
-                .row_highlight_style(theme.highlight);
-            if let SelectionState::Table(inner) = selection {
-                StatefulWidget::render(table, area, frame.buffer_mut(), &mut inner.state);
-            }
-        }
-        LeftContent::List { items } => {
-            let list = List::new(items)
-                .block(block)
-                .highlight_style(theme.highlight)
-                .highlight_symbol(highlight_symbol);
             if let SelectionState::List(inner) = selection {
                 StatefulWidget::render(list, area, frame.buffer_mut(), &mut inner.state);
             }

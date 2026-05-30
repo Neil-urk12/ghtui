@@ -27,7 +27,7 @@ pub struct GitHubClient {
     pub rate_reset: Mutex<Option<Instant>>,
 }
 
-pub(crate) fn build_http_client() -> Client {
+pub(crate) fn build_http_client() -> color_eyre::Result<Client> {
     Client::builder()
         .redirect(Policy::custom(|attempt| {
             if attempt.previous().last().and_then(|u| u.host_str()) == attempt.url().host_str() {
@@ -37,30 +37,30 @@ pub(crate) fn build_http_client() -> Client {
             }
         }))
         .build()
-        .expect("failed to build HTTP client")
+        .map_err(Into::into)
 }
 impl GitHubClient {
-    pub fn new(token: String) -> Self {
-        Self {
-            http: build_http_client(),
+    pub fn new(token: String) -> color_eyre::Result<Self> {
+        Ok(Self {
+            http: build_http_client()?,
             token,
             base_url: BASE_URL.to_string(),
             cache: Mutex::new(Cache::new()),
             rate_remaining: Mutex::new(None),
             rate_reset: Mutex::new(None),
-        }
+        })
     }
 
     #[cfg(test)]
-    pub(crate) fn new_for_test(token: String, base_url: String) -> Self {
-        Self {
-            http: build_http_client(),
+    pub(crate) fn new_for_test(token: String, base_url: String) -> color_eyre::Result<Self> {
+        Ok(Self {
+            http: build_http_client()?,
             token,
             base_url,
             cache: Mutex::new(Cache::new()),
             rate_remaining: Mutex::new(None),
             rate_reset: Mutex::new(None),
-        }
+        })
     }
 
     fn with_cache(&self, f: impl FnOnce(&mut Cache)) {
@@ -250,7 +250,6 @@ impl GitHubClient {
     ///
     /// **Partial failure behavior:** Same as [`get_all`] — mid-pagination failures return
     /// partial results and cache them. See [`get_all`] for details.
-
     async fn post_empty(&self, path: &str) -> Result<()> {
         self.send_and_check(
             self.request(Method::POST, path)
@@ -717,7 +716,7 @@ fn parse_next_link(header_value: &str, expected_prefix: Option<&str>) -> Option<
                         let url_parsed = Url::parse(url).ok();
                         let prefix_parsed = Url::parse(prefix).ok();
                         // Reject userinfo URLs (e.g. https://user@api.github.com)
-                        if url_parsed.as_ref().map_or(false, |u| !u.username().is_empty()) {
+                        if url_parsed.as_ref().is_some_and(|u| !u.username().is_empty()) {
                             tracing::warn!("parse_next_link: rejecting URL with userinfo: {}", url);
                             return None;
                         }
@@ -785,7 +784,7 @@ mod tests {
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
             .mount(&server)
             .await;
-        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
         (server, client)
     }
 
@@ -872,7 +871,7 @@ mod tests {
         Mock::given(method("POST")).and(path("/repos/o/r/pulls/1/reviews"))
             .respond_with(ResponseTemplate::new(500).set_body_string("server error"))
             .mount(&server).await;
-        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
         seed(&client, CacheKey::Pulls { owner: "o".into(), repo: "r".into(), state: "open".into() }, vec!["stale".to_string()]);
         let result = client.approve_pr("o", "r", 1).await;
         assert!(result.is_err());
@@ -890,7 +889,7 @@ mod tests {
         
         // Client with trailing slash on base_url
         let base_url = format!("{}/", server.uri());
-        let client = GitHubClient::new_for_test("tok".into(), base_url);
+        let client = GitHubClient::new_for_test("tok".into(), base_url).unwrap();
         
         // Should work - double slash would cause path mismatch
         let result = client.get_pulls("o", "r", "open").await;
@@ -900,7 +899,7 @@ mod tests {
     #[test]
     #[tracing_test::traced_test]
     fn poisoned_mutex_logs_warn_level() {
-        let client = GitHubClient::new_for_test("tok".into(), "http://localhost".into());
+        let client = GitHubClient::new_for_test("tok".into(), "http://localhost".into()).unwrap();
         // Poison the mutex
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let _guard = client.cache.lock().unwrap();
@@ -948,7 +947,7 @@ mod tests {
                 }
             ])))
             .mount(&server).await;
-        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
         let files = client.get_pr_files("o", "r", 1).await.unwrap();
         assert_eq!(files.len(), 2);
         assert_eq!(files[0].filename, "src/main.rs");
@@ -969,7 +968,7 @@ mod tests {
                 { "filename": "a.rs", "status": "added", "additions": 1, "deletions": 0, "patch": null, "previous_filename": null }
             ])))
             .mount(&server).await;
-        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
         // First call populates cache
         let files = client.get_pr_files("o", "r", 1).await.unwrap();
         assert_eq!(files.len(), 1);
@@ -1015,7 +1014,7 @@ mod tests {
             )
             .mount(&server).await;
 
-        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
         let files = client.get_pr_files("o", "r", 1).await.unwrap();
 
         assert_eq!(files.len(), 3, "should return all files from both pages");
@@ -1039,7 +1038,7 @@ mod tests {
             )
             .mount(&server).await;
 
-        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
         let files = client.get_pr_files("o", "r", 1).await.unwrap();
 
         // Should return only page 1 files — cross-host link is ignored
@@ -1119,7 +1118,7 @@ mod tests {
             )
             .mount(&server).await;
 
-        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
         let result: Vec<String> = client.get_all("/items", None, Duration::from_secs(60), None, |v| v).await.unwrap();
         assert_eq!(result, vec!["a".to_string(), "b".to_string()]);
     }
@@ -1143,7 +1142,7 @@ mod tests {
             )
             .mount(&server).await;
 
-        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
         let result: Vec<String> = client.get_all("/items?page=1", None, Duration::from_secs(60), None, |v| v).await.unwrap();
         assert_eq!(result, vec!["a".to_string(), "b".to_string(), "c".to_string()]);
     }
@@ -1176,7 +1175,7 @@ mod tests {
             .expect(0)
             .mount(&server).await;
 
-        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
         let result: Vec<String> = client.get_all("/items?page=1", None, Duration::from_secs(60), Some(2), |v| v).await.unwrap();
         assert_eq!(result, vec!["a".to_string(), "b".to_string()]);
     }
@@ -1197,7 +1196,7 @@ mod tests {
         // No second mock needed — the cross-host link is rejected by parse_next_link,
         // so the server only receives one request (page 1).
 
-        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
         let result: Vec<String> = client.get_all("/items", None, Duration::from_secs(60), None, |v| v).await.unwrap();
         // Should return only page 1 items — cross-host link is ignored
         assert_eq!(result, vec!["a".to_string(), "b".to_string()]);
@@ -1214,7 +1213,7 @@ mod tests {
             .expect(0)
             .mount(&server).await;
 
-        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
         seed(&client, CacheKey::UserRepos, vec!["cached".to_string()]);
 
         let result: Vec<String> = client.get_all("/items", Some(CacheKey::UserRepos), Duration::from_secs(60), None, |v| v).await.unwrap();
@@ -1228,7 +1227,7 @@ mod tests {
             .respond_with(ResponseTemplate::new(500).set_body_string("server error"))
             .mount(&server).await;
 
-        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
         let result: Result<Vec<String>> = client.get_all("/items", None, Duration::from_secs(60), None, |v| v).await;
         assert!(result.is_err());
     }
@@ -1250,7 +1249,7 @@ mod tests {
             .respond_with(ResponseTemplate::new(500).set_body_string("server error"))
             .mount(&server).await;
 
-        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
         let result: Vec<String> = client.get_all("/items?page=1", None, Duration::from_secs(60), None, |v| v).await.unwrap();
         assert_eq!(result, vec!["a".to_string()]);
     }
@@ -1266,7 +1265,7 @@ mod tests {
         Mock::given(method("GET")).and(path("/items"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "items": ["a", "b"] })))
             .mount(&server).await;
-        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
         let result: Vec<String> = client.get_all("/items", None, Duration::from_secs(60), None, |w: TestWrapper| w.items).await.unwrap();
         assert_eq!(result, vec!["a".to_string(), "b".to_string()]);
     }
@@ -1281,7 +1280,7 @@ mod tests {
         Mock::given(method("GET")).and(path("/items")).and(query_param("page", "2"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "items": ["b"] })))
             .mount(&server).await;
-        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
         let result: Vec<String> = client.get_all("/items?page=1", None, Duration::from_secs(60), None, |w: TestWrapper| w.items).await.unwrap();
         assert_eq!(result, vec!["a".to_string(), "b".to_string()]);
     }
@@ -1293,7 +1292,7 @@ mod tests {
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "items": ["fetched"] })))
             .expect(0)
             .mount(&server).await;
-        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
         seed(&client, CacheKey::Actions { owner: "o".into(), repo: "r".into() }, vec!["cached".to_string()]);
         let result: Vec<String> = client.get_all("/items", Some(CacheKey::Actions { owner: "o".into(), repo: "r".into() }), Duration::from_secs(60), None, |w: TestWrapper| w.items).await.unwrap();
         assert_eq!(result, vec!["cached".to_string()]);
@@ -1309,7 +1308,7 @@ mod tests {
         Mock::given(method("GET")).and(path("/items")).and(query_param("page", "2"))
             .respond_with(ResponseTemplate::new(500).set_body_string("server error"))
             .mount(&server).await;
-        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
         let result: Vec<String> = client.get_all("/items?page=1", None, Duration::from_secs(60), None, |w: TestWrapper| w.items).await.unwrap();
         assert_eq!(result, vec!["a".to_string()]);
     }
@@ -1320,7 +1319,7 @@ mod tests {
         Mock::given(method("GET")).and(path("/items"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
             .mount(&server).await;
-        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
         let result: Vec<String> = client.get_all("/items", None, Duration::from_secs(60), None, |v| v).await.unwrap();
         assert!(result.is_empty());
     }
@@ -1331,7 +1330,7 @@ mod tests {
         Mock::given(method("GET")).and(path("/items"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "items": [] })))
             .mount(&server).await;
-        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
         let result: Vec<String> = client.get_all("/items", None, Duration::from_secs(60), None, |w: TestWrapper| w.items).await.unwrap();
         assert!(result.is_empty());
     }
@@ -1349,7 +1348,7 @@ mod tests {
             )
             .mount(&server).await;
 
-        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
         let result: Vec<String> = client
             .get_all(
                 "/runs",
@@ -1386,7 +1385,7 @@ mod tests {
             )
             .mount(&server).await;
 
-        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
         let result: Vec<String> = client.get_all("/items", None, Duration::from_secs(60), None, |v| v).await.unwrap();
         // Should return only page 1 — redirect to different host is blocked
         assert_eq!(result, vec!["a".to_string()]);
@@ -1403,7 +1402,7 @@ mod tests {
             )
             .mount(&server).await;
 
-        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
         let result = client.send_and_check(
             client.request(Method::GET, "/redirect")
         ).await;
@@ -1433,7 +1432,7 @@ mod tests {
             )
             .mount(&server).await;
 
-        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
         let result = client.send_and_check(
             client.request(Method::GET, "/redirect")
         ).await;
@@ -1484,7 +1483,7 @@ mod tests {
             )
             .mount(&server).await;
 
-        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
         let result: Vec<String> = client.get_all("/items", None, Duration::from_secs(60), None, |v| v).await.unwrap();
         assert_eq!(result, vec!["a".to_string(), "b".to_string()]);
     }
@@ -1499,7 +1498,7 @@ mod tests {
             )
             .mount(&server).await;
 
-        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
         let result: Vec<String> = client.get_all("/items", None, Duration::from_secs(60), None, |w: TestWrapper| w.items).await.unwrap();
         assert_eq!(result, vec!["x".to_string(), "y".to_string()]);
     }
@@ -1523,7 +1522,7 @@ mod tests {
             )
             .mount(&server).await;
 
-        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
         let result: Vec<String> = client.get_all("/runs?page=1", None, Duration::from_secs(60), None, |w: TestWrapper| w.items).await.unwrap();
         assert_eq!(result, vec!["a".to_string(), "b".to_string()]);
     }

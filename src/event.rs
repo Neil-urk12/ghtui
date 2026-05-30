@@ -134,7 +134,7 @@ mod tests {
     use crate::config::Config;
 
     fn test_app() -> App {
-        App::new(Config::default(), Some("test-token".into()))
+        App::new(Config::default(), Some("test-token".into())).unwrap()
     }
 
     fn key_event(code: KeyCode) -> CrosstermEvent {

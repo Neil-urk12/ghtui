@@ -44,7 +44,7 @@ mod tests {
     use ratatui::Terminal;
 
     fn test_app() -> App {
-        App::new(Config::default(), Some("test-token".into()))
+        App::new(Config::default(), Some("test-token".into())).unwrap()
     }
 
     fn render_status_bar_to_string(app: &App) -> String {

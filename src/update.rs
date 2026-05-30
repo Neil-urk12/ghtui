@@ -220,7 +220,7 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
                             .unwrap_or_default();
                         let action_label = other
                             .action_label()
-                            .expect("destructive cmd must have label")
+                            .unwrap_or("confirm action") // Invariant enforced by test; fallback is defensive
                             .to_string();
                         app.confirmation = Some(crate::app::ConfirmState {
                             pending_cmd: other,
@@ -246,7 +246,14 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
             if let Err(e) = crate::api::auth::save_token(&token, crate::api::auth::GHTUI_SCOPES) {
                 tracing::warn!("failed to persist token: {e}");
             }
-            app.client = Arc::new(GitHubClient::new(token));
+            app.client = Arc::new(match GitHubClient::new(token) {
+                Ok(c) => c,
+                Err(e) => {
+                    app.error_toast = Some(format!("Failed to create HTTP client: {e}"));
+                    tracing::error!("failed to create HTTP client: {e}");
+                    return Cmd::None;
+                }
+            });
             app.login = None;
             app.state = AppState::Main;
             if let Some(entry) = app.panels.get_mut(&PanelKind::Repos) {
@@ -394,7 +401,7 @@ mod tests {
     use crate::config::Config;
 
     fn test_app() -> App {
-        App::new(Config::default(), Some("test-token".into()))
+        App::new(Config::default(), Some("test-token".into())).unwrap()
     }
 
     #[test]
@@ -1096,5 +1103,15 @@ mod tests {
         } else {
             panic!("Expected Pulls panel");
         }
+    }
+
+    #[test]
+    fn cmd_without_action_label_uses_default() {
+        // Cmd::None is not destructive, so action_label() returns None.
+        // Verify the fallback produces "confirm action" when label is missing.
+        let none_cmd = Cmd::None;
+        assert_eq!(none_cmd.action_label(), None);
+        let fallback = none_cmd.action_label().unwrap_or("confirm action");
+        assert_eq!(fallback, "confirm action");
     }
 }

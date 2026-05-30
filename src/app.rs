@@ -236,12 +236,12 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(config: Config, token: Option<String>) -> Self {
+    pub fn new(config: Config, token: Option<String>) -> color_eyre::Result<Self> {
         let theme = Theme::from_config(&config.theme);
 
         let (client, state) = match token {
-            Some(token) => (Arc::new(GitHubClient::new(token)), AppState::Main),
-            None => (Arc::new(GitHubClient::new(String::new())), AppState::Login),
+            Some(token) => (Arc::new(GitHubClient::new(token)?), AppState::Main),
+            None => (Arc::new(GitHubClient::new(String::new())?), AppState::Login),
         };
 
         // Apply config defaults
@@ -283,7 +283,7 @@ impl App {
             PanelState::Actions(ListPanel::default()),
         );
 
-        Self {
+        Ok(Self {
             state,
             login: None,
             active_panel: PanelKind::Repos,
@@ -301,7 +301,7 @@ impl App {
             rate_reset_secs: None,
             client,
             confirmation: None,
-        }
+        })
     }
 
     pub fn next_tab(&mut self) {
@@ -327,7 +327,7 @@ mod tests {
     use crate::config::Config;
 
     fn test_app() -> App {
-        App::new(Config::default(), Some("test-token".into()))
+        App::new(Config::default(), Some("test-token".into())).unwrap()
     }
 
     #[test]
@@ -366,7 +366,7 @@ mod tests {
 
     #[test]
     fn app_constructs_without_token() {
-        let app = App::new(Config::default(), None);
+        let app = App::new(Config::default(), None).unwrap();
         assert!(matches!(app.state, AppState::Login));
     }
 }
