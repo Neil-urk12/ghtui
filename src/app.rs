@@ -320,3 +320,53 @@ impl App {
         self.active_panel = PanelKind::ALL[(idx + PanelKind::ALL.len() - 1) % PanelKind::ALL.len()];
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+
+    fn test_app() -> App {
+        App::new(Config::default(), Some("test-token".into()))
+    }
+
+    #[test]
+    fn new_app_starts_on_repos_panel() {
+        let app = test_app();
+        assert_eq!(app.active_panel, PanelKind::Repos);
+    }
+
+    #[test]
+    fn tab_cycles_through_panels() {
+        let mut app = test_app();
+        let panels = PanelKind::ALL;
+
+        for expected in &panels[1..] {
+            app.next_tab();
+            assert_eq!(app.active_panel, *expected);
+        }
+        // Wraps back to start
+        app.next_tab();
+        assert_eq!(app.active_panel, PanelKind::Repos);
+    }
+
+    #[test]
+    fn prev_tab_wraps_around() {
+        let mut app = test_app();
+        assert_eq!(app.active_panel, PanelKind::Repos);
+        app.prev_tab();
+        assert_eq!(app.active_panel, PanelKind::Actions);
+    }
+
+    #[test]
+    fn app_constructs_with_token() {
+        let _app = test_app();
+        // Token passed during construction — App created successfully with auth
+    }
+
+    #[test]
+    fn app_constructs_without_token() {
+        let app = App::new(Config::default(), None);
+        assert!(matches!(app.state, AppState::Login));
+    }
+}

@@ -2,16 +2,17 @@ use ratatui::prelude::*;
 use ratatui::widgets::*;
 
 use crate::app::{App, PanelKind};
+use crate::keys::{HINT_ACTIONS, HINT_GLOBAL, HINT_ISSUES, HINT_NOTIFICATIONS, HINT_PULLS, HINT_REPOS};
 
 pub fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
     let panel_hints = match app.active_panel {
-        PanelKind::Repos => "Enter: PRs | s: sort",
-        PanelKind::Pulls => "1:open 2:closed 3:all | o:browser",
-        PanelKind::Issues => "1:open 2:closed 3:all | o:browser",
-        PanelKind::Notifications => "a:all/unread",
-        PanelKind::Actions => "Enter: expand | v: logs",
+        PanelKind::Repos => HINT_REPOS,
+        PanelKind::Pulls => HINT_PULLS,
+        PanelKind::Issues => HINT_ISSUES,
+        PanelKind::Notifications => HINT_NOTIFICATIONS,
+        PanelKind::Actions => HINT_ACTIONS,
     };
-    let global_hints = "j/k: nav | Tab: switch | /: search | ?: help | q: quit";
+    let global_hints = HINT_GLOBAL;
 
     let rate_str = match (app.rate_remaining, app.rate_reset_secs) {
         (Some(0), _) => {

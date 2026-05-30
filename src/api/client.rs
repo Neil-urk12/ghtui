@@ -3,6 +3,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use color_eyre::Result;
 use reqwest::{Client, Method, redirect::Policy};
+use url::Url;
 
 use super::cache::{Cache, CacheKey};
 use super::models::*;
@@ -159,13 +160,19 @@ impl GitHubClient {
     /// whatever items were collected so far rather than failing entirely. These partial results
     /// ARE cached — subsequent calls within the TTL return the same truncated data. This is
     /// intentional: partial data is often more useful than no data for UI display.
-    async fn get_all<T: serde::de::DeserializeOwned + Clone + Send + Sync + 'static>(
+    async fn get_all<T, W, F>(
         &self,
         path: &str,
         cache_key: Option<CacheKey>,
         cache_ttl: Duration,
         max_pages: Option<usize>,
-    ) -> Result<Vec<T>> {
+        extract: F,
+    ) -> Result<Vec<T>>
+    where
+        T: serde::de::DeserializeOwned + Clone + Send + Sync + 'static,
+        W: serde::de::DeserializeOwned,
+        F: Fn(W) -> Vec<T>,
+    {
         // Check cache first
         if let Some(ref key) = cache_key {
             let hit: Option<Vec<T>> = {
@@ -209,7 +216,8 @@ impl GitHubClient {
                 .and_then(|v| v.to_str().ok())
                 .and_then(|v| parse_next_link(v, Some(&self.base_url)));
 
-            let mut items: Vec<T> = resp.json().await?;
+            let wrapper: W = resp.json().await?;
+            let mut items = extract(wrapper);
             all_items.append(&mut items);
             page_count += 1;
 
@@ -242,87 +250,6 @@ impl GitHubClient {
     ///
     /// **Partial failure behavior:** Same as [`get_all`] — mid-pagination failures return
     /// partial results and cache them. See [`get_all`] for details.
-    async fn get_all_wrapped<T, W, F>(
-        &self,
-        path: &str,
-        cache_key: Option<CacheKey>,
-        cache_ttl: Duration,
-        max_pages: Option<usize>,
-        extract: F,
-    ) -> Result<Vec<T>>
-    where
-        T: serde::de::DeserializeOwned + Clone + Send + Sync + 'static,
-        W: serde::de::DeserializeOwned,
-        F: Fn(W) -> Vec<T>,
-    {
-        // Check cache first
-        if let Some(ref key) = cache_key {
-            let hit: Option<Vec<T>> = {
-                let mut result = None;
-                self.with_cache(|cache| {
-                    result = cache.get::<Vec<T>>(key).cloned();
-                });
-                result
-            };
-            if let Some(cached) = hit {
-                return Ok(cached);
-            }
-        }
-
-        let mut all_items: Vec<T> = Vec::new();
-        let mut current_path = path.to_string();
-        let mut page_count = 0usize;
-
-        loop {
-            if let Some(max) = max_pages {
-                if page_count >= max {
-                    break;
-                }
-            }
-
-            let resp = match self.send_and_check(self.request(Method::GET, &current_path)).await {
-                Ok(resp) => resp,
-                Err(e) => {
-                    if page_count > 0 {
-                        tracing::warn!("get_all_wrapped: page {} failed, returning partial results: {}", page_count + 1, e);
-                        break;
-                    } else {
-                        return Err(e);
-                    }
-                }
-            };
-
-            let next_link = resp
-                .headers()
-                .get("link")
-                .and_then(|v| v.to_str().ok())
-                .and_then(|v| parse_next_link(v, Some(&self.base_url)));
-
-            let wrapper: W = resp.json().await?;
-            let mut items = extract(wrapper);
-            all_items.append(&mut items);
-            page_count += 1;
-
-            match next_link {
-                Some(url) => {
-                    current_path = url
-                        .strip_prefix(&self.base_url)
-                        .unwrap_or(&url)
-                        .to_string();
-                }
-                None => break,
-            }
-        }
-
-        // Store in cache
-        if let Some(key) = cache_key {
-            self.with_cache(|cache| {
-                cache.insert(key, all_items.clone(), cache_ttl);
-            });
-        }
-
-        Ok(all_items)
-    }
 
     async fn post_empty(&self, path: &str) -> Result<()> {
         self.send_and_check(
@@ -358,6 +285,7 @@ impl GitHubClient {
                 Some(CacheKey::UserRepos),
                 Duration::from_secs(REPO_CACHE_TTL_SECS),
                 None,
+                |v| v,
             )
             .await?;
         Ok(models
@@ -392,6 +320,7 @@ impl GitHubClient {
                 }),
                 Duration::from_secs(PULLS_CACHE_TTL_SECS),
                 None,
+                |v| v,
             )
             .await?;
         Ok(models
@@ -434,6 +363,7 @@ impl GitHubClient {
                 }),
                 Duration::from_secs(ISSUES_CACHE_TTL_SECS),
                 None,
+                |v| v,
             )
             .await?;
         // Filter out pull requests (GitHub returns them as issues too)
@@ -466,6 +396,7 @@ impl GitHubClient {
                 Some(CacheKey::Notifications),
                 Duration::from_secs(NOTIFICATIONS_CACHE_TTL_SECS),
                 None,
+                |v| v,
             )
             .await?;
         Ok(models
@@ -485,7 +416,7 @@ impl GitHubClient {
     pub async fn get_actions(&self, owner: &str, repo: &str) -> Result<Vec<domain::WorkflowRun>> {
         let path = format!("/repos/{owner}/{repo}/actions/runs?per_page=50");
         let runs: Vec<WorkflowRun> = self
-            .get_all_wrapped(
+            .get_all(
                 &path,
                 Some(CacheKey::Actions {
                     owner: owner.to_string(),
@@ -781,11 +712,26 @@ fn parse_next_link(header_value: &str, expected_prefix: Option<&str>) -> Option<
                 let url = &link[start + 1..start + 1 + end];
                 if url.starts_with("https://") || url.starts_with("http://") {
                     if let Some(prefix) = expected_prefix {
-                        // Extract host from both URLs for comparison (not string prefix — avoids subdomain injection)
-                        let url_host = url.split("://").nth(1).and_then(|s| s.split('/').next());
-                        let prefix_host = prefix.split("://").nth(1).and_then(|s| s.split('/').next());
+                        // Parse once, extract host+port for comparison
+                        // url::Url normalizes default ports (443 for https, 80 for http)
+                        let url_parsed = Url::parse(url).ok();
+                        let prefix_parsed = Url::parse(prefix).ok();
+                        // Reject userinfo URLs (e.g. https://user@api.github.com)
+                        if url_parsed.as_ref().map_or(false, |u| !u.username().is_empty()) {
+                            tracing::warn!("parse_next_link: rejecting URL with userinfo: {}", url);
+                            return None;
+                        }
+                        let url_host = url_parsed.as_ref().and_then(|u| u.host_str().map(String::from));
+                        let prefix_host = prefix_parsed.as_ref().and_then(|u| u.host_str().map(String::from));
                         match (url_host, prefix_host) {
-                            (Some(uh), Some(ph)) if uh == ph => {}
+                            (Some(uh), Some(ph)) if uh == ph => {
+                                let url_port = url_parsed.as_ref().and_then(|u| u.port());
+                                let prefix_port = prefix_parsed.as_ref().and_then(|u| u.port());
+                                if url_port != prefix_port {
+                                    tracing::warn!("parse_next_link: rejecting URL with different port: {}", url);
+                                    return None;
+                                }
+                            }
                             _ => {
                                 tracing::warn!("parse_next_link: rejecting URL with unexpected host: {}", url);
                                 return None;
@@ -1174,7 +1120,7 @@ mod tests {
             .mount(&server).await;
 
         let client = GitHubClient::new_for_test("tok".into(), server.uri());
-        let result: Vec<String> = client.get_all("/items", None, Duration::from_secs(60), None).await.unwrap();
+        let result: Vec<String> = client.get_all("/items", None, Duration::from_secs(60), None, |v| v).await.unwrap();
         assert_eq!(result, vec!["a".to_string(), "b".to_string()]);
     }
 
@@ -1198,7 +1144,7 @@ mod tests {
             .mount(&server).await;
 
         let client = GitHubClient::new_for_test("tok".into(), server.uri());
-        let result: Vec<String> = client.get_all("/items?page=1", None, Duration::from_secs(60), None).await.unwrap();
+        let result: Vec<String> = client.get_all("/items?page=1", None, Duration::from_secs(60), None, |v| v).await.unwrap();
         assert_eq!(result, vec!["a".to_string(), "b".to_string(), "c".to_string()]);
     }
 
@@ -1231,7 +1177,7 @@ mod tests {
             .mount(&server).await;
 
         let client = GitHubClient::new_for_test("tok".into(), server.uri());
-        let result: Vec<String> = client.get_all("/items?page=1", None, Duration::from_secs(60), Some(2)).await.unwrap();
+        let result: Vec<String> = client.get_all("/items?page=1", None, Duration::from_secs(60), Some(2), |v| v).await.unwrap();
         assert_eq!(result, vec!["a".to_string(), "b".to_string()]);
     }
 
@@ -1252,7 +1198,7 @@ mod tests {
         // so the server only receives one request (page 1).
 
         let client = GitHubClient::new_for_test("tok".into(), server.uri());
-        let result: Vec<String> = client.get_all("/items", None, Duration::from_secs(60), None).await.unwrap();
+        let result: Vec<String> = client.get_all("/items", None, Duration::from_secs(60), None, |v| v).await.unwrap();
         // Should return only page 1 items — cross-host link is ignored
         assert_eq!(result, vec!["a".to_string(), "b".to_string()]);
     }
@@ -1271,7 +1217,7 @@ mod tests {
         let client = GitHubClient::new_for_test("tok".into(), server.uri());
         seed(&client, CacheKey::UserRepos, vec!["cached".to_string()]);
 
-        let result: Vec<String> = client.get_all("/items", Some(CacheKey::UserRepos), Duration::from_secs(60), None).await.unwrap();
+        let result: Vec<String> = client.get_all("/items", Some(CacheKey::UserRepos), Duration::from_secs(60), None, |v| v).await.unwrap();
         assert_eq!(result, vec!["cached".to_string()]);
     }
 
@@ -1283,7 +1229,7 @@ mod tests {
             .mount(&server).await;
 
         let client = GitHubClient::new_for_test("tok".into(), server.uri());
-        let result: Result<Vec<String>> = client.get_all("/items", None, Duration::from_secs(60), None).await;
+        let result: Result<Vec<String>> = client.get_all("/items", None, Duration::from_secs(60), None, |v| v).await;
         assert!(result.is_err());
     }
 
@@ -1305,7 +1251,7 @@ mod tests {
             .mount(&server).await;
 
         let client = GitHubClient::new_for_test("tok".into(), server.uri());
-        let result: Vec<String> = client.get_all("/items?page=1", None, Duration::from_secs(60), None).await.unwrap();
+        let result: Vec<String> = client.get_all("/items?page=1", None, Duration::from_secs(60), None, |v| v).await.unwrap();
         assert_eq!(result, vec!["a".to_string()]);
     }
 
@@ -1315,18 +1261,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_all_wrapped_single_page() {
+    async fn get_all_extract_single_page() {
         let server = MockServer::start().await;
         Mock::given(method("GET")).and(path("/items"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "items": ["a", "b"] })))
             .mount(&server).await;
         let client = GitHubClient::new_for_test("tok".into(), server.uri());
-        let result: Vec<String> = client.get_all_wrapped("/items", None, Duration::from_secs(60), None, |w: TestWrapper| w.items).await.unwrap();
+        let result: Vec<String> = client.get_all("/items", None, Duration::from_secs(60), None, |w: TestWrapper| w.items).await.unwrap();
         assert_eq!(result, vec!["a".to_string(), "b".to_string()]);
     }
 
     #[tokio::test]
-    async fn get_all_wrapped_multi_page() {
+    async fn get_all_extract_multi_page() {
         let server = MockServer::start().await;
         Mock::given(method("GET")).and(path("/items")).and(query_param("page", "1"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "items": ["a"] }))
@@ -1336,12 +1282,12 @@ mod tests {
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "items": ["b"] })))
             .mount(&server).await;
         let client = GitHubClient::new_for_test("tok".into(), server.uri());
-        let result: Vec<String> = client.get_all_wrapped("/items?page=1", None, Duration::from_secs(60), None, |w: TestWrapper| w.items).await.unwrap();
+        let result: Vec<String> = client.get_all("/items?page=1", None, Duration::from_secs(60), None, |w: TestWrapper| w.items).await.unwrap();
         assert_eq!(result, vec!["a".to_string(), "b".to_string()]);
     }
 
     #[tokio::test]
-    async fn get_all_wrapped_cache_hit() {
+    async fn get_all_extract_cache_hit() {
         let server = MockServer::start().await;
         Mock::given(method("GET")).and(path("/items"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "items": ["fetched"] })))
@@ -1349,12 +1295,12 @@ mod tests {
             .mount(&server).await;
         let client = GitHubClient::new_for_test("tok".into(), server.uri());
         seed(&client, CacheKey::Actions { owner: "o".into(), repo: "r".into() }, vec!["cached".to_string()]);
-        let result: Vec<String> = client.get_all_wrapped("/items", Some(CacheKey::Actions { owner: "o".into(), repo: "r".into() }), Duration::from_secs(60), None, |w: TestWrapper| w.items).await.unwrap();
+        let result: Vec<String> = client.get_all("/items", Some(CacheKey::Actions { owner: "o".into(), repo: "r".into() }), Duration::from_secs(60), None, |w: TestWrapper| w.items).await.unwrap();
         assert_eq!(result, vec!["cached".to_string()]);
     }
 
     #[tokio::test]
-    async fn get_all_wrapped_partial_failure() {
+    async fn get_all_extract_partial_failure() {
         let server = MockServer::start().await;
         Mock::given(method("GET")).and(path("/items")).and(query_param("page", "1"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "items": ["a"] }))
@@ -1364,7 +1310,7 @@ mod tests {
             .respond_with(ResponseTemplate::new(500).set_body_string("server error"))
             .mount(&server).await;
         let client = GitHubClient::new_for_test("tok".into(), server.uri());
-        let result: Vec<String> = client.get_all_wrapped("/items?page=1", None, Duration::from_secs(60), None, |w: TestWrapper| w.items).await.unwrap();
+        let result: Vec<String> = client.get_all("/items?page=1", None, Duration::from_secs(60), None, |w: TestWrapper| w.items).await.unwrap();
         assert_eq!(result, vec!["a".to_string()]);
     }
 
@@ -1375,23 +1321,23 @@ mod tests {
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
             .mount(&server).await;
         let client = GitHubClient::new_for_test("tok".into(), server.uri());
-        let result: Vec<String> = client.get_all("/items", None, Duration::from_secs(60), None).await.unwrap();
+        let result: Vec<String> = client.get_all("/items", None, Duration::from_secs(60), None, |v| v).await.unwrap();
         assert!(result.is_empty());
     }
 
     #[tokio::test]
-    async fn get_all_wrapped_empty_response() {
+    async fn get_all_extract_empty_response() {
         let server = MockServer::start().await;
         Mock::given(method("GET")).and(path("/items"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "items": [] })))
             .mount(&server).await;
         let client = GitHubClient::new_for_test("tok".into(), server.uri());
-        let result: Vec<String> = client.get_all_wrapped("/items", None, Duration::from_secs(60), None, |w: TestWrapper| w.items).await.unwrap();
+        let result: Vec<String> = client.get_all("/items", None, Duration::from_secs(60), None, |w: TestWrapper| w.items).await.unwrap();
         assert!(result.is_empty());
     }
 
     #[tokio::test]
-    async fn get_all_wrapped_rejects_cross_host_next_link() {
+    async fn get_all_extract_rejects_cross_host_next_link() {
         let server = MockServer::start().await;
 
         // Page 1 returns wrapped data with a next-link pointing to a different host
@@ -1405,7 +1351,7 @@ mod tests {
 
         let client = GitHubClient::new_for_test("tok".into(), server.uri());
         let result: Vec<String> = client
-            .get_all_wrapped(
+            .get_all(
                 "/runs",
                 None,
                 Duration::from_secs(60),
@@ -1441,7 +1387,7 @@ mod tests {
             .mount(&server).await;
 
         let client = GitHubClient::new_for_test("tok".into(), server.uri());
-        let result: Vec<String> = client.get_all("/items", None, Duration::from_secs(60), None).await.unwrap();
+        let result: Vec<String> = client.get_all("/items", None, Duration::from_secs(60), None, |v| v).await.unwrap();
         // Should return only page 1 — redirect to different host is blocked
         assert_eq!(result, vec!["a".to_string()]);
     }
@@ -1494,5 +1440,91 @@ mod tests {
 
         // Should succeed — same-host redirect is followed
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn parse_next_link_rejects_userinfo_url() {
+        let header = r#"<https://user@evil.com/repos?page=2>; rel="next""#;
+        assert_eq!(parse_next_link(header, Some("https://api.github.com")), None);
+    }
+
+    #[test]
+    fn parse_next_link_rejects_same_host_userinfo_url() {
+        // Same host but with userinfo — should be rejected
+        let header = r#"<https://user@api.github.com/repos?page=2>; rel="next""#;
+        assert_eq!(parse_next_link(header, Some("https://api.github.com")), None);
+    }
+
+    #[test]
+    fn parse_next_link_rejects_different_port() {
+        let header = r#"<https://api.github.com:8080/repos?page=2>; rel="next""#;
+        assert_eq!(parse_next_link(header, Some("https://api.github.com")), None);
+    }
+
+    #[test]
+    fn parse_next_link_accepts_default_port() {
+        // Manual string-splitting treats "api.github.com:443" != "api.github.com"
+        // url::Url normalizes default ports (443 for https) so they match
+        let header = r#"<https://api.github.com:443/repos?page=2>; rel="next""#;
+        assert_eq!(
+            parse_next_link(header, Some("https://api.github.com")),
+            Some("https://api.github.com:443/repos?page=2".to_string())
+        );
+    }
+
+    // --- TDD: get_all with extract closure (unified API) ---
+
+    #[tokio::test]
+    async fn get_all_with_extract_identity() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET")).and(path("/items"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!(["a", "b"]))
+            )
+            .mount(&server).await;
+
+        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let result: Vec<String> = client.get_all("/items", None, Duration::from_secs(60), None, |v| v).await.unwrap();
+        assert_eq!(result, vec!["a".to_string(), "b".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn get_all_with_extract_wrapper() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET")).and(path("/items"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({ "items": ["x", "y"] }))
+            )
+            .mount(&server).await;
+
+        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let result: Vec<String> = client.get_all("/items", None, Duration::from_secs(60), None, |w: TestWrapper| w.items).await.unwrap();
+        assert_eq!(result, vec!["x".to_string(), "y".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn get_all_with_extract_multi_page() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET")).and(path("/runs")).and(query_param("page", "1"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({ "items": ["a"] }))
+                    .insert_header("Link", format!(r#"<{}/runs?page=2>; rel="next""#, server.uri()))
+            )
+            .mount(&server).await;
+
+        Mock::given(method("GET")).and(path("/runs")).and(query_param("page", "2"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({ "items": ["b"] }))
+            )
+            .mount(&server).await;
+
+        let client = GitHubClient::new_for_test("tok".into(), server.uri());
+        let result: Vec<String> = client.get_all("/runs?page=1", None, Duration::from_secs(60), None, |w: TestWrapper| w.items).await.unwrap();
+        assert_eq!(result, vec!["a".to_string(), "b".to_string()]);
     }
 }

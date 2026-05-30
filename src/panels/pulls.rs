@@ -10,72 +10,11 @@ use super::panel::{ListPanelData, PanelItem, SelectionState, StateFilterable};
 use crate::cmd::{Cmd, RepoContext};
 use crate::domain::{FilterState, PullRequest};
 use crate::theme::Theme;
+use crate::util::diff::parse_diff_patch;
 use crate::util::format;
 use crate::widgets::empty_state::EmptyState;
 use crate::widgets::list_view::LeftContent;
 
-/// Parse unified diff patch text into styled lines with line numbers.
-/// Colors: `+` addition, `-` deletion, `@@` header, context default.
-fn parse_diff_patch(patch: &str, theme: &Theme) -> Vec<Line<'static>> {
-    let mut lines = Vec::new();
-    let mut old_line: u32 = 0;
-    let mut new_line: u32 = 0;
-
-    for raw in patch.lines() {
-        if raw.starts_with("@@") {
-            if let Some((old, new)) = parse_hunk_header(raw) {
-                old_line = old;
-                new_line = new;
-            }
-            lines.push(Line::from(Span::styled(
-                raw.to_string(),
-                theme.diff_header,
-            )));
-        } else if raw.starts_with('+') {
-            let prefix = format!("{:>4} | ", new_line);
-            new_line += 1;
-            lines.push(Line::from(vec![
-                Span::styled(prefix, theme.muted),
-                Span::styled(raw.to_string(), theme.diff_addition),
-            ]));
-        } else if raw.starts_with('-') {
-            let prefix = format!("{:>4} | ", old_line);
-            old_line += 1;
-            lines.push(Line::from(vec![
-                Span::styled(prefix, theme.muted),
-                Span::styled(raw.to_string(), theme.diff_deletion),
-            ]));
-        } else if raw.starts_with('\\') {
-            lines.push(Line::from(Span::styled(raw.to_string(), theme.muted)));
-        } else {
-            let prefix = format!("{:>4} | ", new_line);
-            if !raw.is_empty() {
-                old_line += 1;
-                new_line += 1;
-            }
-            lines.push(Line::from(vec![
-                Span::styled(prefix, theme.muted),
-                Span::raw(raw.to_string()),
-            ]));
-        }
-    }
-
-    lines
-}
-
-/// Parse @@ -old_start,count +new_start,count @@ header.
-/// Returns (old_start, new_start) line numbers.
-fn parse_hunk_header(line: &str) -> Option<(u32, u32)> {
-    let parts: Vec<&str> = line.split_whitespace().collect();
-    if parts.len() < 3 {
-        return None;
-    }
-    let old = parts[1].strip_prefix('-').unwrap_or(parts[1]);
-    let new = parts[2].strip_prefix('+').unwrap_or(parts[2]);
-    let old_start = old.split(',').next()?.parse::<u32>().ok()?;
-    let new_start = new.split(',').next()?.parse::<u32>().ok()?;
-    Some((old_start, new_start))
-}
 
 fn pr_to_diff(pr: &PullRequest, theme: &Theme) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
@@ -552,6 +491,7 @@ impl PanelItem for PullsPanelItem {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::util::diff::parse_hunk_header;
     use crate::event::ApiPayload;
     use std::time::Duration;
 
@@ -1572,5 +1512,23 @@ mod tests {
         // No-op when same filter
         let changed = item.set_filter(FilterState::Closed);
         assert!(!changed);
+    }
+
+    #[test]
+    fn parse_diff_patch_file_headers_rendered_as_muted() {
+        let theme = Theme::default();
+        let patch = "--- a/file.rs\n+++ b/file.rs\n@@ -1,1 +1,1 @@\n-old\n+new";
+        let lines = parse_diff_patch(patch, &theme);
+        // --- a/file, +++ b/file, @@ header, -old, +new = 5
+        assert_eq!(lines.len(), 5);
+        // First two lines (--- and +++) should be rendered as muted, not as deletions/additions
+        // Verify they don't have the diff_deletion or diff_addition style by checking they use theme.muted
+        let header_old = lines[0].to_string();
+        let header_new = lines[1].to_string();
+        assert!(header_old.contains("--- a/file.rs"), "first line should be --- header, got: {header_old}");
+        assert!(header_new.contains("+++ b/file.rs"), "second line should be +++ header, got: {header_new}");
+        // Check that these are single-span lines (muted style, not prefix + styled)
+        assert_eq!(lines[0].spans.len(), 1, "--- header should be single muted span");
+        assert_eq!(lines[1].spans.len(), 1, "+++ header should be single muted span");
     }
 }

@@ -1,5 +1,15 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+// Panel-specific hints
+pub const HINT_REPOS: &str = "Enter: PRs | s: sort";
+pub const HINT_PULLS: &str = "1:open 2:closed 3:all | o:browser";
+pub const HINT_ISSUES: &str = "1:open 2:closed 3:all | o:browser";
+pub const HINT_NOTIFICATIONS: &str = "a:all/unread";
+pub const HINT_ACTIONS: &str = "Enter: expand | v: logs";
+
+// Global hints
+pub const HINT_GLOBAL: &str = "j/k: nav | Tab: switch | /: search | ?: help | q: quit";
+
 /// Check if a key event matches a configured binding string.
 /// Supports: single chars ("q"), special keys ("Tab", "Enter", "Esc", "BackTab"),
 /// and modifiers ("Ctrl+c", "Shift-Tab").

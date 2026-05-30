@@ -1,17 +1,12 @@
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Paragraph};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DetailPaneMode {
+    #[default]
     Normal,
     Fullscreen,
     Collapsed,
-}
-
-impl Default for DetailPaneMode {
-    fn default() -> Self {
-        Self::Normal
-    }
 }
 
 #[derive(Debug, Clone, Default)]
