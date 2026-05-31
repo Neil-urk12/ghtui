@@ -589,41 +589,17 @@ impl GitHubClient {
             repo: repo.to_string(),
             pr_number,
         };
-        {
-            let cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
-            if let Some(cached) = cache.get::<Vec<domain::PrFile>>(&cache_key) {
-                return Ok(cached.clone());
-            }
-        }
-
-        let mut all_models: Vec<PullRequestFile> = Vec::new();
-        let mut page = 1u32;
-        const MAX_PAGES: u32 = 100;
-        loop {
-            if page > MAX_PAGES {
-                tracing::warn!(max_pages = MAX_PAGES, owner, repo, pr_number, "pr files pagination exceeded");
-                break;
-            }
-            let path = format!("/repos/{owner}/{repo}/pulls/{pr_number}/files?per_page={API_PER_PAGE}&page={page}");
-            let resp = self
-                .send_and_check(self.request(Method::GET, &path))
-                .await?;
-            let has_next = resp
-                .headers()
-                .get("link")
-                .and_then(|v| v.to_str().ok())
-                .and_then(|v| parse_next_link(v, Some(&self.base_url)))
-                .is_some();
-            let mut models: Vec<PullRequestFile> = resp.json().await?;
-            all_models.append(&mut models);
-            if has_next {
-                page += 1;
-            } else {
-                break;
-            }
-        }
-
-        let result: Vec<domain::PrFile> = all_models
+        let path = format!("/repos/{owner}/{repo}/pulls/{pr_number}/files?per_page={API_PER_PAGE}&page=1");
+        let models: Vec<PullRequestFile> = self
+            .get_all(
+                &path,
+                Some(cache_key),
+                Duration::from_secs(PR_COMMENTS_CACHE_TTL_SECS),
+                Some(100),
+                |v| v,
+            )
+            .await?;
+        Ok(models
             .into_iter()
             .map(|f| domain::PrFile {
                 filename: f.filename,
@@ -633,13 +609,7 @@ impl GitHubClient {
                 patch: f.patch,
                 previous_filename: f.previous_filename,
             })
-            .collect();
-
-        {
-            let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
-            cache.insert(cache_key, result.clone(), Duration::from_secs(PR_COMMENTS_CACHE_TTL_SECS));
-        }
-        Ok(result)
+            .collect())
     }
 
     pub async fn close_pr(&self, owner: &str, repo: &str, pr_number: u64) -> Result<()> {
@@ -1010,7 +980,6 @@ mod tests {
 
         let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
         let files = client.get_pr_files("o", "r", 1).await.unwrap();
-
         assert_eq!(files.len(), 3, "should return all files from both pages");
         assert_eq!(files[0].filename, "a.rs");
         assert_eq!(files[1].filename, "b.rs");

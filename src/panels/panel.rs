@@ -374,6 +374,8 @@ impl<T: PanelItem + 'static> ListPanel<T> {
                 self.item.detail_empty_state()
             },
             detail_mode: self.detail_pane.mode,
+            theme,
+            tick,
         };
 
         render_list_view(
@@ -384,8 +386,6 @@ impl<T: PanelItem + 'static> ListPanel<T> {
             &mut self.selection,
             &self.detail_pane,
             detail_lines,
-            theme,
-            tick,
         );
     }
 

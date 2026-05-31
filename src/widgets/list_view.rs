@@ -20,7 +20,7 @@ pub enum LeftContent<'a> {
     },
 }
 
-pub struct ListViewConfig {
+pub struct ListViewConfig<'a> {
     pub split_ratio: (u16, u16),
     pub margin: u16,
     pub focused: bool,
@@ -32,24 +32,23 @@ pub struct ListViewConfig {
     pub highlight_symbol: String,
     pub detail_empty_state: EmptyState,
     pub detail_mode: DetailPaneMode,
+    pub theme: &'a Theme,
+    pub tick: u64,
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn render_list_view(
     frame: &mut Frame,
     area: Rect,
-    config: ListViewConfig,
+    config: ListViewConfig<'_>,
     left: LeftContent<'_>,
     selection: &mut SelectionState,
     detail_pane: &DetailPane,
     detail_lines: Vec<Line<'_>>,
-    theme: &Theme,
-    tick: u64,
 ) {
     let border_style = if config.focused {
-        theme.active_border
+        config.theme.active_border
     } else {
-        theme.inactive_border
+        config.theme.inactive_border
     };
 
     if config.wrap_full {
@@ -59,7 +58,7 @@ pub fn render_list_view(
             .border_style(border_style);
 
         if config.loading {
-            LoadingWidget::new().render(frame, area, tick, block);
+            LoadingWidget::new().render(frame, area, config.tick, block);
             return;
         }
 
@@ -97,7 +96,7 @@ pub fn render_list_view(
                     left,
                     None,
                     selection,
-                    theme,
+                    config.theme,
                     &config.highlight_symbol,
                 );
             },
@@ -110,7 +109,7 @@ pub fn render_list_view(
             .border_style(border_style);
 
         if config.loading {
-            LoadingWidget::new().render(frame, area, tick, block);
+            LoadingWidget::new().render(frame, area, config.tick, block);
             return;
         }
 
@@ -142,7 +141,7 @@ pub fn render_list_view(
                     left,
                     Some(block),
                     selection,
-                    theme,
+                    config.theme,
                     &config.highlight_symbol,
                 );
             },
