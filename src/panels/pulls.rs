@@ -9,7 +9,7 @@ use ratatui::widgets::{Cell, Row};
 use super::panel::{ListPanelData, PanelItem, SelectionState, StateFilterable};
 use crate::cmd::{Cmd, RepoContext};
 use crate::domain::{FilterState, PullRequest};
-use crate::theme::Theme;
+use crate::theme::{Theme, status_style};
 use crate::util::diff::parse_diff_patch;
 use crate::util::format;
 use crate::widgets::empty_state::EmptyState;
@@ -65,24 +65,42 @@ fn pr_to_diff(pr: &PullRequest, theme: &Theme) -> Vec<Line<'static>> {
     lines
 }
 fn pr_to_row(pr: &PullRequest, theme: &Theme) -> Row<'static> {
-    let status_str = if pr.state == "closed" {
-        "closed"
-    } else {
-        "open"
-    };
-    let status_style = if pr.state == "closed" {
-        theme.error
-    } else {
-        theme.success
-    };
+    let status_str = derive_pr_status(pr);
+    let status_st = status_style(status_str, theme);
     let updated = format::relative_time(&pr.updated_at);
     Row::new(vec![
         Cell::from(format!("#{}", pr.number)),
         Cell::from(pr.title.clone()),
         Cell::from(pr.author.clone()),
-        Cell::from(Span::styled(status_str, status_style)),
+        Cell::from(Span::styled(status_str, status_st)),
         Cell::from(updated),
     ])
+}
+
+/// Derives the display status: "merged", "closed", or "open".
+fn derive_pr_status(pr: &PullRequest) -> &'static str {
+    if pr.merged_at.is_some() {
+        "merged"
+    } else if pr.state == "closed" {
+        "closed"
+    } else {
+        "open"
+    }
+}
+
+/// Returns true if the PR can be reopened (not merged).
+fn can_reopen(pr: &PullRequest) -> bool {
+    pr.state == "closed" && pr.merged_at.is_none()
+}
+
+/// Returns true if the PR can be merged (must be open).
+fn can_merge(pr: &PullRequest) -> bool {
+    pr.state == "open"
+}
+
+/// Returns true if the PR can be closed (must be open).
+fn can_close(pr: &PullRequest) -> bool {
+    pr.state == "open"
 }
 
 fn pr_to_detail(pr: &PullRequest, theme: &Theme) -> Vec<Line<'static>> {
@@ -333,11 +351,13 @@ impl PanelItem for PullsPanelItem {
             }
             'm' => {
                 if let Some(pr) = selected {
-                    if let Some((owner, repo)) = data.owner_repo() {
-                        return Some(Cmd::MergePr {
-                            ctx: RepoContext::new(owner.to_string(), repo.to_string()),
-                            pr_number: pr.number,
-                        });
+                    if can_merge(pr) {
+                        if let Some((owner, repo)) = data.owner_repo() {
+                            return Some(Cmd::MergePr {
+                                ctx: RepoContext::new(owner.to_string(), repo.to_string()),
+                                pr_number: pr.number,
+                            });
+                        }
                     }
                 }
                 None
@@ -345,7 +365,7 @@ impl PanelItem for PullsPanelItem {
 
             'x' => {
                 if let Some(pr) = selected {
-                    if pr.state == "open" {
+                    if can_close(pr) {
                         if let Some((owner, repo)) = data.owner_repo() {
                             return Some(Cmd::ClosePr {
                                 ctx: RepoContext::new(owner.to_string(), repo.to_string()),
@@ -358,7 +378,7 @@ impl PanelItem for PullsPanelItem {
             }
             'X' => {
                 if let Some(pr) = selected {
-                    if pr.state == "closed" {
+                    if can_reopen(pr) {
                         if let Some((owner, repo)) = data.owner_repo() {
                             return Some(Cmd::ReopenPr {
                                 ctx: RepoContext::new(owner.to_string(), repo.to_string()),
@@ -513,6 +533,7 @@ mod tests {
             code_comment_errors: None,
             files: None,
             file_errors: None,
+            merged_at: None,
         }
     }
 
@@ -592,6 +613,7 @@ mod tests {
             code_comment_errors: None,
             files: None,
             file_errors: None,
+            merged_at: None,
         };
         let item = PullsPanelItem::default();
         let theme = Theme::default();
@@ -1530,5 +1552,71 @@ mod tests {
         // Check that these are single-span lines (muted style, not prefix + styled)
         assert_eq!(lines[0].spans.len(), 1, "--- header should be single muted span");
         assert_eq!(lines[1].spans.len(), 1, "+++ header should be single muted span");
+    }
+    #[test]
+    fn derive_pr_status_merged_pr_returns_merged() {
+        let mut pr = test_pr();
+        pr.state = "closed".into();
+        pr.merged_at = Some("2024-01-02T00:00:00Z".into());
+        assert_eq!(derive_pr_status(&pr), "merged");
+    }
+
+    #[test]
+    fn derive_pr_status_closed_without_merged_at_returns_closed() {
+        let mut pr = test_pr();
+        pr.state = "closed".into();
+        pr.merged_at = None;
+        assert_eq!(derive_pr_status(&pr), "closed");
+    }
+
+    #[test]
+    fn derive_pr_status_open_returns_open() {
+        let pr = test_pr();
+        assert_eq!(derive_pr_status(&pr), "open");
+    }
+
+
+    #[test]
+    fn can_reopen_closed_unmerged_pr() {
+        let mut pr = test_pr();
+        pr.state = "closed".into();
+        pr.merged_at = None;
+        assert!(can_reopen(&pr));
+    }
+
+    #[test]
+    fn cannot_reopen_merged_pr() {
+        let mut pr = test_pr();
+        pr.state = "closed".into();
+        pr.merged_at = Some("2024-01-02T00:00:00Z".into());
+        assert!(!can_reopen(&pr));
+    }
+
+    #[test]
+    fn can_merge_open_pr() {
+        let mut pr = test_pr();
+        pr.state = "open".into();
+        assert!(can_merge(&pr));
+    }
+
+    #[test]
+    fn cannot_merge_closed_pr() {
+        let mut pr = test_pr();
+        pr.state = "closed".into();
+        assert!(!can_merge(&pr));
+    }
+
+    #[test]
+    fn can_close_open_pr() {
+        let mut pr = test_pr();
+        pr.state = "open".into();
+        assert!(can_close(&pr));
+    }
+
+    #[test]
+    fn cannot_close_closed_pr() {
+        let mut pr = test_pr();
+        pr.state = "closed".into();
+        assert!(!can_close(&pr));
     }
 }

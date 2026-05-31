@@ -4,7 +4,7 @@ use ratatui::widgets::*;
 use super::panel::{ListPanelData, PanelItem, SelectionState, StateFilterable};
 use crate::cmd::{Cmd, RepoContext};
 use crate::domain::{FilterState, Issue};
-use crate::theme::Theme;
+use crate::theme::{Theme, status_style};
 use crate::util::format;
 use crate::util::format::relative_time;
 use crate::util::markdown::render_markdown;
@@ -12,11 +12,7 @@ use crate::widgets::empty_state::EmptyState;
 use crate::widgets::list_view::LeftContent;
 
 fn issue_to_list_item(issue: &Issue, theme: &Theme) -> ListItem<'static> {
-    let state_icon = if issue.state == "open" {
-        Span::styled("\u{25cf} ", theme.success)
-    } else {
-        Span::styled("\u{25cf} ", theme.error)
-    };
+    let state_icon = Span::styled("\u{25cf} ", status_style(&issue.state, theme));
 
     let labels: String = if issue.labels.is_empty() {
         String::new()
@@ -60,11 +56,7 @@ fn issue_to_detail(issue: &Issue, theme: &Theme) -> Vec<Line<'static>> {
     ]));
     content.push(Line::from(vec![
         Span::styled("State: ", theme.muted),
-        if issue.state == "open" {
-            Span::styled("open", theme.success)
-        } else {
-            Span::styled("closed", theme.error)
-        },
+        Span::styled(if issue.state == "open" { "open" } else { "closed" }, status_style(&issue.state, theme)),
     ]));
     if !issue.labels.is_empty() {
         content.push(Line::from(vec![

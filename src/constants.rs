@@ -32,6 +32,19 @@ pub const AUTH_INITIAL_WAIT: Duration = Duration::from_secs(1);
 #[cfg(test)]
 pub const AUTH_MAX_WAIT: Duration = Duration::from_secs(120);
 
+/// Cache TTL for repository list (seconds)
+pub const REPO_CACHE_TTL_SECS: u64 = 60;
+/// Cache TTL for pull requests (seconds)
+pub const PULLS_CACHE_TTL_SECS: u64 = 30;
+/// Cache TTL for issues (seconds)
+pub const ISSUES_CACHE_TTL_SECS: u64 = 30;
+/// Cache TTL for notifications (seconds)
+pub const NOTIFICATIONS_CACHE_TTL_SECS: u64 = 15;
+/// Cache TTL for workflow runs (seconds)
+pub const ACTIONS_CACHE_TTL_SECS: u64 = 30;
+/// Cache TTL for PR comments (seconds)
+pub const PR_COMMENTS_CACHE_TTL_SECS: u64 = 60;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -69,5 +82,15 @@ mod tests {
     #[test]
     fn auth_max_wait_is_120s() {
         assert_eq!(AUTH_MAX_WAIT, Duration::from_secs(120));
+    }
+
+    #[test]
+    fn cache_ttl_values() {
+        assert_eq!(REPO_CACHE_TTL_SECS, 60);
+        assert_eq!(PULLS_CACHE_TTL_SECS, 30);
+        assert_eq!(ISSUES_CACHE_TTL_SECS, 30);
+        assert_eq!(NOTIFICATIONS_CACHE_TTL_SECS, 15);
+        assert_eq!(ACTIONS_CACHE_TTL_SECS, 30);
+        assert_eq!(PR_COMMENTS_CACHE_TTL_SECS, 60);
     }
 }

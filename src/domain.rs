@@ -20,6 +20,7 @@ pub struct PullRequest {
     pub created_at: String,
     pub updated_at: String,
     pub body: Option<String>,
+    pub merged_at: Option<String>,
     pub comments: Option<Vec<PrComment>>,
     pub reviews: Option<Vec<PrReview>>,
     pub code_comments: Option<Vec<PrCodeComment>>,
@@ -194,5 +195,29 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(issue.number, 5_000_000_000);
+    }
+
+    #[test]
+    fn pull_request_has_merged_at_field() {
+        let pr = PullRequest {
+            number: 1,
+            title: "test".into(),
+            author: "user".into(),
+            state: "closed".into(),
+            labels: vec![],
+            created_at: "2024-01-01T00:00:00Z".into(),
+            updated_at: "2024-01-01T00:00:00Z".into(),
+            body: None,
+            comments: None,
+            reviews: None,
+            code_comments: None,
+            comment_errors: None,
+            review_errors: None,
+            files: None,
+            file_errors: None,
+            code_comment_errors: None,
+            merged_at: Some("2024-01-02T00:00:00Z".into()),
+        };
+        assert!(pr.merged_at.is_some());
     }
 }

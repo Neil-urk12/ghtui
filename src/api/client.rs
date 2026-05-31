@@ -8,15 +8,10 @@ use url::Url;
 use super::cache::{Cache, CacheKey};
 use super::models::*;
 use crate::domain;
+use crate::constants::{REPO_CACHE_TTL_SECS, PULLS_CACHE_TTL_SECS, ISSUES_CACHE_TTL_SECS, NOTIFICATIONS_CACHE_TTL_SECS, ACTIONS_CACHE_TTL_SECS, PR_COMMENTS_CACHE_TTL_SECS};
 
 const BASE_URL: &str = "https://api.github.com";
 const USER_AGENT: &str = "ghtui";
-const REPO_CACHE_TTL_SECS: u64 = 60;
-const PULLS_CACHE_TTL_SECS: u64 = 30;
-const ISSUES_CACHE_TTL_SECS: u64 = 30;
-const NOTIFICATIONS_CACHE_TTL_SECS: u64 = 15;
-const ACTIONS_CACHE_TTL_SECS: u64 = 30;
-const PR_COMMENTS_CACHE_TTL_SECS: u64 = 60;
 
 pub struct GitHubClient {
     http: Client,
@@ -333,6 +328,7 @@ impl GitHubClient {
                 created_at: pr.created_at,
                 updated_at: pr.updated_at,
                 body: pr.body,
+                merged_at: pr.merged_at,
                 comments: None,
                 reviews: None,
                 code_comments: None,

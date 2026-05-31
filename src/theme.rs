@@ -10,6 +10,7 @@ pub struct Theme {
     pub muted: Style,
     pub success: Style,
     pub error: Style,
+    pub merged: Style,
     pub tab_active: Style,
     pub tab_inactive: Style,
     pub status_bar: Style,
@@ -29,6 +30,7 @@ impl Default for Theme {
             muted: Style::default().fg(Color::Gray),
             success: Style::default().fg(Color::Green),
             error: Style::default().fg(Color::Red),
+            merged: Style::default().fg(Color::Magenta),
             tab_active: Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
@@ -52,6 +54,7 @@ impl Theme {
             muted: Style::default().fg(parse_color(&config.muted_color)),
             success: Style::default().fg(parse_color(&config.success_color)),
             error: Style::default().fg(parse_color(&config.error_color)),
+            merged: Style::default().fg(parse_color(&config.merged_color)),
             tab_active: Style::default()
                 .fg(parse_color(&config.active_border_color))
                 .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
@@ -61,6 +64,16 @@ impl Theme {
             diff_deletion: Style::default().fg(parse_color(&config.diff_deletion_color)),
             diff_header: Style::default().fg(parse_color(&config.diff_header_color)),
         }
+    }
+}
+
+/// Returns the style for an open/closed/merged state.
+pub fn status_style(state: &str, theme: &Theme) -> Style {
+    match state {
+        "open" => theme.success,
+        "merged" => theme.merged,
+        "closed" => theme.error,
+        _ => theme.error,
     }
 }
 
@@ -77,5 +90,57 @@ fn parse_color(s: &str) -> Color {
         "darkgray" | "darkgrey" => Color::DarkGray,
         "white" => Color::White,
         _ => Color::Cyan,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn status_style_open_returns_success() {
+        let theme = Theme::default();
+        assert_eq!(status_style("open", &theme), theme.success);
+    }
+
+    #[test]
+    fn status_style_closed_returns_error() {
+        let theme = Theme::default();
+        assert_eq!(status_style("closed", &theme), theme.error);
+    }
+
+    #[test]
+    fn status_style_merged_returns_merged_style() {
+        let theme = Theme::default();
+        assert_eq!(status_style("merged", &theme), theme.merged);
+    }
+
+    #[test]
+    fn status_style_unknown_returns_error() {
+        let theme = Theme::default();
+        assert_eq!(status_style("unknown", &theme), theme.error);
+    }
+
+    #[test]
+    fn merged_color_default_is_magenta() {
+        let theme = Theme::default();
+        assert_eq!(theme.merged.fg, Some(Color::Magenta));
+    }
+
+    #[test]
+    fn from_config_merged_color_is_configurable() {
+        let config = ThemeConfig {
+            merged_color: "blue".to_string(),
+            ..ThemeConfig::default()
+        };
+        let theme = Theme::from_config(&config);
+        assert_eq!(theme.merged.fg, Some(Color::Blue));
+    }
+
+    #[test]
+    fn from_config_merged_color_default_is_magenta() {
+        let config = ThemeConfig::default();
+        let theme = Theme::from_config(&config);
+        assert_eq!(theme.merged.fg, Some(Color::Magenta));
     }
 }

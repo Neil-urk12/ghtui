@@ -23,6 +23,7 @@ pub struct ThemeConfig {
     pub diff_addition_color: String,
     pub diff_deletion_color: String,
     pub diff_header_color: String,
+    pub merged_color: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -66,6 +67,7 @@ impl Default for ThemeConfig {
             diff_addition_color: "green".to_string(),
             diff_deletion_color: "red".to_string(),
             diff_header_color: "cyan".to_string(),
+            merged_color: "magenta".to_string(),
         }
     }
 }
@@ -174,5 +176,21 @@ active_border_color = "red"
         let _config = Config::load_from_file(&config_path);
 
         assert!(logs_contain("Failed to parse config"));
+    }
+
+    #[test]
+    fn default_merged_color_is_magenta() {
+        let config = Config::default();
+        assert_eq!(config.theme.merged_color, "magenta");
+    }
+
+    #[test]
+    fn parse_toml_merged_color_override() {
+        let toml_str = r#"
+[theme]
+merged_color = "blue"
+"#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.theme.merged_color, "blue");
     }
 }
