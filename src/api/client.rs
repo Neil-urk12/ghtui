@@ -62,7 +62,7 @@ impl GitHubClient {
         match self.cache.lock() {
             Ok(mut cache) => f(&mut cache),
             Err(poisoned) => {
-                tracing::warn!("cache mutex poisoned, recovering");
+                tracing::warn!(reason = "poisoned", "cache mutex poisoned, recovering");
                 f(&mut poisoned.into_inner())
             }
         }
@@ -197,7 +197,7 @@ impl GitHubClient {
                 Ok(resp) => resp,
                 Err(e) => {
                     if page_count > 0 {
-                        tracing::warn!("get_all: page {} failed, returning partial results: {}", page_count + 1, e);
+                        tracing::warn!(page = page_count + 1, error = %e, "get_all: page failed, returning partial results");
                         break;
                     } else {
                         return Err(e);
@@ -681,7 +681,7 @@ fn parse_next_link(header_value: &str, expected_prefix: Option<&str>) -> Option<
                         let prefix_parsed = Url::parse(prefix).ok();
                         // Reject userinfo URLs (e.g. https://user@api.github.com)
                         if url_parsed.as_ref().is_some_and(|u| !u.username().is_empty()) {
-                            tracing::warn!("parse_next_link: rejecting URL with userinfo: {}", url);
+                            tracing::warn!(url, "parse_next_link: rejecting URL with userinfo");
                             return None;
                         }
                         let url_host = url_parsed.as_ref().and_then(|u| u.host_str().map(String::from));
@@ -691,12 +691,12 @@ fn parse_next_link(header_value: &str, expected_prefix: Option<&str>) -> Option<
                                 let url_port = url_parsed.as_ref().and_then(|u| u.port());
                                 let prefix_port = prefix_parsed.as_ref().and_then(|u| u.port());
                                 if url_port != prefix_port {
-                                    tracing::warn!("parse_next_link: rejecting URL with different port: {}", url);
+                                    tracing::warn!(url, "parse_next_link: rejecting URL with different port");
                                     return None;
                                 }
                             }
                             _ => {
-                                tracing::warn!("parse_next_link: rejecting URL with unexpected host: {}", url);
+                                tracing::warn!(url, "parse_next_link: rejecting URL with unexpected host");
                                 return None;
                             }
                         }
