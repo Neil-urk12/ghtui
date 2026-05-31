@@ -6,6 +6,7 @@ use crate::app::{App, AppState, PanelKind, PrCommentUpdate};
 use crate::cmd::{Cmd, CmdBehavior};
 use crate::panels::login::LoginState;
 use crate::constants;
+use crate::domain::FilterState;
 
 pub enum Message {
     NextTab,
@@ -191,7 +192,7 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
                     }
                     let cmd = Cmd::FetchPulls {
                         ctx: ctx.clone(),
-                        state: "open".to_string(),
+                        state: FilterState::Open,
                     };
                     if let Some(entry) = app.panels.get_mut(&PanelKind::Pulls) {
                         entry.set_loading(true);
@@ -396,11 +397,8 @@ fn fetch_and_set_loading(app: &mut App) -> Cmd {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
+    use crate::test_utils::test_app;
 
-    fn test_app() -> App {
-        App::new(Config::default(), Some("test-token".into())).unwrap()
-    }
 
     #[test]
     fn quit_sets_flag() {

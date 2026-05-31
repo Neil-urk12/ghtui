@@ -100,7 +100,7 @@ impl IssuesPanelItem {
         let (owner, repo) = data.owner_repo()?;
         Some(Cmd::FetchIssues {
             ctx: RepoContext::new(owner.to_string(), repo.to_string()),
-            state: self.state_filter.as_str().to_string(),
+            state: self.state_filter,
         })
     }
 }
@@ -173,7 +173,7 @@ impl PanelItem for IssuesPanelItem {
         if let Some((owner, repo)) = data.owner_repo() {
             Cmd::FetchIssues {
                 ctx: RepoContext::new(owner.to_string(), repo.to_string()),
-                state: self.state_filter.as_str().to_string(),
+                state: self.state_filter,
             }
         } else {
             Cmd::None
@@ -308,7 +308,7 @@ mod tests {
         // Switch to Closed, then pressing '1' fetches open
         panel.handle_key('2', None, &data);
         let cmd = panel.handle_key('1', None, &data);
-        assert!(matches!(cmd, Some(Cmd::FetchIssues { state, .. }) if state.as_str() == "open"));
+        assert!(matches!(cmd, Some(Cmd::FetchIssues { state, .. }) if state == FilterState::Open));
         assert_eq!(panel.state_filter, FilterState::Open);
     }
 
@@ -327,7 +327,7 @@ mod tests {
         // Switch to All, then pressing '2' fetches closed
         panel.handle_key('3', None, &data);
         let cmd = panel.handle_key('2', None, &data);
-        assert!(matches!(cmd, Some(Cmd::FetchIssues { state, .. }) if state.as_str() == "closed"));
+        assert!(matches!(cmd, Some(Cmd::FetchIssues { state, .. }) if state == FilterState::Closed));
         assert_eq!(panel.state_filter, FilterState::Closed);
     }
 
@@ -346,7 +346,7 @@ mod tests {
         // Switch to Open, then pressing '3' fetches all
         panel.handle_key('1', None, &data);
         let cmd = panel.handle_key('3', None, &data);
-        assert!(matches!(cmd, Some(Cmd::FetchIssues { state, .. }) if state.as_str() == "all"));
+        assert!(matches!(cmd, Some(Cmd::FetchIssues { state, .. }) if state == FilterState::All));
         assert_eq!(panel.state_filter, FilterState::All);
     }
 
@@ -357,7 +357,7 @@ mod tests {
         data.set_repo("owner".into(), "repo".into());
 
         let cmd = panel.handle_key('2', None, &data);
-        assert!(matches!(cmd, Some(Cmd::FetchIssues { state, .. }) if state.as_str() == "closed"));
+        assert!(matches!(cmd, Some(Cmd::FetchIssues { state, .. }) if state == FilterState::Closed));
         assert_eq!(panel.state_filter, FilterState::Closed);
     }
 
@@ -368,7 +368,7 @@ mod tests {
         data.set_repo("owner".into(), "repo".into());
 
         let cmd = panel.handle_key('3', None, &data);
-        assert!(matches!(cmd, Some(Cmd::FetchIssues { state, .. }) if state.as_str() == "all"));
+        assert!(matches!(cmd, Some(Cmd::FetchIssues { state, .. }) if state == FilterState::All));
         assert_eq!(panel.state_filter, FilterState::All);
     }
 

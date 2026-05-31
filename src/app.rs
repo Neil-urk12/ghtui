@@ -324,11 +324,8 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
+    use crate::test_utils::test_app;
 
-    fn test_app() -> App {
-        App::new(Config::default(), Some("test-token".into())).unwrap()
-    }
 
     #[test]
     fn new_app_starts_on_repos_panel() {

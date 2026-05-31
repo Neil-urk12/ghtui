@@ -39,13 +39,10 @@ pub fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
 mod tests {
     use super::*;
     use crate::app::{App, PanelKind};
-    use crate::config::Config;
+    use crate::test_utils::test_app;
     use ratatui::backend::TestBackend;
     use ratatui::Terminal;
 
-    fn test_app() -> App {
-        App::new(Config::default(), Some("test-token".into())).unwrap()
-    }
 
     fn render_status_bar_to_string(app: &App) -> String {
         let backend = TestBackend::new(120, 1);

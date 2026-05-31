@@ -130,12 +130,8 @@ pub fn process_event(event: Event, app: &App) -> Vec<Message> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::App;
-    use crate::config::Config;
+    use crate::test_utils::test_app;
 
-    fn test_app() -> App {
-        App::new(Config::default(), Some("test-token".into())).unwrap()
-    }
 
     fn key_event(code: KeyCode) -> CrosstermEvent {
         CrosstermEvent::Key(crossterm::event::KeyEvent::new(code, KeyModifiers::NONE))

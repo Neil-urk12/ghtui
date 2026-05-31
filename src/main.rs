@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 mod api;
 mod app;
 mod cmd;
@@ -13,6 +15,9 @@ mod update;
 mod util;
 mod view;
 mod widgets;
+
+#[cfg(test)]
+mod test_utils;
 
 use clap::Parser;
 

@@ -257,7 +257,7 @@ impl PullsPanelItem {
         let (owner, repo) = data.owner_repo()?;
         Some(Cmd::FetchPulls {
             ctx: RepoContext::new(owner.to_string(), repo.to_string()),
-            state: self.state_filter.as_str().to_string(),
+            state: self.state_filter,
         })
     }
 }
@@ -433,7 +433,7 @@ impl PanelItem for PullsPanelItem {
         if let Some((owner, repo)) = data.owner_repo() {
             Cmd::FetchPulls {
                 ctx: RepoContext::new(owner.to_string(), repo.to_string()),
-                state: self.state_filter.as_str().to_string(),
+                state: self.state_filter,
             }
         } else {
             Cmd::None
@@ -721,7 +721,7 @@ mod tests {
         assert!(matches!(
             cmd.unwrap(),
             Cmd::FetchPulls { ctx, state }
-                if ctx.owner == "octocat" && ctx.repo == "hello-world" && state == "open"
+                if ctx.owner == "octocat" && ctx.repo == "hello-world" && state == FilterState::Open
             ));
     }
 
@@ -752,7 +752,7 @@ mod tests {
         assert!(matches!(
             cmd.unwrap(),
             Cmd::FetchPulls { ctx, state }
-                if ctx.owner == "octocat" && ctx.repo == "hello-world" && state == "closed"
+                if ctx.owner == "octocat" && ctx.repo == "hello-world" && state == FilterState::Closed
             ));
     }
 
@@ -783,7 +783,7 @@ mod tests {
         assert!(matches!(
             cmd.unwrap(),
             Cmd::FetchPulls { ctx, state }
-                if ctx.owner == "octocat" && ctx.repo == "hello-world" && state == "all"
+                if ctx.owner == "octocat" && ctx.repo == "hello-world" && state == FilterState::All
             ));
     }
 

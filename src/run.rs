@@ -121,7 +121,7 @@ fn spawn_cmd(cmd: Cmd, client: &Arc<GitHubClient>, tx: mpsc::Sender<Result<ApiPa
         Cmd::FetchPulls { ctx, state } => {
             tokio::spawn(async move {
                 let result = client
-                    .get_pulls(&ctx.owner, &ctx.repo, &state)
+                    .get_pulls(&ctx.owner, &ctx.repo, state.as_str())
                     .await
                     .map(ApiPayload::Pulls);
                 let _ = tx.send(result).await;
@@ -130,7 +130,7 @@ fn spawn_cmd(cmd: Cmd, client: &Arc<GitHubClient>, tx: mpsc::Sender<Result<ApiPa
         Cmd::FetchIssues { ctx, state } => {
             tokio::spawn(async move {
                 let result = client
-                    .get_issues(&ctx.owner, &ctx.repo, &state)
+                    .get_issues(&ctx.owner, &ctx.repo, state.as_str())
                     .await
                     .map(ApiPayload::Issues);
                 let _ = tx.send(result).await;

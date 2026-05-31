@@ -5,6 +5,8 @@ pub struct RepoContext {
     pub repo: String,
 }
 
+use crate::domain::FilterState;
+
 impl RepoContext {
     pub fn new(owner: impl Into<String>, repo: impl Into<String>) -> Self {
         Self {
@@ -29,11 +31,11 @@ pub enum Cmd {
     FetchRepos,
     FetchPulls {
         ctx: RepoContext,
-        state: String,
+        state: FilterState,
     },
     FetchIssues {
         ctx: RepoContext,
-        state: String,
+        state: FilterState,
     },
     FetchNotifications {
         all: bool,
@@ -85,10 +87,10 @@ impl std::fmt::Debug for Cmd {
             Cmd::None => write!(f, "None"),
             Cmd::FetchRepos => write!(f, "FetchRepos"),
             Cmd::FetchPulls { ctx, state } => {
-                write!(f, "FetchPulls({}, {}, {})", ctx.owner, ctx.repo, state)
+                write!(f, "FetchPulls({}, {}, {})", ctx.owner, ctx.repo, state.as_str())
             }
             Cmd::FetchIssues { ctx, state } => {
-                write!(f, "FetchIssues({}, {}, {})", ctx.owner, ctx.repo, state)
+                write!(f, "FetchIssues({}, {}, {})", ctx.owner, ctx.repo, state.as_str())
             }
             Cmd::FetchNotifications { all } => write!(f, "FetchNotifications(all={})", all),
             Cmd::FetchActions { ctx } => write!(f, "FetchActions({}, {})", ctx.owner, ctx.repo),
@@ -221,11 +223,11 @@ mod tests {
             Cmd::FetchRepos,
             Cmd::FetchPulls {
                 ctx: RepoContext::new("o", "r"),
-                state: "open".into(),
+                state: FilterState::Open,
             },
             Cmd::FetchIssues {
                 ctx: RepoContext::new("o", "r"),
-                state: "open".into(),
+                state: FilterState::Open,
             },
             Cmd::FetchNotifications { all: false },
             Cmd::FetchActions {
