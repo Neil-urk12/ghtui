@@ -2,6 +2,8 @@ use std::any::Any;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
+use crate::domain::FilterState;
+
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
 pub enum CacheKey {
     UserRepos,
@@ -83,8 +85,8 @@ impl Cache {
     }
 
     pub fn invalidate_pr_related(&mut self, owner: &str, repo: &str, pr_number: u64) {
-        for state in ["open", "closed", "all"] {
-            self.invalidate(&CacheKey::Pulls { owner: owner.to_string(), repo: repo.to_string(), state: state.to_string() });
+        for state in [FilterState::Open, FilterState::Closed, FilterState::All] {
+            self.invalidate(&CacheKey::Pulls { owner: owner.to_string(), repo: repo.to_string(), state: state.as_str().to_string() });
         }
         self.invalidate(&CacheKey::PrComments { owner: owner.to_string(), repo: repo.to_string(), pr_number });
         self.invalidate(&CacheKey::PrReviews { owner: owner.to_string(), repo: repo.to_string(), pr_number });
