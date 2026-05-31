@@ -14,6 +14,15 @@ impl RepoContext {
     }
 }
 
+/// Behavior classification for commands.
+/// Eliminates the manual sync invariant between `is_destructive()` and `action_label()`.
+pub enum CmdBehavior {
+    /// Command mutates state and requires user confirmation.
+    Destructive { label: &'static str },
+    /// Command is safe to execute without confirmation.
+    Benign,
+}
+
 
 pub enum Cmd {
     None,
@@ -113,34 +122,32 @@ impl std::fmt::Debug for Cmd {
 }
 
 impl Cmd {
-    /// Returns true if this command is destructive and requires confirmation.
-    /// Must stay in sync with `action_label()`.
-    pub fn is_destructive(&self) -> bool {
-        matches!(
-            self,
-            Cmd::MergePr { .. }
-                | Cmd::ApprovePr { .. }
-                | Cmd::CancelWorkflow { .. }
-                | Cmd::RerunWorkflow { .. }
-                | Cmd::MarkAllNotificationsRead
-                | Cmd::ClosePr { .. }
-                | Cmd::ReopenPr { .. }
-        )
-    }
-
-    /// Human-readable action label for confirmation dialogs.
-    /// Must stay in sync with `is_destructive()`.
-    pub fn action_label(&self) -> Option<&'static str> {
+    /// Returns the behavior classification for this command.
+    /// Destructive commands carry a human-readable label for confirmation dialogs.
+    pub fn behavior(&self) -> CmdBehavior {
         match self {
-            Cmd::MergePr { .. } => Some("Merge Pull Request"),
-            Cmd::ApprovePr { .. } => Some("Approve Pull Request"),
-            Cmd::CancelWorkflow { .. } => Some("Cancel Workflow"),
-            Cmd::RerunWorkflow { .. } => Some("Rerun Workflow"),
-            Cmd::MarkAllNotificationsRead => Some("Mark All Notifications as Read"),
-            Cmd::ClosePr { .. } => Some("Close Pull Request"),
-            Cmd::ReopenPr { .. } => Some("Reopen Pull Request"),
-            // Invariant: non-destructive cmds return None (tested by non_destructive_cmds_lack_labels)
-            _ => None,
+            Cmd::MergePr { .. } => CmdBehavior::Destructive {
+                label: "Merge Pull Request",
+            },
+            Cmd::ApprovePr { .. } => CmdBehavior::Destructive {
+                label: "Approve Pull Request",
+            },
+            Cmd::CancelWorkflow { .. } => CmdBehavior::Destructive {
+                label: "Cancel Workflow",
+            },
+            Cmd::RerunWorkflow { .. } => CmdBehavior::Destructive {
+                label: "Rerun Workflow",
+            },
+            Cmd::MarkAllNotificationsRead => CmdBehavior::Destructive {
+                label: "Mark All Notifications as Read",
+            },
+            Cmd::ClosePr { .. } => CmdBehavior::Destructive {
+                label: "Close Pull Request",
+            },
+            Cmd::ReopenPr { .. } => CmdBehavior::Destructive {
+                label: "Reopen Pull Request",
+            },
+            _ => CmdBehavior::Benign,
         }
     }
 }
@@ -150,236 +157,98 @@ mod tests {
     use super::*;
 
     #[test]
-    fn action_label_returns_some_for_destructive_cmds() {
-        // Each destructive variant should return Some with its expected label
-        let merge = Cmd::MergePr {
-            ctx: RepoContext::new("o", "r"),
-            pr_number: 1,
-        };
-        assert_eq!(merge.action_label(), Some("Merge Pull Request"));
-
-        let approve = Cmd::ApprovePr {
-            ctx: RepoContext::new("o", "r"),
-            pr_number: 1,
-        };
-        assert_eq!(approve.action_label(), Some("Approve Pull Request"));
-
-        let cancel = Cmd::CancelWorkflow {
-            ctx: RepoContext::new("o", "r"),
-            run_id: 1,
-        };
-        assert_eq!(cancel.action_label(), Some("Cancel Workflow"));
-
-        let rerun = Cmd::RerunWorkflow {
-            ctx: RepoContext::new("o", "r"),
-            run_id: 1,
-        };
-        assert_eq!(rerun.action_label(), Some("Rerun Workflow"));
-
-        assert_eq!(
-            Cmd::MarkAllNotificationsRead.action_label(),
-            Some("Mark All Notifications as Read")
-        );
-    }
-
-    #[test]
-    fn action_label_returns_some_for_close_pr() {
-        let close = Cmd::ClosePr {
-            ctx: RepoContext::new("o", "r"),
-            pr_number: 1,
-        };
-        assert_eq!(close.action_label(), Some("Close Pull Request"));
-    }
-    #[test]
-    fn action_label_returns_none_for_non_destructive_cmds() {
-        assert_eq!(Cmd::None.action_label(), None);
-        assert_eq!(Cmd::FetchRepos.action_label(), None);
-
-        assert_eq!(
-            Cmd::FetchPulls {
-                ctx: RepoContext::new("o", "r"),
-                state: "open".into(),
-            }
-            .action_label(),
-            None
-        );
-
-        assert_eq!(
-            Cmd::FetchIssues {
-                ctx: RepoContext::new("o", "r"),
-                state: "open".into(),
-            }
-            .action_label(),
-            None
-        );
-
-        assert_eq!(Cmd::FetchNotifications { all: false }.action_label(), None);
-
-        assert_eq!(
-            Cmd::FetchActions {
-                ctx: RepoContext::new("o", "r"),
-            }
-            .action_label(),
-            None
-        );
-
-        assert_eq!(
-            Cmd::MarkNotificationRead { id: "1".into() }.action_label(),
-            None
-        );
-
-        assert_eq!(
-            Cmd::OpenRepoDetail {
-                ctx: RepoContext::new("o", "r"),
-            }
-            .action_label(),
-            None
-        );
-
-        assert_eq!(Cmd::CycleRepoSort.action_label(), None);
-    }
-
-    #[test]
-    fn destructive_cmds_have_labels() {
-        // For every variant where is_destructive() == true, action_label must be Some
-        let all_cmds: Vec<Cmd> = vec![
-            Cmd::None,
-            Cmd::FetchRepos,
-            Cmd::FetchPulls {
-                ctx: RepoContext::new("", ""),
-                state: "".into(),
-            },
-            Cmd::FetchIssues {
-                ctx: RepoContext::new("", ""),
-                state: "".into(),
-            },
-            Cmd::FetchNotifications { all: false },
-            Cmd::FetchActions {
-                ctx: RepoContext::new("", ""),
-            },
-            Cmd::MarkNotificationRead { id: "".into() },
-            Cmd::MarkAllNotificationsRead,
-            Cmd::ApprovePr {
-                ctx: RepoContext::new("", ""),
-                pr_number: 0,
-            },
-            Cmd::MergePr {
-                ctx: RepoContext::new("", ""),
-                pr_number: 0,
-            },
-            Cmd::RerunWorkflow {
-                ctx: RepoContext::new("", ""),
-                run_id: 0,
-            },
-            Cmd::FetchPrComments {
-                ctx: RepoContext::new("", ""),
-                pr_number: 0,
-            },
-            Cmd::ClosePr {
-                ctx: RepoContext::new("", ""),
-                pr_number: 0,
-            },
-            Cmd::ReopenPr {
-                ctx: RepoContext::new("", ""),
-                pr_number: 0,
-            },
-            Cmd::CancelWorkflow {
-                ctx: RepoContext::new("", ""),
-                run_id: 0,
-            },
-            Cmd::OpenRepoDetail {
-                ctx: RepoContext::new("", ""),
-            },
-            Cmd::CycleRepoSort,
+    fn destructive_cmds_carry_labels() {
+        let cases: Vec<(Cmd, &str)> = vec![
+            (
+                Cmd::MergePr {
+                    ctx: RepoContext::new("o", "r"),
+                    pr_number: 1,
+                },
+                "Merge Pull Request",
+            ),
+            (
+                Cmd::ApprovePr {
+                    ctx: RepoContext::new("o", "r"),
+                    pr_number: 1,
+                },
+                "Approve Pull Request",
+            ),
+            (
+                Cmd::CancelWorkflow {
+                    ctx: RepoContext::new("o", "r"),
+                    run_id: 1,
+                },
+                "Cancel Workflow",
+            ),
+            (
+                Cmd::RerunWorkflow {
+                    ctx: RepoContext::new("o", "r"),
+                    run_id: 1,
+                },
+                "Rerun Workflow",
+            ),
+            (Cmd::MarkAllNotificationsRead, "Mark All Notifications as Read"),
+            (
+                Cmd::ClosePr {
+                    ctx: RepoContext::new("o", "r"),
+                    pr_number: 1,
+                },
+                "Close Pull Request",
+            ),
+            (
+                Cmd::ReopenPr {
+                    ctx: RepoContext::new("o", "r"),
+                    pr_number: 1,
+                },
+                "Reopen Pull Request",
+            ),
         ];
 
-        for cmd in &all_cmds {
-            if cmd.is_destructive() {
-                assert!(
-                    cmd.action_label().is_some(),
-                    "Destructive command {:?} should have an action label",
-                    cmd
-                );
+        for (cmd, expected_label) in cases {
+            match cmd.behavior() {
+                CmdBehavior::Destructive { label } => {
+                    assert_eq!(label, expected_label, "{:?}", cmd);
+                }
+                CmdBehavior::Benign => panic!("{:?} should be Destructive", cmd),
             }
         }
     }
 
     #[test]
-    fn non_destructive_cmds_lack_labels() {
-        let all_cmds: Vec<Cmd> = vec![
+    fn benign_cmds_return_benign() {
+        let cmds = vec![
             Cmd::None,
             Cmd::FetchRepos,
             Cmd::FetchPulls {
-                ctx: RepoContext::new("", ""),
-                state: "".into(),
+                ctx: RepoContext::new("o", "r"),
+                state: "open".into(),
             },
             Cmd::FetchIssues {
-                ctx: RepoContext::new("", ""),
-                state: "".into(),
+                ctx: RepoContext::new("o", "r"),
+                state: "open".into(),
             },
             Cmd::FetchNotifications { all: false },
             Cmd::FetchActions {
-                ctx: RepoContext::new("", ""),
+                ctx: RepoContext::new("o", "r"),
             },
-            Cmd::MarkNotificationRead { id: "".into() },
-            Cmd::MarkAllNotificationsRead,
-            Cmd::ApprovePr {
-                ctx: RepoContext::new("", ""),
-                pr_number: 0,
-            },
-            Cmd::MergePr {
-                ctx: RepoContext::new("", ""),
-                pr_number: 0,
-            },
+            Cmd::MarkNotificationRead { id: "1".into() },
             Cmd::FetchPrComments {
-                ctx: RepoContext::new("", ""),
-                pr_number: 0,
-            },
-            Cmd::ClosePr {
-                ctx: RepoContext::new("", ""),
-                pr_number: 0,
-            },
-            Cmd::RerunWorkflow {
-                ctx: RepoContext::new("", ""),
-                run_id: 0,
-            },
-            Cmd::CancelWorkflow {
-                ctx: RepoContext::new("", ""),
-                run_id: 0,
+                ctx: RepoContext::new("o", "r"),
+                pr_number: 1,
             },
             Cmd::OpenRepoDetail {
-                ctx: RepoContext::new("", ""),
+                ctx: RepoContext::new("o", "r"),
             },
             Cmd::CycleRepoSort,
         ];
 
-        for cmd in &all_cmds {
-            if !cmd.is_destructive() {
-                assert!(
-                    cmd.action_label().is_none(),
-                    "Non-destructive command {:?} should not have an action label",
-                    cmd
-                );
-            }
+        for cmd in cmds {
+            assert!(
+                matches!(cmd.behavior(), CmdBehavior::Benign),
+                "{:?} should be Benign",
+                cmd
+            );
         }
-    }
-
-    #[test]
-    fn reopen_pr_is_destructive() {
-        let reopen = Cmd::ReopenPr {
-            ctx: RepoContext::new("o", "r"),
-            pr_number: 1,
-        };
-        assert!(reopen.is_destructive());
-    }
-
-    #[test]
-    fn reopen_pr_has_action_label() {
-        let reopen = Cmd::ReopenPr {
-            ctx: RepoContext::new("o", "r"),
-            pr_number: 1,
-        };
-        assert_eq!(reopen.action_label(), Some("Reopen Pull Request"));
     }
 
     #[test]

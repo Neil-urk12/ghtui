@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::api::client::GitHubClient;
 use crate::app::{App, AppState, PanelKind, PrCommentUpdate};
-use crate::cmd::Cmd;
+use crate::cmd::{Cmd, CmdBehavior};
 use crate::panels::login::LoginState;
 
 pub enum Message {
@@ -211,30 +211,27 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
                     // needs to refresh when navigating between PRs.
                     cmd
                 }
-                other => {
-                    if other.is_destructive() {
+                other => match other.behavior() {
+                    CmdBehavior::Destructive { label } => {
                         let detail = app
                             .panels
                             .get(&app.active_panel)
                             .and_then(|e| e.selected_display())
                             .unwrap_or_default();
-                        let action_label = other
-                            .action_label()
-                            .unwrap_or("confirm action") // Invariant enforced by test; fallback is defensive
-                            .to_string();
                         app.confirmation = Some(crate::app::ConfirmState {
                             pending_cmd: other,
-                            action_label,
+                            action_label: label.to_string(),
                             detail,
                         });
                         Cmd::None
-                    } else if let Some(entry) = app.panels.get_mut(&app.active_panel) {
-                        entry.set_loading(true);
-                        other
-                    } else {
+                    }
+                    CmdBehavior::Benign => {
+                        if let Some(entry) = app.panels.get_mut(&app.active_panel) {
+                            entry.set_loading(true);
+                        }
                         other
                     }
-                }
+                },
             }
         }
         Message::LoginInit(login) => {
@@ -1106,12 +1103,8 @@ mod tests {
     }
 
     #[test]
-    fn cmd_without_action_label_uses_default() {
-        // Cmd::None is not destructive, so action_label() returns None.
-        // Verify the fallback produces "confirm action" when label is missing.
-        let none_cmd = Cmd::None;
-        assert_eq!(none_cmd.action_label(), None);
-        let fallback = none_cmd.action_label().unwrap_or("confirm action");
-        assert_eq!(fallback, "confirm action");
+    fn benign_cmd_does_not_trigger_confirmation() {
+        // Cmd::None is benign — behavior() returns Benign, not Destructive.
+        assert!(matches!(Cmd::None.behavior(), CmdBehavior::Benign));
     }
 }
