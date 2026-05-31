@@ -21,12 +21,12 @@ pub fn spawn_background(cmd: &str, args: &[&str]) -> tokio::task::JoinHandle<()>
         {
             Ok(mut child) => match child.wait().await {
                 Ok(status) if !status.success() => {
-                    tracing::debug!("background process exited with {status}");
+                    tracing::debug!(status = %status, "background process exited");
                 }
-                Err(e) => tracing::warn!("failed to wait for background process: {e}"),
+                Err(e) => tracing::warn!(error = %e, "failed to wait for background process"),
                 _ => {}
             },
-            Err(e) => tracing::warn!("failed to spawn background process: {e}"),
+            Err(e) => tracing::warn!(error = %e, "failed to spawn background process"),
         }
     })
 }

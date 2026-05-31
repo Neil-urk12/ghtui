@@ -116,7 +116,7 @@ impl LoginState {
             Ok(resp) => match apply_token_response(resp.access_token, resp.interval, resp.scope) {
                 TokenEffect::Success(token, scopes) => {
                     if let Err(e) = auth::save_token(&token, &scopes) {
-                        tracing::warn!("failed to persist token: {e}");
+                        tracing::warn!(error = %e, "failed to persist token");
                     }
                     self.status = LoginStatus::Success(token);
                 }

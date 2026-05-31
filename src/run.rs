@@ -27,9 +27,11 @@ pub async fn run(app: &mut App, terminal: &mut DefaultTerminal) -> Result<()> {
         let http = build_http_client()?;
         match crate::panels::login::LoginState::new(http).await {
             Ok(login) => {
+                // Intentionally discarded: always returns Cmd::None
                 let _ = update(app, Message::LoginInit(login));
             }
             Err(e) => {
+                // Intentionally discarded: always returns Cmd::None
                 let _ = update(app, Message::LoginError(e.to_string()));
             }
         }
@@ -46,7 +48,7 @@ pub async fn run(app: &mut App, terminal: &mut DefaultTerminal) -> Result<()> {
                 match crossterm_event {
                     Some(Ok(event)) => Event::Input(event),
                     Some(Err(e)) => {
-                        tracing::error!("crossterm error: {e}");
+                        tracing::error!(error = %e, "crossterm error");
                         Event::Tick
                     }
                     None => break,
@@ -71,11 +73,14 @@ pub async fn run(app: &mut App, terminal: &mut DefaultTerminal) -> Result<()> {
                 match &login.status {
                     crate::panels::login::LoginStatus::Success(token) => {
                         let token = token.clone();
-                        let _ = update(app, Message::LoginSuccess(token));
-                        spawn_cmd(Cmd::FetchRepos, &app.client, tx.clone());
+                        let cmd = update(app, Message::LoginSuccess(token));
+                        if !matches!(cmd, Cmd::None) {
+                            spawn_cmd(cmd, &app.client, tx.clone());
+                        }
                     }
                     crate::panels::login::LoginStatus::Error(msg) => {
                         let msg = msg.clone();
+                        // Intentionally discarded: always returns Cmd::None
                         let _ = update(app, Message::LoginError(msg));
                     }
                     crate::panels::login::LoginStatus::Expired => {

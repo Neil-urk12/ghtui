@@ -601,7 +601,7 @@ impl GitHubClient {
         const MAX_PAGES: u32 = 100;
         loop {
             if page > MAX_PAGES {
-                tracing::warn!("pr files pagination exceeded {MAX_PAGES} pages for {owner}/{repo}#{pr_number}");
+                tracing::warn!(max_pages = MAX_PAGES, owner, repo, pr_number, "pr files pagination exceeded");
                 break;
             }
             let path = format!(
@@ -692,7 +692,7 @@ impl GitHubClient {
 
 fn safe_u32(value: u64) -> u32 {
     u32::try_from(value).unwrap_or_else(|_| {
-        tracing::warn!("integer overflow converting {value} to u32, clamping to u32::MAX");
+        tracing::warn!(value, "integer overflow converting to u32, clamping to u32::MAX");
         u32::MAX
     })
 }

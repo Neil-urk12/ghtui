@@ -241,13 +241,13 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
         }
         Message::LoginSuccess(token) => {
             if let Err(e) = crate::api::auth::save_token(&token, crate::api::auth::GHTUI_SCOPES) {
-                tracing::warn!("failed to persist token: {e}");
+                tracing::warn!(error = %e, "failed to persist token");
             }
             app.client = Arc::new(match GitHubClient::new(token) {
                 Ok(c) => c,
                 Err(e) => {
                     app.error_toast = Some(format!("Failed to create HTTP client: {e}"));
-                    tracing::error!("failed to create HTTP client: {e}");
+                    tracing::error!(error = %e, "failed to create HTTP client");
                     return Cmd::None;
                 }
             });
@@ -1107,4 +1107,18 @@ mod tests {
         // Cmd::None is benign — behavior() returns Benign, not Destructive.
         assert!(matches!(Cmd::None.behavior(), CmdBehavior::Benign));
     }
+
+    #[test]
+    fn login_success_returns_fetch_repos_on_valid_token() {
+        let mut app = test_app();
+        let cmd = update(&mut app, Message::LoginSuccess("valid_token".into()));
+        assert!(matches!(cmd, Cmd::FetchRepos));
+        // Side effect: login cleared
+        assert!(app.login.is_none());
+    }
+
+    // NOTE: Testing the failure path (Cmd::None when GitHubClient::new fails)
+    // requires dependency injection — build_http_client() uses reqwest::Client::builder()
+    // which does not validate tokens and essentially never fails. To test this path,
+    // GitHubClient::new would need to accept an injectable HTTP client factory.
 }

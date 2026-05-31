@@ -142,7 +142,7 @@ impl From<&str> for FilterState {
             "closed" => Self::Closed,
             "all" => Self::All,
             other => {
-                tracing::warn!("unknown filter state '{other}', defaulting to Open");
+                tracing::warn!(state = %other, "unknown filter state, defaulting to Open");
                 Self::default()
             }
         }
