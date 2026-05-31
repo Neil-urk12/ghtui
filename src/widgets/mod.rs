@@ -3,5 +3,6 @@ pub mod empty_state;
 pub mod list_view;
 pub mod loading;
 pub mod popup;
+pub mod selection;
 pub mod status_bar;
 pub mod tab_bar;

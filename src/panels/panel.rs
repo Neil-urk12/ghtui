@@ -1,5 +1,4 @@
 use ratatui::prelude::*;
-use ratatui::widgets::{ListState, TableState};
 
 use crate::cmd::Cmd;
 use crate::event::ApiPayload;
@@ -9,60 +8,7 @@ use crate::widgets::detail_pane::DetailPane;
 use crate::widgets::empty_state::EmptyState;
 use crate::widgets::list_view::{render_list_view, LeftContent, ListViewConfig};
 
-// --- SelectionState ---
-
-pub struct SelectionStateInner<S> {
-    pub state: S,
-    len: usize,
-}
-
-pub enum SelectionState {
-    List(SelectionStateInner<ListState>),
-    Table(SelectionStateInner<TableState>),
-}
-
-impl SelectionState {
-    pub fn list() -> Self {
-        let mut state = ListState::default();
-        state.select(Some(0));
-        SelectionState::List(SelectionStateInner { state, len: 0 })
-    }
-
-    pub fn table() -> Self {
-        let mut state = TableState::default();
-        state.select(Some(0));
-        SelectionState::Table(SelectionStateInner { state, len: 0 })
-    }
-
-    pub fn selected(&self) -> Option<usize> {
-        match self {
-            SelectionState::List(inner) => inner.state.selected(),
-            SelectionState::Table(inner) => inner.state.selected(),
-        }
-    }
-
-    pub fn select(&mut self, index: Option<usize>) {
-        match self {
-            SelectionState::List(inner) => inner.state.select(index),
-            SelectionState::Table(inner) => inner.state.select(index),
-        }
-    }
-
-    pub fn len(&self) -> usize {
-        match self {
-            SelectionState::List(inner) => inner.len,
-            SelectionState::Table(inner) => inner.len,
-        }
-    }
-
-    pub fn set_len(&mut self, new_len: usize) {
-        match self {
-            SelectionState::List(inner) => inner.len = new_len,
-            SelectionState::Table(inner) => inner.len = new_len,
-        }
-    }
-}
-
+pub use crate::widgets::selection::{navigate_down, navigate_up, SelectionState};
 // --- ListPanelData<T> ---
 
 /// Generic data container for list-based panels. Holds items, filtered indices,
@@ -176,24 +122,6 @@ impl<T> ListPanelData<T> {
                 .icon(" ")
                 .hint("Switch to Repos tab, press Enter on a repo")
         }
-    }
-}
-
-// --- Free navigation functions ---
-
-pub fn navigate_up(selection: &mut SelectionState, detail_pane: &mut DetailPane) {
-    let i = selection.selected().unwrap_or(0);
-    if i > 0 {
-        selection.select(Some(i - 1));
-        detail_pane.reset_scroll();
-    }
-}
-
-pub fn navigate_down(selection: &mut SelectionState, detail_pane: &mut DetailPane) {
-    let i = selection.selected().unwrap_or(0);
-    if i + 1 < selection.len() {
-        selection.select(Some(i + 1));
-        detail_pane.reset_scroll();
     }
 }
 

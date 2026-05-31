@@ -6,7 +6,7 @@ use super::{
     empty_state::{EmptyState, EmptyStateWidget},
     loading::LoadingWidget,
 };
-use crate::panels::panel::SelectionState;
+use crate::widgets::selection::SelectionState;
 use crate::theme::Theme;
 
 pub enum LeftContent<'a> {

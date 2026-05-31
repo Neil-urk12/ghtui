@@ -5,6 +5,7 @@ use crate::api::client::GitHubClient;
 use crate::app::{App, AppState, PanelKind, PrCommentUpdate};
 use crate::cmd::{Cmd, CmdBehavior};
 use crate::panels::login::LoginState;
+use crate::constants;
 
 pub enum Message {
     NextTab,
@@ -367,7 +368,7 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
             app.tick += 1;
             if app.error_toast.is_some() || app.success_toast.is_some() {
                 app.toast_tick += 1;
-                if app.toast_tick >= crate::widgets::popup::AUTO_DISMISS_TICKS {
+                if app.toast_tick >= constants::AUTO_DISMISS_TICKS {
                     app.error_toast = None;
                     app.success_toast = None;
                     app.toast_tick = 0;

@@ -1,7 +1,11 @@
+use crate::constants::{
+    AUTO_DISMISS_TICKS, CONFIRM_MODAL_HEIGHT_PCT, CONFIRM_MODAL_WIDTH_PCT, ERROR_TOAST_HEIGHT,
+    ERROR_TOAST_WIDTH_PCT, HELP_POPUP_HEIGHT_PCT, HELP_POPUP_WIDTH_PCT, SUCCESS_TOAST_HEIGHT,
+    SUCCESS_TOAST_WIDTH_PCT,
+};
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 
-pub const AUTO_DISMISS_TICKS: u64 = 16; // ~4 seconds at 250ms/tick
 
 pub enum Severity {
     Error,
@@ -31,7 +35,7 @@ pub fn render_error_toast(
         String::new()
     };
 
-    let toast_area = bottom_right_rect(60, 8, area);
+    let toast_area = bottom_right_rect(ERROR_TOAST_WIDTH_PCT, ERROR_TOAST_HEIGHT, area);
     frame.render_widget(Clear, toast_area);
     let block = Block::default()
         .title(format!("{}{}", title, progress))
@@ -60,7 +64,7 @@ pub fn render_success_toast(frame: &mut Frame, area: Rect, message: &str, tick: 
         String::new()
     };
 
-    let toast_area = bottom_right_rect(50, 6, area);
+    let toast_area = bottom_right_rect(SUCCESS_TOAST_WIDTH_PCT, SUCCESS_TOAST_HEIGHT, area);
     frame.render_widget(Clear, toast_area);
     let block = Block::default()
         .title(format!(" Success{}", progress))
@@ -87,7 +91,7 @@ pub fn classify_severity(message: &str) -> Severity {
 }
 
 pub fn render_help(frame: &mut Frame, area: Rect, panel: &str) {
-    let help_area = centered_rect(70, 60, area);
+    let help_area = centered_rect(HELP_POPUP_WIDTH_PCT, HELP_POPUP_HEIGHT_PCT, area);
     frame.render_widget(Clear, help_area);
     let block = Block::default().title(" Help ").borders(Borders::ALL);
     let text = build_help_text(panel);
@@ -98,7 +102,7 @@ pub fn render_help(frame: &mut Frame, area: Rect, panel: &str) {
 }
 
 pub fn render_confirmation(frame: &mut Frame, area: Rect, action_label: &str, detail: &str) {
-    let modal_area = centered_rect(50, 20, area);
+    let modal_area = centered_rect(CONFIRM_MODAL_WIDTH_PCT, CONFIRM_MODAL_HEIGHT_PCT, area);
     frame.render_widget(Clear, modal_area);
 
     let block = Block::default()

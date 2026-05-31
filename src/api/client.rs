@@ -8,7 +8,7 @@ use url::Url;
 use super::cache::{Cache, CacheKey};
 use super::models::*;
 use crate::domain;
-use crate::constants::{REPO_CACHE_TTL_SECS, PULLS_CACHE_TTL_SECS, ISSUES_CACHE_TTL_SECS, NOTIFICATIONS_CACHE_TTL_SECS, ACTIONS_CACHE_TTL_SECS, PR_COMMENTS_CACHE_TTL_SECS};
+use crate::constants::{REPO_CACHE_TTL_SECS, PULLS_CACHE_TTL_SECS, ISSUES_CACHE_TTL_SECS, NOTIFICATIONS_CACHE_TTL_SECS, ACTIONS_CACHE_TTL_SECS, PR_COMMENTS_CACHE_TTL_SECS, API_PER_PAGE, ACTIONS_PER_PAGE, ACTIONS_MAX_PAGES};
 
 const BASE_URL: &str = "https://api.github.com";
 const USER_AGENT: &str = "ghtui";
@@ -275,7 +275,7 @@ impl GitHubClient {
     pub async fn get_repos(&self) -> Result<Vec<domain::Repo>> {
         let models: Vec<Repo> = self
             .get_all(
-                "/user/repos?sort=updated&per_page=100",
+                &format!("/user/repos?sort=updated&per_page={API_PER_PAGE}"),
                 Some(CacheKey::UserRepos),
                 Duration::from_secs(REPO_CACHE_TTL_SECS),
                 None,
@@ -303,7 +303,7 @@ impl GitHubClient {
         repo: &str,
         state: &str,
     ) -> Result<Vec<domain::PullRequest>> {
-        let path = format!("/repos/{owner}/{repo}/pulls?state={state}&per_page=100");
+        let path = format!("/repos/{owner}/{repo}/pulls?state={state}&per_page={API_PER_PAGE}");
         let models: Vec<PullRequest> = self
             .get_all(
                 &path,
@@ -347,7 +347,7 @@ impl GitHubClient {
         repo: &str,
         state: &str,
     ) -> Result<Vec<domain::Issue>> {
-        let path = format!("/repos/{owner}/{repo}/issues?state={state}&per_page=100");
+        let path = format!("/repos/{owner}/{repo}/issues?state={state}&per_page={API_PER_PAGE}");
         let models: Vec<Issue> = self
             .get_all(
                 &path,
@@ -381,9 +381,9 @@ impl GitHubClient {
 
     pub async fn get_notifications(&self, all: bool) -> Result<Vec<domain::Notification>> {
         let path = if all {
-            "/notifications?per_page=100&all=true"
+            &format!("/notifications?per_page={API_PER_PAGE}&all=true")
         } else {
-            "/notifications?per_page=100"
+            &format!("/notifications?per_page={API_PER_PAGE}")
         };
         let models: Vec<Notification> = self
             .get_all(
@@ -409,7 +409,7 @@ impl GitHubClient {
     }
 
     pub async fn get_actions(&self, owner: &str, repo: &str) -> Result<Vec<domain::WorkflowRun>> {
-        let path = format!("/repos/{owner}/{repo}/actions/runs?per_page=50");
+        let path = format!("/repos/{owner}/{repo}/actions/runs?per_page={ACTIONS_PER_PAGE}");
         let runs: Vec<WorkflowRun> = self
             .get_all(
                 &path,
@@ -418,7 +418,7 @@ impl GitHubClient {
                     repo: repo.to_string(),
                 }),
                 Duration::from_secs(ACTIONS_CACHE_TTL_SECS),
-                Some(3),
+                Some(ACTIONS_MAX_PAGES),
                 |resp: WorkflowRunsResponse| resp.workflow_runs,
             )
             .await?;
@@ -491,7 +491,7 @@ impl GitHubClient {
         repo: &str,
         pr_number: u64,
     ) -> Result<Vec<domain::PrComment>> {
-        let path = format!("/repos/{owner}/{repo}/issues/{pr_number}/comments?per_page=100");
+        let path = format!("/repos/{owner}/{repo}/issues/{pr_number}/comments?per_page={API_PER_PAGE}");
         let cache_key = CacheKey::PrComments {
             owner: owner.to_string(),
             repo: repo.to_string(),
@@ -521,7 +521,7 @@ impl GitHubClient {
         repo: &str,
         pr_number: u64,
     ) -> Result<Vec<domain::PrReview>> {
-        let path = format!("/repos/{owner}/{repo}/pulls/{pr_number}/reviews?per_page=100");
+        let path = format!("/repos/{owner}/{repo}/pulls/{pr_number}/reviews?per_page={API_PER_PAGE}");
         let cache_key = CacheKey::PrReviews {
             owner: owner.to_string(),
             repo: repo.to_string(),
@@ -552,7 +552,7 @@ impl GitHubClient {
         repo: &str,
         pr_number: u64,
     ) -> Result<Vec<domain::PrCodeComment>> {
-        let path = format!("/repos/{owner}/{repo}/pulls/{pr_number}/comments?per_page=100");
+        let path = format!("/repos/{owner}/{repo}/pulls/{pr_number}/comments?per_page={API_PER_PAGE}");
         let cache_key = CacheKey::PrCodeComments {
             owner: owner.to_string(),
             repo: repo.to_string(),
@@ -604,9 +604,7 @@ impl GitHubClient {
                 tracing::warn!(max_pages = MAX_PAGES, owner, repo, pr_number, "pr files pagination exceeded");
                 break;
             }
-            let path = format!(
-                "/repos/{owner}/{repo}/pulls/{pr_number}/files?per_page=100&page={page}"
-            );
+            let path = format!("/repos/{owner}/{repo}/pulls/{pr_number}/files?per_page={API_PER_PAGE}&page={page}");
             let resp = self
                 .send_and_check(self.request(Method::GET, &path))
                 .await?;

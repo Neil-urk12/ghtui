@@ -1,11 +1,10 @@
 use color_eyre::Result;
 use std::fs;
 use std::path::PathBuf;
-use std::time::Duration;
 use std::process::Command;
 
 use serde::{Deserialize, Serialize};
-use crate::constants::{GITHUB_ACCESS_TOKEN_URL, GITHUB_DEVICE_CODE_URL};
+use crate::constants::{GITHUB_ACCESS_TOKEN_URL, GITHUB_DEVICE_CODE_URL, DEVICE_FLOW_TIMEOUT};
 
 pub const GHTUI_CLIENT_ID: &str = "Iv1.b507a08c1255a797";
 pub const GHTUI_SCOPES: &str = "repo notifications read:org";
@@ -133,8 +132,6 @@ impl std::fmt::Debug for TokenResponse {
     }
 }
 
-/// Timeout for device flow HTTP requests (30 seconds).
-const DEVICE_FLOW_TIMEOUT: Duration = Duration::from_secs(30);
 /// Check HTTP response status, preserving the response body in error messages.
 /// Error body is capped at 4KB to prevent unbounded memory usage.
 async fn check_response(mut resp: reqwest::Response) -> Result<reqwest::Response> {

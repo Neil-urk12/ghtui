@@ -62,7 +62,7 @@ fn main() -> color_eyre::Result<()> {
     // Use larger stack to prevent overflow from tokio::select! in debug builds
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
-        .thread_stack_size(16 * 1024 * 1024)
+        .thread_stack_size(constants::TOKIO_STACK_SIZE)
         .build()?;
 
     rt.block_on(async {
