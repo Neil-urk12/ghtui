@@ -665,7 +665,7 @@ fn safe_u32(value: u64) -> u32 {
     })
 }
 
-fn parse_next_link(header_value: &str, expected_prefix: Option<&str>) -> Option<String> {
+pub(crate) fn parse_next_link(header_value: &str, expected_prefix: Option<&str>) -> Option<String> {
     for link in header_value.split(',').map(str::trim) {
         if !link.contains("rel=\"next\"") {
             continue;
@@ -1491,5 +1491,52 @@ mod tests {
         let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
         let result: Vec<String> = client.get_all("/runs?page=1", None, Duration::from_secs(60), None, |w: TestWrapper| w.items).await.unwrap();
         assert_eq!(result, vec!["a".to_string(), "b".to_string()]);
+    }
+}
+
+
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn valid_next_link_returns_url(
+            host in r"[a-z]{3,10}\.[a-z]{2,4}",
+            path in r"/[a-z/]{1,30}"
+        ) {
+            let url = format!("https://{}{}", host, path);
+            let header = format!("<{}>; rel=\"next\"", url);
+            let result = parse_next_link(&header, None);
+            prop_assert_eq!(result, Some(url));
+        }
+
+        #[test]
+        fn no_next_link_returns_none(
+            url in r"https://[a-z]{3,10}\.[a-z]{2,4}/[a-z/]{1,30}",
+            rel in r"(last|prev|first)"
+        ) {
+            let header = format!("<{}>; rel=\"{}\"", url, rel);
+            let result = parse_next_link(&header, None);
+            prop_assert_eq!(result, None);
+        }
+
+        #[test]
+        fn empty_string_returns_none(s in "") {
+            prop_assert_eq!(parse_next_link(&s, None), None);
+        }
+
+        #[test]
+        fn non_http_scheme_rejected(
+            scheme in r"(ftp|file|data|javascript)",
+            host in r"[a-z]{3,10}\.[a-z]{2,4}",
+            path in r"/[a-z/]{1,20}"
+        ) {
+            let url = format!("{}://{}{}", scheme, host, path);
+            let header = format!("<{}>; rel=\"next\"", url);
+            let result = parse_next_link(&header, None);
+            prop_assert_eq!(result, None);
+        }
     }
 }

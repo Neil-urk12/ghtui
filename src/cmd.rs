@@ -27,54 +27,71 @@ pub enum CmdBehavior {
 
 
 pub enum Cmd {
+    /// No operation — nothing to do.
     None,
+    /// Fetch the repository list for the authenticated user.
     FetchRepos,
+    /// Fetch pull requests for a repository, filtered by state.
     FetchPulls {
         ctx: RepoContext,
         state: FilterState,
     },
+    /// Fetch issues for a repository, filtered by state.
     FetchIssues {
         ctx: RepoContext,
         state: FilterState,
     },
+    /// Fetch notifications, optionally including read ones.
     FetchNotifications {
         all: bool,
     },
+    /// Fetch GitHub Actions workflow runs for a repository.
     FetchActions {
         ctx: RepoContext,
     },
+    /// Mark a single notification as read.
     MarkNotificationRead {
         id: String,
     },
+    /// Mark all notifications as read.
     MarkAllNotificationsRead,
+    /// Approve a pull request (destructive action).
     ApprovePr {
         ctx: RepoContext,
         pr_number: u64,
     },
+    /// Merge a pull request (destructive action).
     MergePr {
         ctx: RepoContext,
         pr_number: u64,
     },
+    /// Re-run a GitHub Actions workflow.
     RerunWorkflow {
         ctx: RepoContext,
         run_id: u64,
     },
+    /// Cancel a running GitHub Actions workflow.
     CancelWorkflow {
         ctx: RepoContext,
         run_id: u64,
     },
+    /// Navigate to the repo detail panel for a specific repository.
     OpenRepoDetail {
         ctx: RepoContext,
     },
+    /// Cycle through repository sort modes.
     CycleRepoSort,
+    /// Fetch PR review comments and inline code comments.
     FetchPrComments {
         ctx: RepoContext,
         pr_number: u64,
     },
+    /// Close a pull request (destructive action).
     ClosePr {
         ctx: RepoContext,
         pr_number: u64,
     },
+    /// Reopen a closed pull request.
     ReopenPr {
         ctx: RepoContext,
         pr_number: u64,

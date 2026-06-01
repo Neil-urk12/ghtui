@@ -141,3 +141,41 @@ mod tests {
         assert_eq!(lines.len(), 4);
     }
 }
+
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn valid_header_with_counts(old_start in 0u32..10000, old_count in 0u32..10000,
+                                     new_start in 0u32..10000, new_count in 0u32..10000) {
+            let line = format!("@@ -{},{} +{},{} @@", old_start, old_count, new_start, new_count);
+            let result = parse_hunk_header(&line);
+            prop_assert_eq!(result, Some((old_start, new_start)));
+        }
+
+        #[test]
+        fn valid_header_without_counts(start in 0u32..10000, new_start in 0u32..10000) {
+            let line = format!("@@ -{} +{} @@", start, new_start);
+            let result = parse_hunk_header(&line);
+            prop_assert_eq!(result, Some((start, new_start)));
+        }
+
+        #[test]
+        fn valid_header_with_context(old_start in 0u32..10000, new_start in 0u32..10000,
+                                      context in "[a-z ]{0,30}") {
+            let line = format!("@@ -{} +{} @@ {}", old_start, new_start, context);
+            let result = parse_hunk_header(&line);
+            prop_assert_eq!(result, Some((old_start, new_start)));
+        }
+
+        #[test]
+        fn non_numeric_returns_none(old in "[a-z]{1,10}", new in "[a-z]{1,10}") {
+            let line = format!("@@ -{} +{} @@", old, new);
+            let result = parse_hunk_header(&line);
+            prop_assert_eq!(result, None);
+        }
+    }
+}

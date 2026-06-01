@@ -9,33 +9,58 @@ use crate::constants;
 use crate::domain::FilterState;
 
 pub enum Message {
+    /// Switch to the next tab.
     NextTab,
+    /// Switch to the previous tab.
     PrevTab,
+    /// Refresh the active panel's data.
     Refresh,
+    /// Activate the search/filter input.
     SearchActivate,
+    /// Add a character to the search query.
     SearchInput(char),
+    /// Delete the last character from the search query.
     SearchBackspace,
+    /// Apply the current search filter.
     SearchSubmit,
+    /// Clear the search filter.
     SearchClear,
+    /// Dismiss the error toast.
     DismissError,
+    /// Dismiss the success toast.
     DismissSuccess,
+    /// Toggle the help popup.
     ToggleHelp,
+    /// Forward a key press to the active panel's handler.
     PanelKeyInput(char),
+    /// Scroll the detail pane up.
     DetailScrollUp,
+    /// Scroll the detail pane down.
     DetailScrollDown,
+    /// Quit the application.
     Quit,
+    /// No-op message (ignored by update).
     Noop,
+    /// Begin the GitHub device flow login.
     LoginInit(LoginState),
+    /// Login succeeded with a token.
     LoginSuccess(String),
+    /// Login failed with an error message.
     LoginError(String),
+    /// API response loaded successfully.
     ApiLoaded(crate::event::ApiPayload),
+    /// API request failed with an error message.
     ApiError(String),
+    /// GitHub API rate limit info updated.
     RateLimitUpdate {
         remaining: Option<u32>,
         reset_secs: Option<u64>,
     },
+    /// Periodic tick for UI updates (toast dismiss, etc).
     Tick,
+    /// User confirmed a destructive action.
     ConfirmYes,
+    /// User cancelled a destructive action.
     ConfirmNo,
 }
 
