@@ -48,7 +48,7 @@ fn pr_to_diff(pr: &PullRequest, theme: &Theme) -> Vec<Line<'static>> {
             if i + 1 < files.len() {
                 lines.push(Line::from(""));
                 lines.push(Line::from(Span::styled(
-                    "─".repeat(60),
+                    "─".repeat(crate::constants::DIFF_SEPARATOR_WIDTH),
                     theme.muted,
                 )));
                 lines.push(Line::from(""));

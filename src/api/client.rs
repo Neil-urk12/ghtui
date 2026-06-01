@@ -838,7 +838,8 @@ mod tests {
         let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
         seed(&client, CacheKey::Pulls { owner: "o".into(), repo: "r".into(), state: "open".into() }, vec!["stale".to_string()]);
         let result = client.approve_pr("o", "r", 1).await;
-        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("500"), "Expected error to contain status code 500, got: {err}");
         // Cache should still have the stale data
         let c = client.cache.lock().unwrap();
         assert!(c.get::<Vec<String>>(&CacheKey::Pulls { owner: "o".into(), repo: "r".into(), state: "open".into() }).is_some());
@@ -1192,7 +1193,8 @@ mod tests {
 
         let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
         let result: Result<Vec<String>> = client.get_all("/items", None, Duration::from_secs(60), None, |v| v).await;
-        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("500"), "Expected error to contain status code 500, got: {err}");
     }
 
     #[tokio::test]
@@ -1372,7 +1374,8 @@ mod tests {
 
         // Should fail because redirect to different host is blocked
         // reqwest returns the 302 response, which send_and_check treats as non-2xx
-        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("302"), "Expected error to contain status code 302, got: {err}");
     }
 
     #[tokio::test]

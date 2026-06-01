@@ -78,6 +78,9 @@ pub const DEVICE_FLOW_TIMEOUT: Duration = Duration::from_secs(30);
 /// Tokio worker thread stack size (16 MiB)
 pub const TOKIO_STACK_SIZE: usize = 16 * 1024 * 1024;
 
+/// Width of the diff file separator line
+pub const DIFF_SEPARATOR_WIDTH: usize = 60;
+
 #[cfg(test)]
 mod tests {
     use super::*;
