@@ -1,3 +1,13 @@
+mod actions;
+mod issues;
+mod notifications;
+mod pr_details;
+mod pulls;
+mod repos;
+
+#[cfg(test)]
+mod test_helpers;
+
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -6,9 +16,6 @@ use reqwest::{Client, Method, redirect::Policy};
 use url::Url;
 
 use super::cache::{Cache, CacheKey};
-use super::models::*;
-use crate::domain;
-use crate::constants::{REPO_CACHE_TTL_SECS, PULLS_CACHE_TTL_SECS, ISSUES_CACHE_TTL_SECS, NOTIFICATIONS_CACHE_TTL_SECS, ACTIONS_CACHE_TTL_SECS, PR_COMMENTS_CACHE_TTL_SECS, API_PER_PAGE, ACTIONS_PER_PAGE, ACTIONS_MAX_PAGES};
 
 const BASE_URL: &str = "https://api.github.com";
 const USER_AGENT: &str = "ghtui";
@@ -17,7 +24,7 @@ pub struct GitHubClient {
     http: Client,
     token: String,
     base_url: String,
-    cache: Mutex<Cache>,
+    pub(crate) cache: Mutex<Cache>,
     pub rate_remaining: Mutex<Option<u32>>,
     pub rate_reset: Mutex<Option<Instant>>,
 }
@@ -113,7 +120,7 @@ impl GitHubClient {
         }
     }
 
-    async fn get<T: serde::de::DeserializeOwned + Clone + Send + Sync + 'static>(
+    pub(crate) async fn get<T: serde::de::DeserializeOwned + Clone + Send + Sync + 'static>(
         &self,
         path: &str,
         cache_key: Option<CacheKey>,
@@ -155,7 +162,7 @@ impl GitHubClient {
     /// whatever items were collected so far rather than failing entirely. These partial results
     /// ARE cached — subsequent calls within the TTL return the same truncated data. This is
     /// intentional: partial data is often more useful than no data for UI display.
-    async fn get_all<T, W, F>(
+    pub(crate) async fn get_all<T, W, F>(
         &self,
         path: &str,
         cache_key: Option<CacheKey>,
@@ -238,14 +245,7 @@ impl GitHubClient {
         Ok(all_items)
     }
 
-    /// Fetch all pages of a paginated endpoint that returns a wrapper object containing `Vec<T>`.
-    ///
-    /// Like [`get_all`] but for endpoints such as GitHub Actions (`{ total_count, workflow_runs }`).
-    /// The `extract` closure pulls the `Vec<T>` from the wrapper on each page.
-    ///
-    /// **Partial failure behavior:** Same as [`get_all`] — mid-pagination failures return
-    /// partial results and cache them. See [`get_all`] for details.
-    async fn post_empty(&self, path: &str) -> Result<()> {
+    pub(crate) async fn post_empty(&self, path: &str) -> Result<()> {
         self.send_and_check(
             self.request(Method::POST, path)
                 .header("Content-Length", "0"),
@@ -254,386 +254,30 @@ impl GitHubClient {
         Ok(())
     }
 
-    async fn post_json<T: serde::Serialize + ?Sized>(&self, path: &str, body: &T) -> Result<()> {
+    pub(crate) async fn post_json<T: serde::Serialize + ?Sized>(&self, path: &str, body: &T) -> Result<()> {
         self.send_and_check(self.request(Method::POST, path).json(body))
             .await?;
         Ok(())
     }
 
-    async fn patch_empty(&self, path: &str) -> Result<()> {
+    pub(crate) async fn patch_empty(&self, path: &str) -> Result<()> {
         self.send_and_check(self.request(Method::PATCH, path))
             .await?;
         Ok(())
     }
 
-    async fn patch_json<T: serde::Serialize + ?Sized>(&self, path: &str, body: &T) -> Result<()> {
+    pub(crate) async fn patch_json<T: serde::Serialize + ?Sized>(&self, path: &str, body: &T) -> Result<()> {
         self.send_and_check(self.request(Method::PATCH, path).json(body))
             .await?;
         Ok(())
     }
 
-    pub async fn get_repos(&self) -> Result<Vec<domain::Repo>> {
-        let models: Vec<Repo> = self
-            .get_all(
-                &format!("/user/repos?sort=updated&per_page={API_PER_PAGE}"),
-                Some(CacheKey::UserRepos),
-                Duration::from_secs(REPO_CACHE_TTL_SECS),
-                None,
-                |v| v,
-            )
-            .await?;
-        Ok(models
-            .into_iter()
-            .map(|r| domain::Repo {
-                name: r.full_name,
-                description: r.description,
-                language: r.language,
-                stars: safe_u32(r.stargazers_count),
-                forks: safe_u32(r.forks_count),
-                updated_at: r.updated_at,
-                visibility: r.visibility.unwrap_or_default(),
-                default_branch: r.default_branch,
-            })
-            .collect())
-    }
-
-    pub async fn get_pulls(
-        &self,
-        owner: &str,
-        repo: &str,
-        state: &str,
-    ) -> Result<Vec<domain::PullRequest>> {
-        let path = format!("/repos/{owner}/{repo}/pulls?state={state}&per_page={API_PER_PAGE}");
-        let models: Vec<PullRequest> = self
-            .get_all(
-                &path,
-                Some(CacheKey::Pulls {
-                    owner: owner.to_string(),
-                    repo: repo.to_string(),
-                    state: state.to_string(),
-                }),
-                Duration::from_secs(PULLS_CACHE_TTL_SECS),
-                None,
-                |v| v,
-            )
-            .await?;
-        Ok(models
-            .into_iter()
-            .map(|pr| domain::PullRequest {
-                number: pr.number,
-                title: pr.title,
-                author: pr.user.login,
-                state: pr.state,
-                labels: pr.labels.into_iter().map(|l| l.name).collect(),
-                created_at: pr.created_at,
-                updated_at: pr.updated_at,
-                body: pr.body,
-                merged_at: pr.merged_at,
-                comments: None,
-                reviews: None,
-                code_comments: None,
-                comment_errors: None,
-                review_errors: None,
-                code_comment_errors: None,
-                files: None,
-                file_errors: None,
-            })
-            .collect())
-    }
-
-    pub async fn get_issues(
-        &self,
-        owner: &str,
-        repo: &str,
-        state: &str,
-    ) -> Result<Vec<domain::Issue>> {
-        let path = format!("/repos/{owner}/{repo}/issues?state={state}&per_page={API_PER_PAGE}");
-        let models: Vec<Issue> = self
-            .get_all(
-                &path,
-                Some(CacheKey::Issues {
-                    owner: owner.to_string(),
-                    repo: repo.to_string(),
-                    state: state.to_string(),
-                }),
-                Duration::from_secs(ISSUES_CACHE_TTL_SECS),
-                None,
-                |v| v,
-            )
-            .await?;
-        // Filter out pull requests (GitHub returns them as issues too)
-        Ok(models
-            .into_iter()
-            .filter(|i| i.pull_request.is_none())
-            .map(|i| domain::Issue {
-                number: i.number,
-                title: i.title,
-                author: i.user.login,
-                state: i.state,
-                labels: i.labels.into_iter().map(|l| l.name).collect(),
-                assignees: i.assignees.into_iter().map(|u| u.login).collect(),
-                created_at: i.created_at,
-                updated_at: i.updated_at,
-                body: i.body,
-            })
-            .collect())
-    }
-
-    pub async fn get_notifications(&self, all: bool) -> Result<Vec<domain::Notification>> {
-        let path = if all {
-            &format!("/notifications?per_page={API_PER_PAGE}&all=true")
-        } else {
-            &format!("/notifications?per_page={API_PER_PAGE}")
-        };
-        let models: Vec<Notification> = self
-            .get_all(
-                path,
-                Some(CacheKey::Notifications),
-                Duration::from_secs(NOTIFICATIONS_CACHE_TTL_SECS),
-                None,
-                |v| v,
-            )
-            .await?;
-        Ok(models
-            .into_iter()
-            .map(|n| domain::Notification {
-                id: n.id,
-                repo_name: n.repository.full_name,
-                subject_title: n.subject.title,
-                subject_type: n.subject.subject_type,
-                reason: n.reason,
-                unread: n.unread,
-                updated_at: n.updated_at,
-            })
-            .collect())
-    }
-
-    pub async fn get_actions(&self, owner: &str, repo: &str) -> Result<Vec<domain::WorkflowRun>> {
-        let path = format!("/repos/{owner}/{repo}/actions/runs?per_page={ACTIONS_PER_PAGE}");
-        let runs: Vec<WorkflowRun> = self
-            .get_all(
-                &path,
-                Some(CacheKey::Actions {
-                    owner: owner.to_string(),
-                    repo: repo.to_string(),
-                }),
-                Duration::from_secs(ACTIONS_CACHE_TTL_SECS),
-                Some(ACTIONS_MAX_PAGES),
-                |resp: WorkflowRunsResponse| resp.workflow_runs,
-            )
-            .await?;
-        Ok(runs
-            .into_iter()
-            .map(|w| domain::WorkflowRun {
-                id: w.id,
-                name: w.name,
-                status: w.status,
-                conclusion: w.conclusion,
-                branch: w.head_branch,
-                event: w.event,
-                created_at: w.created_at,
-                run_number: safe_u32(w.run_number),
-            })
-            .collect())
-    }
-
-    pub async fn mark_notification_read(&self, id: &str) -> Result<()> {
-        self.patch_empty(&format!("/notifications/threads/{id}")).await?;
-        self.invalidate_cache(&CacheKey::Notifications);
-        Ok(())
-    }
-
-    pub async fn mark_all_notifications_read(&self) -> Result<()> {
-        self.post_empty("/notifications").await?;
-        self.invalidate_cache(&CacheKey::Notifications);
-        Ok(())
-    }
-
-    pub async fn approve_pr(&self, owner: &str, repo: &str, pr_number: u64) -> Result<()> {
-        let body = serde_json::json!({ "event": "APPROVE" });
-        self.post_json(
-            &format!("/repos/{owner}/{repo}/pulls/{pr_number}/reviews"),
-            &body,
-        )
-        .await?;
-        self.invalidate_pr_caches(owner, repo, pr_number);
-        Ok(())
-    }
-
-    pub async fn merge_pr(&self, owner: &str, repo: &str, pr_number: u64) -> Result<()> {
-        self.put_empty(&format!("/repos/{owner}/{repo}/pulls/{pr_number}/merge"))
-            .await?;
-        self.invalidate_pr_caches(owner, repo, pr_number);
-        Ok(())
-    }
-
-    pub async fn rerun_workflow(&self, owner: &str, repo: &str, run_id: u64) -> Result<()> {
-        self.post_empty(&format!(
-            "/repos/{owner}/{repo}/actions/runs/{run_id}/rerun"
-        ))
-        .await?;
-        self.invalidate_action_caches(owner, repo);
-        Ok(())
-    }
-
-    pub async fn cancel_workflow(&self, owner: &str, repo: &str, run_id: u64) -> Result<()> {
-        self.post_empty(&format!(
-            "/repos/{owner}/{repo}/actions/runs/{run_id}/cancel"
-        ))
-        .await?;
-        self.invalidate_action_caches(owner, repo);
-        Ok(())
-    }
-
-    pub async fn get_issue_comments(
-        &self,
-        owner: &str,
-        repo: &str,
-        pr_number: u64,
-    ) -> Result<Vec<domain::PrComment>> {
-        let path = format!("/repos/{owner}/{repo}/issues/{pr_number}/comments?per_page={API_PER_PAGE}");
-        let cache_key = CacheKey::PrComments {
-            owner: owner.to_string(),
-            repo: repo.to_string(),
-            pr_number,
-        };
-        let models: Vec<IssueComment> = self
-            .get(
-                &path,
-                Some(cache_key),
-                Duration::from_secs(PR_COMMENTS_CACHE_TTL_SECS),
-            )
-            .await?;
-        Ok(models
-            .into_iter()
-            .map(|c| domain::PrComment {
-                id: c.id,
-                author: c.user.login,
-                body: c.body,
-                created_at: c.created_at,
-            })
-            .collect())
-    }
-
-    pub async fn get_reviews(
-        &self,
-        owner: &str,
-        repo: &str,
-        pr_number: u64,
-    ) -> Result<Vec<domain::PrReview>> {
-        let path = format!("/repos/{owner}/{repo}/pulls/{pr_number}/reviews?per_page={API_PER_PAGE}");
-        let cache_key = CacheKey::PrReviews {
-            owner: owner.to_string(),
-            repo: repo.to_string(),
-            pr_number,
-        };
-        let models: Vec<Review> = self
-            .get(
-                &path,
-                Some(cache_key),
-                Duration::from_secs(PR_COMMENTS_CACHE_TTL_SECS),
-            )
-            .await?;
-        Ok(models
-            .into_iter()
-            .map(|r| domain::PrReview {
-                id: r.id,
-                author: r.user.login,
-                state: r.state,
-                body: r.body,
-                submitted_at: r.submitted_at,
-            })
-            .collect())
-    }
-
-    pub async fn get_review_comments(
-        &self,
-        owner: &str,
-        repo: &str,
-        pr_number: u64,
-    ) -> Result<Vec<domain::PrCodeComment>> {
-        let path = format!("/repos/{owner}/{repo}/pulls/{pr_number}/comments?per_page={API_PER_PAGE}");
-        let cache_key = CacheKey::PrCodeComments {
-            owner: owner.to_string(),
-            repo: repo.to_string(),
-            pr_number,
-        };
-        let models: Vec<ReviewComment> = self
-            .get(
-                &path,
-                Some(cache_key),
-                Duration::from_secs(PR_COMMENTS_CACHE_TTL_SECS),
-            )
-            .await?;
-        Ok(models
-            .into_iter()
-            .map(|c| domain::PrCodeComment {
-                id: c.id,
-                author: c.user.login,
-                body: c.body,
-                path: c.path,
-                line: c.line,
-                created_at: c.created_at,
-            })
-            .collect())
-    }
-
-    pub async fn get_pr_files(
-        &self,
-        owner: &str,
-        repo: &str,
-        pr_number: u64,
-    ) -> Result<Vec<domain::PrFile>> {
-        let cache_key = CacheKey::PrFiles {
-            owner: owner.to_string(),
-            repo: repo.to_string(),
-            pr_number,
-        };
-        let path = format!("/repos/{owner}/{repo}/pulls/{pr_number}/files?per_page={API_PER_PAGE}&page=1");
-        let models: Vec<PullRequestFile> = self
-            .get_all(
-                &path,
-                Some(cache_key),
-                Duration::from_secs(PR_COMMENTS_CACHE_TTL_SECS),
-                Some(100),
-                |v| v,
-            )
-            .await?;
-        Ok(models
-            .into_iter()
-            .map(|f| domain::PrFile {
-                filename: f.filename,
-                status: f.status,
-                additions: f.additions,
-                deletions: f.deletions,
-                patch: f.patch,
-                previous_filename: f.previous_filename,
-            })
-            .collect())
-    }
-
-    pub async fn close_pr(&self, owner: &str, repo: &str, pr_number: u64) -> Result<()> {
-        let body = serde_json::json!({ "state": "closed" });
-        self.patch_json(&format!("/repos/{owner}/{repo}/pulls/{pr_number}"), &body)
-            .await?;
-        self.invalidate_pr_caches(owner, repo, pr_number);
-        Ok(())
-    }
-
-    pub async fn reopen_pr(&self, owner: &str, repo: &str, pr_number: u64) -> Result<()> {
-        let body = serde_json::json!({ "state": "open" });
-        self.patch_json(&format!("/repos/{owner}/{repo}/pulls/{pr_number}"), &body)
-            .await?;
-        self.invalidate_pr_caches(owner, repo, pr_number);
-        Ok(())
-    }
-
-    async fn put_empty(&self, path: &str) -> Result<()> {
+    pub(crate) async fn put_empty(&self, path: &str) -> Result<()> {
         self.send_and_check(self.request(Method::PUT, path)).await?;
         Ok(())
     }
 
-    fn request(&self, method: Method, path: &str) -> reqwest::RequestBuilder {
+    pub(crate) fn request(&self, method: Method, path: &str) -> reqwest::RequestBuilder {
         let url = format!("{}{}", self.base_url.trim_end_matches('/'), path);
         self.http
             .request(method, &url)
@@ -642,7 +286,7 @@ impl GitHubClient {
             .header("User-Agent", USER_AGENT)
     }
 
-    async fn send_and_check(&self, builder: reqwest::RequestBuilder) -> Result<reqwest::Response> {
+    pub(crate) async fn send_and_check(&self, builder: reqwest::RequestBuilder) -> Result<reqwest::Response> {
         let resp = builder.send().await?;
         self.track_rate_limits(resp.headers());
         let status = resp.status();
@@ -740,130 +384,12 @@ mod tests {
 
     use wiremock::{MockServer, Mock, ResponseTemplate};
     use wiremock::matchers::{method, path, query_param};
+    use super::test_helpers::seed;
 
-    async fn mock_and_client(method_match: &str, path_match: &str) -> (MockServer, GitHubClient) {
-        let server = MockServer::start().await;
-        Mock::given(method(method_match))
-            .and(path(path_match))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
-            .mount(&server)
-            .await;
-        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
-        (server, client)
-    }
-
-    fn seed<T: Send + Sync + 'static>(client: &GitHubClient, key: CacheKey, val: T) {
-        let mut c = client.cache.lock().unwrap();
-        c.insert(key, val, crate::constants::TEST_CACHE_TTL);
-    }
 
     #[tokio::test]
-    async fn approve_pr_invalidates_pr_caches() {
-        let (_s, client) = mock_and_client("POST", "/repos/o/r/pulls/1/reviews").await;
-        seed(&client, CacheKey::Pulls { owner: "o".into(), repo: "r".into(), state: "open".into() }, vec!["stale".to_string()]);
-        client.approve_pr("o", "r", 1).await.unwrap();
-        let c = client.cache.lock().unwrap();
-        assert!(c.get::<Vec<String>>(&CacheKey::Pulls { owner: "o".into(), repo: "r".into(), state: "open".into() }).is_none());
-    }
-
-    #[tokio::test]
-    async fn merge_pr_invalidates_pr_caches() {
-        let (_s, client) = mock_and_client("PUT", "/repos/o/r/pulls/1/merge").await;
-        seed(&client, CacheKey::PrComments { owner: "o".into(), repo: "r".into(), pr_number: 1 }, "stale".to_string());
-        client.merge_pr("o", "r", 1).await.unwrap();
-        let c = client.cache.lock().unwrap();
-        assert!(c.get::<String>(&CacheKey::PrComments { owner: "o".into(), repo: "r".into(), pr_number: 1 }).is_none());
-    }
-
-    #[tokio::test]
-    async fn close_pr_invalidates_pr_caches() {
-        let (_s, client) = mock_and_client("PATCH", "/repos/o/r/pulls/1").await;
-        seed(&client, CacheKey::Pulls { owner: "o".into(), repo: "r".into(), state: "closed".into() }, vec!["stale".to_string()]);
-        client.close_pr("o", "r", 1).await.unwrap();
-        let c = client.cache.lock().unwrap();
-        assert!(c.get::<Vec<String>>(&CacheKey::Pulls { owner: "o".into(), repo: "r".into(), state: "closed".into() }).is_none());
-    }
-
-    #[tokio::test]
-    async fn reopen_pr_invalidates_pr_caches() {
-        let (_s, client) = mock_and_client("PATCH", "/repos/o/r/pulls/1").await;
-        seed(&client, CacheKey::PrReviews { owner: "o".into(), repo: "r".into(), pr_number: 1 }, "stale".to_string());
-        client.reopen_pr("o", "r", 1).await.unwrap();
-        let c = client.cache.lock().unwrap();
-        assert!(c.get::<String>(&CacheKey::PrReviews { owner: "o".into(), repo: "r".into(), pr_number: 1 }).is_none());
-    }
-
-    #[tokio::test]
-    async fn mark_notification_read_invalidates_notifications() {
-        let (_s, client) = mock_and_client("PATCH", "/notifications/threads/abc").await;
-        seed(&client, CacheKey::Notifications, vec!["stale".to_string()]);
-        client.mark_notification_read("abc").await.unwrap();
-        let c = client.cache.lock().unwrap();
-        assert!(c.get::<Vec<String>>(&CacheKey::Notifications).is_none());
-    }
-
-    #[tokio::test]
-    async fn mark_all_notifications_read_invalidates_notifications() {
-        let (_s, client) = mock_and_client("POST", "/notifications").await;
-        seed(&client, CacheKey::Notifications, vec!["stale".to_string()]);
-        client.mark_all_notifications_read().await.unwrap();
-        let c = client.cache.lock().unwrap();
-        assert!(c.get::<Vec<String>>(&CacheKey::Notifications).is_none());
-    }
-
-    #[tokio::test]
-    async fn rerun_workflow_invalidates_actions() {
-        let (_s, client) = mock_and_client("POST", "/repos/o/r/actions/runs/99/rerun").await;
-        seed(&client, CacheKey::Actions { owner: "o".into(), repo: "r".into() }, vec!["stale".to_string()]);
-        client.rerun_workflow("o", "r", 99).await.unwrap();
-        let c = client.cache.lock().unwrap();
-        assert!(c.get::<Vec<String>>(&CacheKey::Actions { owner: "o".into(), repo: "r".into() }).is_none());
-    }
-
-    #[tokio::test]
-    async fn cancel_workflow_invalidates_actions() {
-        let (_s, client) = mock_and_client("POST", "/repos/o/r/actions/runs/99/cancel").await;
-        seed(&client, CacheKey::Actions { owner: "o".into(), repo: "r".into() }, vec!["stale".to_string()]);
-        client.cancel_workflow("o", "r", 99).await.unwrap();
-        let c = client.cache.lock().unwrap();
-        assert!(c.get::<Vec<String>>(&CacheKey::Actions { owner: "o".into(), repo: "r".into() }).is_none());
-    }
-
-    #[tokio::test]
-    async fn approve_pr_preserves_cache_on_failure() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST")).and(path("/repos/o/r/pulls/1/reviews"))
-            .respond_with(ResponseTemplate::new(500).set_body_string("server error"))
-            .mount(&server).await;
-        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
-        seed(&client, CacheKey::Pulls { owner: "o".into(), repo: "r".into(), state: "open".into() }, vec!["stale".to_string()]);
-        let result = client.approve_pr("o", "r", 1).await;
-        let err = result.unwrap_err();
-        assert!(err.to_string().contains("500"), "Expected error to contain status code 500, got: {err}");
-        // Cache should still have the stale data
-        let c = client.cache.lock().unwrap();
-        assert!(c.get::<Vec<String>>(&CacheKey::Pulls { owner: "o".into(), repo: "r".into(), state: "open".into() }).is_some());
-    }
-
-    #[tokio::test]
-    async fn base_url_trailing_slash_produces_correct_url() {
-        let server = MockServer::start().await;
-        Mock::given(method("GET")).and(path("/repos/o/r/pulls"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
-            .mount(&server).await;
-        
-        // Client with trailing slash on base_url
-        let base_url = format!("{}/", server.uri());
-        let client = GitHubClient::new_for_test("tok".into(), base_url).unwrap();
-        
-        // Should work - double slash would cause path mismatch
-        let result = client.get_pulls("o", "r", "open").await;
-        assert!(result.is_ok());
-    }
-
-    #[test]
     #[tracing_test::traced_test]
-    fn poisoned_mutex_logs_warn_level() {
+    async fn poisoned_mutex_logs_warn_level() {
         let client = GitHubClient::new_for_test("tok".into(), "http://localhost".into()).unwrap();
         // Poison the mutex
         let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -887,127 +413,6 @@ mod tests {
                 Ok(())
             }
         });
-    }
-
-    #[tokio::test]
-    async fn get_pr_files_returns_mapped_data() {
-        let server = MockServer::start().await;
-        Mock::given(method("GET")).and(path("/repos/o/r/pulls/1/files"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
-                {
-                    "filename": "src/main.rs",
-                    "status": "modified",
-                    "additions": 10,
-                    "deletions": 5,
-                    "patch": "@@ -1,3 +1,3 @@",
-                    "previous_filename": null
-                },
-                {
-                    "filename": "old.txt",
-                    "status": "renamed",
-                    "additions": 0,
-                    "deletions": 0,
-                    "patch": null,
-                    "previous_filename": "new.txt"
-                }
-            ])))
-            .mount(&server).await;
-        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
-        let files = client.get_pr_files("o", "r", 1).await.unwrap();
-        assert_eq!(files.len(), 2);
-        assert_eq!(files[0].filename, "src/main.rs");
-        assert_eq!(files[0].status, "modified");
-        assert_eq!(files[0].additions, 10);
-        assert_eq!(files[0].deletions, 5);
-        assert_eq!(files[0].patch.as_deref(), Some("@@ -1,3 +1,3 @@"));
-        assert!(files[0].previous_filename.is_none());
-        assert_eq!(files[1].filename, "old.txt");
-        assert_eq!(files[1].previous_filename.as_deref(), Some("new.txt"));
-    }
-
-    #[tokio::test]
-    async fn get_pr_files_cache_hit() {
-        let server = MockServer::start().await;
-        Mock::given(method("GET")).and(path("/repos/o/r/pulls/1/files"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
-                { "filename": "a.rs", "status": "added", "additions": 1, "deletions": 0, "patch": null, "previous_filename": null }
-            ])))
-            .mount(&server).await;
-        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
-        // First call populates cache
-        let files = client.get_pr_files("o", "r", 1).await.unwrap();
-        assert_eq!(files.len(), 1);
-        // Second call should return cached data
-        let files2 = client.get_pr_files("o", "r", 1).await.unwrap();
-        assert_eq!(files2.len(), 1);
-        assert_eq!(files2[0].filename, "a.rs");
-    }
-
-    #[tokio::test]
-    async fn get_pr_files_cache_invalidation() {
-        let (_s, client) = mock_and_client("POST", "/repos/o/r/pulls/1/reviews").await;
-        seed(&client, CacheKey::PrFiles { owner: "o".into(), repo: "r".into(), pr_number: 1 }, vec!["stale".to_string()]);
-        client.approve_pr("o", "r", 1).await.unwrap();
-        let c = client.cache.lock().unwrap();
-        assert!(c.get::<Vec<String>>(&CacheKey::PrFiles { owner: "o".into(), repo: "r".into(), pr_number: 1 }).is_none());
-    }
-
-    #[tokio::test]
-    async fn get_pr_files_paginates_when_link_header_present() {
-        let server = MockServer::start().await;
-
-        // Page 1: 2 files + Link header pointing to page 2
-        Mock::given(method("GET")).and(path("/repos/o/r/pulls/1/files")).and(query_param("page", "1"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_json(serde_json::json!([
-                        { "filename": "a.rs", "status": "added", "additions": 1, "deletions": 0, "patch": null, "previous_filename": null },
-                        { "filename": "b.rs", "status": "modified", "additions": 2, "deletions": 1, "patch": "@@ -1 +1 @@", "previous_filename": null }
-                    ]))
-                    .insert_header("Link", format!(r#"<{}/repos/o/r/pulls/1/files?page=2&per_page=100>; rel="next""#, server.uri()))
-            )
-            .mount(&server).await;
-
-        // Page 2: 1 file, no Link header
-        Mock::given(method("GET")).and(path("/repos/o/r/pulls/1/files"))
-            .and(query_param("page", "2"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_json(serde_json::json!([
-                        { "filename": "c.rs", "status": "deleted", "additions": 0, "deletions": 5, "patch": null, "previous_filename": null }
-                    ]))
-            )
-            .mount(&server).await;
-
-        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
-        let files = client.get_pr_files("o", "r", 1).await.unwrap();
-        assert_eq!(files.len(), 3, "should return all files from both pages");
-        assert_eq!(files[0].filename, "a.rs");
-        assert_eq!(files[1].filename, "b.rs");
-        assert_eq!(files[2].filename, "c.rs");
-    }
-
-    #[tokio::test]
-    async fn get_pr_files_rejects_cross_host_next_link() {
-        let server = MockServer::start().await;
-
-        // Page 1 returns files with a next-link pointing to a different host
-        Mock::given(method("GET")).and(path("/repos/o/r/pulls/1/files"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_json(serde_json::json!([
-                        { "filename": "a.rs", "status": "modified", "additions": 1, "deletions": 0, "patch": null, "previous_filename": null }
-                    ]))
-                    .insert_header("Link", r#"<https://evil.com/repos/o/r/pulls/1/files?page=2>; rel="next""#)
-            )
-            .mount(&server).await;
-
-        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
-        let files = client.get_pr_files("o", "r", 1).await.unwrap();
-
-        // Should return only page 1 files — cross-host link is ignored
-        assert_eq!(files.len(), 1);
-        assert_eq!(files[0].filename, "a.rs");
     }
 
     // --- parse_next_link tests ---
@@ -1405,6 +810,22 @@ mod tests {
 
         // Should succeed — same-host redirect is followed
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn post_empty_sends_post_with_content_length_zero() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/test/action"))
+            .and(wiremock::matchers::header("Content-Length", "0"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
+        client.post_empty("/test/action").await.unwrap();
+        // Mock verifies: POST method, correct path, Content-Length: 0 header, exactly 1 request
     }
 
     #[test]
