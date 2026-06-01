@@ -313,8 +313,23 @@ impl PanelItem for PullsPanelItem {
         key: char,
         selected: Option<&Self::Item>,
         data: &ListPanelData<Self::Item>,
+        detail_pane: &mut crate::widgets::detail_pane::DetailPane,
     ) -> Option<Cmd> {
         match key {
+            'd' => {
+                if selected.is_some() {
+                    detail_pane.toggle_diff();
+                }
+                Some(Cmd::None)
+            }
+            'f' => {
+                detail_pane.toggle_fullscreen();
+                Some(Cmd::None)
+            }
+            'c' => {
+                detail_pane.toggle_collapse();
+                Some(Cmd::None)
+            }
             '1' => {
                 if self.set_filter(FilterState::Open) {
                     self.fetch_pulls_cmd(data)
@@ -519,6 +534,7 @@ mod tests {
     use super::*;
     use crate::util::diff::parse_hunk_header;
     use crate::event::ApiPayload;
+    use crate::widgets::detail_pane::DetailPane;
     use std::time::Duration;
 
     fn test_pr() -> PullRequest {
@@ -655,7 +671,7 @@ mod tests {
         let mut item = PullsPanelItem::default();
 
         let selected = data.items.first();
-        let cmd = item.handle_key('a', selected, &data);
+        let cmd = item.handle_key('a', selected, &data, &mut DetailPane::default());
 
         assert!(cmd.is_some());
         assert!(matches!(
@@ -672,7 +688,7 @@ mod tests {
         let mut item = PullsPanelItem::default();
 
         let selected = data.items.first();
-        let cmd = item.handle_key('m', selected, &data);
+        let cmd = item.handle_key('m', selected, &data, &mut DetailPane::default());
 
         assert!(cmd.is_some());
         assert!(matches!(
@@ -691,7 +707,7 @@ mod tests {
         let mut item = PullsPanelItem::default();
 
         let selected = data.items.first();
-        let cmd = item.handle_key('a', selected, &data);
+        let cmd = item.handle_key('a', selected, &data, &mut DetailPane::default());
 
         assert!(cmd.is_none());
     }
@@ -702,7 +718,7 @@ mod tests {
         let data = make_data(pr);
         let mut item = PullsPanelItem::default();
 
-        let cmd = item.handle_key('a', None, &data);
+        let cmd = item.handle_key('a', None, &data, &mut DetailPane::default());
 
         assert!(cmd.is_none());
     }
@@ -712,7 +728,7 @@ mod tests {
         let data = ListPanelData::<PullRequest>::new();
         let mut item = PullsPanelItem::default();
 
-        let cmd = item.handle_key('1', None, &data);
+        let cmd = item.handle_key('1', None, &data, &mut DetailPane::default());
 
         // Without owner/repo, returns None but sets the filter
         assert_eq!(item.state_filter, FilterState::Open);
@@ -726,17 +742,17 @@ mod tests {
         let mut item = PullsPanelItem::default();
 
         // Default is Open, pressing '1' again is a no-op
-        let cmd = item.handle_key('1', None, &data);
+        let cmd = item.handle_key('1', None, &data, &mut DetailPane::default());
         assert_eq!(item.state_filter, FilterState::Open);
         assert!(cmd.is_none());
 
         // Pressing '2' switches to Closed
-        let cmd = item.handle_key('2', None, &data);
+        let cmd = item.handle_key('2', None, &data, &mut DetailPane::default());
         assert_eq!(item.state_filter, FilterState::Closed);
         assert!(cmd.is_some());
 
         // Pressing '1' now switches back to Open and fetches
-        let cmd = item.handle_key('1', None, &data);
+        let cmd = item.handle_key('1', None, &data, &mut DetailPane::default());
         assert_eq!(item.state_filter, FilterState::Open);
         assert!(matches!(
             cmd.unwrap(),
@@ -752,22 +768,22 @@ mod tests {
         let mut item = PullsPanelItem::default();
 
         // Switch to Closed first
-        let cmd = item.handle_key('2', None, &data);
+        let cmd = item.handle_key('2', None, &data, &mut DetailPane::default());
         assert_eq!(item.state_filter, FilterState::Closed);
         assert!(cmd.is_some());
 
         // Pressing '2' again is a no-op
-        let cmd = item.handle_key('2', None, &data);
+        let cmd = item.handle_key('2', None, &data, &mut DetailPane::default());
         assert_eq!(item.state_filter, FilterState::Closed);
         assert!(cmd.is_none());
 
         // Switch to All
-        let cmd = item.handle_key('3', None, &data);
+        let cmd = item.handle_key('3', None, &data, &mut DetailPane::default());
         assert_eq!(item.state_filter, FilterState::All);
         assert!(cmd.is_some());
 
         // Pressing '2' switches back to Closed and fetches
-        let cmd = item.handle_key('2', None, &data);
+        let cmd = item.handle_key('2', None, &data, &mut DetailPane::default());
         assert_eq!(item.state_filter, FilterState::Closed);
         assert!(matches!(
             cmd.unwrap(),
@@ -783,22 +799,22 @@ mod tests {
         let mut item = PullsPanelItem::default();
 
         // Switch to All first
-        let cmd = item.handle_key('3', None, &data);
+        let cmd = item.handle_key('3', None, &data, &mut DetailPane::default());
         assert_eq!(item.state_filter, FilterState::All);
         assert!(cmd.is_some());
 
         // Pressing '3' again is a no-op
-        let cmd = item.handle_key('3', None, &data);
+        let cmd = item.handle_key('3', None, &data, &mut DetailPane::default());
         assert_eq!(item.state_filter, FilterState::All);
         assert!(cmd.is_none());
 
         // Switch to Open
-        let cmd = item.handle_key('1', None, &data);
+        let cmd = item.handle_key('1', None, &data, &mut DetailPane::default());
         assert_eq!(item.state_filter, FilterState::Open);
         assert!(cmd.is_some());
 
         // Pressing '3' switches back to All and fetches
-        let cmd = item.handle_key('3', None, &data);
+        let cmd = item.handle_key('3', None, &data, &mut DetailPane::default());
         assert_eq!(item.state_filter, FilterState::All);
         assert!(matches!(
             cmd.unwrap(),
@@ -958,7 +974,7 @@ mod tests {
         let mut item = PullsPanelItem::default();
 
         let selected = data.items.first();
-        let cmd = item.handle_key('x', selected, &data);
+        let cmd = item.handle_key('x', selected, &data, &mut DetailPane::default());
 
         assert!(cmd.is_some());
         assert!(matches!(
@@ -978,7 +994,7 @@ mod tests {
         let mut item = PullsPanelItem::default();
 
         let selected = data.items.first();
-        let cmd = item.handle_key('x', selected, &data);
+        let cmd = item.handle_key('x', selected, &data, &mut DetailPane::default());
 
         assert!(cmd.is_none());
     }
@@ -993,7 +1009,7 @@ mod tests {
         let mut item = PullsPanelItem::default();
 
         let selected = data.items.first();
-        let cmd = item.handle_key('X', selected, &data);
+        let cmd = item.handle_key('X', selected, &data, &mut DetailPane::default());
 
         assert!(cmd.is_some());
         assert!(matches!(
@@ -1010,9 +1026,62 @@ mod tests {
         let mut item = PullsPanelItem::default();
 
         let selected = data.items.first();
-        let cmd = item.handle_key('X', selected, &data);
+        let cmd = item.handle_key('X', selected, &data, &mut DetailPane::default());
 
         assert!(cmd.is_none());
+    }
+
+    // --- d/f/c key handlers (detail pane toggles) ---
+
+    #[test]
+    fn handle_key_f_toggles_fullscreen() {
+        let data = make_data(test_pr());
+        let mut item = PullsPanelItem::default();
+        let mut dp = DetailPane::default();
+
+        let selected = data.items.first();
+        let cmd = item.handle_key('f', selected, &data, &mut dp);
+
+        assert!(matches!(cmd, Some(Cmd::None)));
+        assert_eq!(dp.mode, crate::widgets::detail_pane::DetailPaneMode::Fullscreen);
+    }
+
+    #[test]
+    fn handle_key_c_toggles_collapse() {
+        let data = make_data(test_pr());
+        let mut item = PullsPanelItem::default();
+        let mut dp = DetailPane::default();
+
+        let selected = data.items.first();
+        let cmd = item.handle_key('c', selected, &data, &mut dp);
+
+        assert!(matches!(cmd, Some(Cmd::None)));
+        assert_eq!(dp.mode, crate::widgets::detail_pane::DetailPaneMode::Collapsed);
+    }
+
+    #[test]
+    fn handle_key_d_toggles_diff_with_selection() {
+        let data = make_data(test_pr());
+        let mut item = PullsPanelItem::default();
+        let mut dp = DetailPane::default();
+
+        let selected = data.items.first();
+        let cmd = item.handle_key('d', selected, &data, &mut dp);
+
+        assert!(matches!(cmd, Some(Cmd::None)));
+        assert!(dp.showing_diff);
+    }
+
+    #[test]
+    fn handle_key_d_no_selection_does_not_toggle() {
+        let data = make_data(test_pr());
+        let mut item = PullsPanelItem::default();
+        let mut dp = DetailPane::default();
+
+        let cmd = item.handle_key('d', None, &data, &mut dp);
+
+        assert!(matches!(cmd, Some(Cmd::None)));
+        assert!(!dp.showing_diff);
     }
 
     // --- comment rendering ---

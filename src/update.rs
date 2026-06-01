@@ -178,31 +178,6 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
                 }
                 return Cmd::None;
             }
-            // Handle 'd' toggle for diff view (Pulls panel only)
-            if c == 'd' && app.active_panel == PanelKind::Pulls {
-                if let Some(entry) = app.panels.get_mut(&app.active_panel) {
-                    if let crate::app::PanelState::Pulls(ref panel) = entry {
-                        if panel.data.selected(&panel.selection).is_some() {
-                            entry.toggle_diff();
-                        }
-                    }
-                }
-                return Cmd::None;
-            }
-            // Handle 'f' toggle for fullscreen detail (Pulls panel only)
-            if c == 'f' && app.active_panel == PanelKind::Pulls {
-                if let Some(entry) = app.panels.get_mut(&app.active_panel) {
-                    entry.toggle_fullscreen();
-                }
-                return Cmd::None;
-            }
-            // Handle 'c' toggle for collapsed detail (Pulls panel only)
-            if c == 'c' && app.active_panel == PanelKind::Pulls {
-                if let Some(entry) = app.panels.get_mut(&app.active_panel) {
-                    entry.toggle_collapse();
-                }
-                return Cmd::None;
-            }
             let cmd = if let Some(entry) = app.panels.get_mut(&app.active_panel) {
                 entry.handle_key(c).unwrap_or(Cmd::None)
             } else {
@@ -1116,6 +1091,69 @@ mod tests {
                 DetailPaneMode::Collapsed,
                 "c should toggle collapse even with empty list"
             );
+        } else {
+            panic!("Expected Pulls panel");
+        }
+    }
+
+    #[test]
+    fn d_key_toggles_diff_on_pulls_panel() {
+        use crate::domain;
+        use crate::event::ApiPayload;
+
+        let mut app = test_app();
+
+        // Load PRs and switch to Pulls panel
+        let pulls = vec![domain::PullRequest {
+            number: 1,
+            title: "Fix bug".into(),
+            ..Default::default()
+        }];
+        update(&mut app, Message::ApiLoaded(ApiPayload::Pulls(pulls)));
+        update(&mut app, Message::NextTab);
+        assert_eq!(app.active_panel, PanelKind::Pulls);
+
+        // Verify starts at not showing diff
+        if let Some(crate::app::PanelState::Pulls(panel)) = app.panels.get(&PanelKind::Pulls) {
+            assert!(!panel.detail_pane.showing_diff);
+        } else {
+            panic!("Expected Pulls panel");
+        }
+
+        // Press 'd' to show diff
+        update(&mut app, Message::PanelKeyInput('d'));
+        if let Some(crate::app::PanelState::Pulls(panel)) = app.panels.get(&PanelKind::Pulls) {
+            assert!(panel.detail_pane.showing_diff, "d should toggle diff on");
+        } else {
+            panic!("Expected Pulls panel");
+        }
+
+        // Press 'd' again to hide diff
+        update(&mut app, Message::PanelKeyInput('d'));
+        if let Some(crate::app::PanelState::Pulls(panel)) = app.panels.get(&PanelKind::Pulls) {
+            assert!(!panel.detail_pane.showing_diff, "d should toggle diff off");
+        } else {
+            panic!("Expected Pulls panel");
+        }
+    }
+
+    #[test]
+    fn d_key_no_toggle_when_no_selection() {
+        use crate::event::ApiPayload;
+
+        let mut app = test_app();
+
+        // Switch to Pulls panel with no PRs loaded
+        update(&mut app, Message::NextTab);
+        assert_eq!(app.active_panel, PanelKind::Pulls);
+
+        // Clear any PRs that may have loaded from NextTab fetch
+        update(&mut app, Message::ApiLoaded(ApiPayload::Pulls(vec![])));
+
+        // Press 'd' — should not toggle diff without selection
+        update(&mut app, Message::PanelKeyInput('d'));
+        if let Some(crate::app::PanelState::Pulls(panel)) = app.panels.get(&PanelKind::Pulls) {
+            assert!(!panel.detail_pane.showing_diff, "d should not toggle diff without selection");
         } else {
             panic!("Expected Pulls panel");
         }

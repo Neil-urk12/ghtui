@@ -133,6 +133,7 @@ impl PanelItem for ReposPanelItem {
         key: char,
         selected: Option<&Self::Item>,
         _data: &ListPanelData<Self::Item>,
+        _detail_pane: &mut crate::widgets::detail_pane::DetailPane,
     ) -> Option<Cmd> {
         match key {
             's' => Some(Cmd::CycleRepoSort),
@@ -208,6 +209,7 @@ mod tests {
     use crate::panels::panel::{ListPanelData, PanelItem, SelectionState};
     use crate::theme::Theme;
     use crate::widgets::list_view::LeftContent;
+    use crate::widgets::detail_pane::DetailPane;
 
     fn test_repo() -> Repo {
         Repo {
@@ -289,7 +291,7 @@ mod tests {
         let mut item = ReposPanelItem::default();
         let data = ListPanelData::<Repo>::new();
 
-        let cmd = item.handle_key('s', None, &data);
+        let cmd = item.handle_key('s', None, &data, &mut DetailPane::default());
 
         assert!(matches!(cmd, Some(Cmd::CycleRepoSort)));
     }
@@ -300,7 +302,7 @@ mod tests {
         let data = ListPanelData::<Repo>::new();
         let repo = test_repo();
 
-        let cmd = item.handle_key('\n', Some(&repo), &data);
+        let cmd = item.handle_key('\n', Some(&repo), &data, &mut DetailPane::default());
 
         match cmd {
             Some(Cmd::OpenRepoDetail { ctx }) => {
@@ -320,7 +322,7 @@ mod tests {
             ..Default::default()
         };
 
-        let cmd = item.handle_key('\n', Some(&repo), &data);
+        let cmd = item.handle_key('\n', Some(&repo), &data, &mut DetailPane::default());
 
         assert!(cmd.is_none());
     }

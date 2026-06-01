@@ -98,6 +98,7 @@ impl PanelItem for NotificationsPanelItem {
         key: char,
         selected: Option<&Self::Item>,
         _data: &ListPanelData<Self::Item>,
+        _detail_pane: &mut crate::widgets::detail_pane::DetailPane,
     ) -> Option<Cmd> {
         match key {
             'a' => {
@@ -179,6 +180,7 @@ mod tests {
     use crate::panels::panel::ListPanelData;
     use crate::panels::panel::SelectionState;
     use crate::theme::Theme;
+    use crate::widgets::detail_pane::DetailPane;
 
     fn test_notification() -> Notification {
         Notification {
@@ -244,7 +246,7 @@ mod tests {
         let mut panel = NotificationsPanelItem::default();
         let data: ListPanelData<Notification> = ListPanelData::default();
 
-        let result = panel.handle_key('m', Some(&notif), &data);
+        let result = panel.handle_key('m', Some(&notif), &data, &mut DetailPane::default());
 
         assert!(
             matches!(result, Some(Cmd::MarkNotificationRead { ref id }) if id == "notif-1"),
@@ -258,7 +260,7 @@ mod tests {
         let mut panel = NotificationsPanelItem::default();
         let data: ListPanelData<Notification> = ListPanelData::default();
 
-        let result = panel.handle_key('m', None, &data);
+        let result = panel.handle_key('m', None, &data, &mut DetailPane::default());
 
         assert!(
             result.is_none(),
@@ -272,7 +274,7 @@ mod tests {
         let mut panel = NotificationsPanelItem::default();
         let data: ListPanelData<Notification> = ListPanelData::default();
 
-        let result = panel.handle_key('M', None, &data);
+        let result = panel.handle_key('M', None, &data, &mut DetailPane::default());
 
         assert!(
             matches!(result, Some(Cmd::MarkAllNotificationsRead)),
@@ -288,7 +290,7 @@ mod tests {
 
         assert!(!panel.show_all, "show_all should default to false");
 
-        let result = panel.handle_key('a', None, &data);
+        let result = panel.handle_key('a', None, &data, &mut DetailPane::default());
 
         assert!(panel.show_all, "show_all should be toggled to true");
         assert!(

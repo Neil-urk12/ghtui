@@ -161,6 +161,7 @@ pub trait PanelItem: std::fmt::Debug + Default {
         key: char,
         selected: Option<&Self::Item>,
         data: &ListPanelData<Self::Item>,
+        detail_pane: &mut DetailPane,
     ) -> Option<Cmd>;
 
     /// Return the fetch command for this panel (e.g. `Cmd::FetchIssues`).
@@ -321,7 +322,7 @@ impl<T: PanelItem + 'static> ListPanel<T> {
     pub fn handle_key(&mut self, key: char) -> Option<Cmd> {
         // Try the PanelItem's custom key handler first.
         let selected = self.data.selected(&self.selection);
-        if let Some(cmd) = self.item.handle_key(key, selected, &self.data) {
+        if let Some(cmd) = self.item.handle_key(key, selected, &self.data, &mut self.detail_pane) {
             return Some(cmd);
         }
         // Fall through to default j/k navigation.
@@ -530,6 +531,7 @@ mod tests {
             _key: char,
             _selected: Option<&Self::Item>,
             _data: &ListPanelData<Self::Item>,
+            _detail_pane: &mut DetailPane,
         ) -> Option<Cmd> {
             None
         }
