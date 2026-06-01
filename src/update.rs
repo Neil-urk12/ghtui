@@ -5,7 +5,6 @@ use crate::api::client::GitHubClient;
 use crate::app::{App, AppState, PanelKind, PrCommentUpdate};
 use crate::cmd::{Cmd, CmdBehavior};
 use crate::panels::login::LoginState;
-use crate::constants;
 use crate::domain::FilterState;
 
 pub enum Message {
@@ -149,11 +148,11 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
             Cmd::None
         }
         Message::DismissError => {
-            app.error_toast = None;
+            app.toast.error = None;
             Cmd::None
         }
         Message::DismissSuccess => {
-            app.success_toast = None;
+            app.toast.success = None;
             Cmd::None
         }
         Message::ToggleHelp => {
@@ -273,7 +272,7 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
             app.client = Arc::new(match GitHubClient::new(token) {
                 Ok(c) => c,
                 Err(e) => {
-                    app.error_toast = Some(format!("Failed to create HTTP client: {e}"));
+                    app.toast.set_error(format!("Failed to create HTTP client: {e}"));
                     tracing::error!(error = %e, "failed to create HTTP client");
                     return Cmd::None;
                 }
@@ -286,7 +285,7 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
             Cmd::FetchRepos
         }
         Message::LoginError(msg) => {
-            app.error_toast = Some(msg);
+            app.toast.set_error(msg);
             Cmd::None
         }
         Message::Quit => {
@@ -314,8 +313,7 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
         Message::ApiLoaded(payload) => {
             use crate::event::ApiPayload;
             if let ApiPayload::Success(ref msg) = payload {
-                app.success_toast = Some(msg.clone());
-                app.toast_tick = 0;
+                app.toast.set_success(msg.clone());
             }
             // Route by payload type to the correct panel, not just active panel.
             // This handles the case where a fetch response arrives after the user
@@ -378,8 +376,7 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
             Cmd::None
         }
         Message::ApiError(msg) => {
-            app.error_toast = Some(msg);
-            app.toast_tick = 0;
+            app.toast.set_error(msg);
             Cmd::None
         }
         Message::RateLimitUpdate {
@@ -392,12 +389,10 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
         }
         Message::Tick => {
             app.tick += 1;
-            if app.error_toast.is_some() || app.success_toast.is_some() {
-                app.toast_tick += 1;
-                if app.toast_tick >= constants::AUTO_DISMISS_TICKS {
-                    app.error_toast = None;
-                    app.success_toast = None;
-                    app.toast_tick = 0;
+            if app.toast.has_toast() {
+                app.toast.inc_tick();
+                if app.toast.should_dismiss() {
+                    app.toast.dismiss();
                 }
             }
             Cmd::None
@@ -498,15 +493,15 @@ mod tests {
     #[test]
     fn dismiss_toasts() {
         let mut app = test_app();
-        app.error_toast = Some("err".into());
-        app.success_toast = Some("ok".into());
+        app.toast.set_error("err".into());
+        app.toast.set_success("ok".into());
 
         update(&mut app, Message::DismissError);
-        assert!(app.error_toast.is_none());
-        assert!(app.success_toast.is_some());
+        assert!(app.toast.error.is_none());
+        assert!(app.toast.success.is_some());
 
         update(&mut app, Message::DismissSuccess);
-        assert!(app.success_toast.is_none());
+        assert!(app.toast.success.is_none());
     }
 
     #[test]
@@ -562,14 +557,14 @@ mod tests {
             &mut app,
             Message::ApiLoaded(ApiPayload::Success("done".into())),
         );
-        assert_eq!(app.success_toast.as_deref(), Some("done"));
+        assert_eq!(app.toast.success.as_deref(), Some("done"));
     }
 
     #[test]
     fn api_error_shows_toast() {
         let mut app = test_app();
         update(&mut app, Message::ApiError("fail".into()));
-        assert_eq!(app.error_toast.as_deref(), Some("fail"));
+        assert_eq!(app.toast.error.as_deref(), Some("fail"));
     }
 
     #[test]

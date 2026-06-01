@@ -58,14 +58,14 @@ pub fn view(frame: &mut Frame, app: &mut App) {
     }
 
     // Error toast overlay
-    if let Some(ref err) = app.error_toast {
+    if let Some(ref err) = app.toast.error {
         let severity = popup::classify_severity(err);
-        popup::render_error_toast(frame, area, err, severity, app.toast_tick);
+        popup::render_error_toast(frame, area, err, severity, app.toast.tick);
     }
 
     // Success toast overlay
-    if let Some(ref msg) = app.success_toast {
-        popup::render_success_toast(frame, area, msg, app.toast_tick);
+    if let Some(ref msg) = app.toast.success {
+        popup::render_success_toast(frame, area, msg, app.toast.tick);
     }
 
     // Help overlay

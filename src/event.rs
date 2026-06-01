@@ -53,13 +53,13 @@ pub fn process_event(event: Event, app: &App) -> Vec<Message> {
                 };
             }
 
-            if app.error_toast.is_some() || app.success_toast.is_some() {
+            if app.toast.has_toast() {
                 if matches!(key.code, KeyCode::Esc | KeyCode::Char('x')) {
                     let mut msgs = Vec::new();
-                    if app.error_toast.is_some() {
+                    if app.toast.error.is_some() {
                         msgs.push(Message::DismissError);
                     }
-                    if app.success_toast.is_some() {
+                    if app.toast.success.is_some() {
                         msgs.push(Message::DismissSuccess);
                     }
                     return msgs;
@@ -192,7 +192,7 @@ mod tests {
     fn toast_dismissal() {
         let mut app = test_app();
 
-        app.error_toast = Some("err".into());
+        app.toast.set_error("err".into());
         let msgs = process_event(Event::Input(key_event(KeyCode::Char('x'))), &app);
         assert!(matches!(msgs[0], Message::DismissError));
 
@@ -204,8 +204,8 @@ mod tests {
         let msgs = process_event(Event::Input(key_event(KeyCode::Char('j'))), &app);
         assert!(matches!(msgs[0], Message::Noop));
 
-        app.error_toast = None;
-        app.success_toast = Some("ok".into());
+        app.toast.error = None;
+        app.toast.set_success("ok".into());
         let msgs = process_event(Event::Input(key_event(KeyCode::Char('x'))), &app);
         assert!(matches!(msgs[0], Message::DismissSuccess));
     }

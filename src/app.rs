@@ -215,6 +215,53 @@ pub enum AppState {
     Main,
 }
 
+/// Toast notification state (error/success messages with auto-dismiss).
+#[derive(Default)]
+pub struct ToastState {
+    /// Error message to display, if any.
+    pub error: Option<String>,
+    /// Success message to display, if any.
+    pub success: Option<String>,
+    /// Frame counter for auto-dismiss (resets on new toast).
+    pub tick: u64,
+}
+
+impl ToastState {
+    /// Set an error message, resetting the dismiss timer.
+    pub fn set_error(&mut self, msg: String) {
+        self.error = Some(msg);
+        self.tick = 0;
+    }
+
+    /// Set a success message, resetting the dismiss timer.
+    pub fn set_success(&mut self, msg: String) {
+        self.success = Some(msg);
+        self.tick = 0;
+    }
+
+    /// Increment the tick counter (called once per frame).
+    pub fn inc_tick(&mut self) {
+        self.tick += 1;
+    }
+
+    /// Check if auto-dismiss threshold is reached.
+    pub fn should_dismiss(&self) -> bool {
+        self.tick >= crate::constants::AUTO_DISMISS_TICKS
+    }
+
+    /// Clear both toasts and reset tick.
+    pub fn dismiss(&mut self) {
+        self.error = None;
+        self.success = None;
+        self.tick = 0;
+    }
+
+    /// Returns true if any toast is active.
+    pub fn has_toast(&self) -> bool {
+        self.error.is_some() || self.success.is_some()
+    }
+}
+
 pub struct App {
     pub state: AppState,
     pub login: Option<LoginState>,
@@ -223,13 +270,14 @@ pub struct App {
     pub config: Config,
     pub theme: Theme,
     pub search: SearchState,
-    pub error_toast: Option<String>,
-    pub success_toast: Option<String>,
-    pub toast_tick: u64,
+    pub toast: ToastState,
     pub show_help: bool,
     pub should_quit: bool,
+    /// General tick counter for periodic UI updates.
     pub tick: u64,
+    /// GitHub API rate limit remaining requests (from X-RateLimit-Remaining header).
     pub rate_remaining: Option<u32>,
+    /// GitHub API rate limit reset time in seconds (from X-RateLimit-Reset header).
     pub rate_reset_secs: Option<u64>,
     pub client: Arc<GitHubClient>,
     pub confirmation: Option<ConfirmState>,
@@ -291,9 +339,7 @@ impl App {
             config,
             theme,
             search: SearchState::default(),
-            error_toast: None,
-            success_toast: None,
-            toast_tick: 0,
+            toast: ToastState::default(),
             show_help: false,
             should_quit: false,
             tick: 0,
