@@ -7,7 +7,7 @@ use ratatui::style::Color;
 use ratatui::widgets::{Cell, Row};
 
 use super::panel::{ListPanelData, PanelItem, SelectionState, StateFilterable};
-use crate::cmd::{Cmd, RepoContext};
+use crate::cmd::Cmd;
 use crate::domain::{FilterState, PullRequest};
 use crate::theme::{Theme, status_style};
 use crate::util::diff::parse_diff_patch;
@@ -254,9 +254,9 @@ impl PullsPanelItem {
         &self,
         data: &ListPanelData<PullRequest>,
     ) -> Option<Cmd> {
-        let (owner, repo) = data.owner_repo()?;
+        let ctx = data.repo_context()?;
         Some(Cmd::FetchPulls {
-            ctx: RepoContext::new(owner.to_string(), repo.to_string()),
+            ctx,
             state: self.state_filter,
         })
     }
@@ -316,19 +316,25 @@ impl PanelItem for PullsPanelItem {
     ) -> Option<Cmd> {
         match key {
             '1' => {
-                StateFilterable::set_filter(self, FilterState::Open)
-                    .then_some(())
-                    .and_then(|_| self.fetch_pulls_cmd(data))
+                if self.set_filter(FilterState::Open) {
+                    self.fetch_pulls_cmd(data)
+                } else {
+                    None
+                }
             }
             '2' => {
-                StateFilterable::set_filter(self, FilterState::Closed)
-                    .then_some(())
-                    .and_then(|_| self.fetch_pulls_cmd(data))
+                if self.set_filter(FilterState::Closed) {
+                    self.fetch_pulls_cmd(data)
+                } else {
+                    None
+                }
             }
             '3' => {
-                StateFilterable::set_filter(self, FilterState::All)
-                    .then_some(())
-                    .and_then(|_| self.fetch_pulls_cmd(data))
+                if self.set_filter(FilterState::All) {
+                    self.fetch_pulls_cmd(data)
+                } else {
+                    None
+                }
             }
             'o' => {
                 if let Some(pr) = selected {
@@ -340,9 +346,9 @@ impl PanelItem for PullsPanelItem {
             }
             'a' => {
                 if let Some(pr) = selected {
-                    if let Some((owner, repo)) = data.owner_repo() {
+                    if let Some(ctx) = data.repo_context() {
                         return Some(Cmd::ApprovePr {
-                            ctx: RepoContext::new(owner.to_string(), repo.to_string()),
+                            ctx,
                             pr_number: pr.number,
                         });
                     }
@@ -352,9 +358,9 @@ impl PanelItem for PullsPanelItem {
             'm' => {
                 if let Some(pr) = selected {
                     if can_merge(pr) {
-                        if let Some((owner, repo)) = data.owner_repo() {
+                        if let Some(ctx) = data.repo_context() {
                             return Some(Cmd::MergePr {
-                                ctx: RepoContext::new(owner.to_string(), repo.to_string()),
+                                ctx,
                                 pr_number: pr.number,
                             });
                         }
@@ -366,9 +372,9 @@ impl PanelItem for PullsPanelItem {
             'x' => {
                 if let Some(pr) = selected {
                     if can_close(pr) {
-                        if let Some((owner, repo)) = data.owner_repo() {
+                        if let Some(ctx) = data.repo_context() {
                             return Some(Cmd::ClosePr {
-                                ctx: RepoContext::new(owner.to_string(), repo.to_string()),
+                                ctx,
                                 pr_number: pr.number,
                             });
                         }
@@ -379,9 +385,9 @@ impl PanelItem for PullsPanelItem {
             'X' => {
                 if let Some(pr) = selected {
                     if can_reopen(pr) {
-                        if let Some((owner, repo)) = data.owner_repo() {
+                        if let Some(ctx) = data.repo_context() {
                             return Some(Cmd::ReopenPr {
-                                ctx: RepoContext::new(owner.to_string(), repo.to_string()),
+                                ctx,
                                 pr_number: pr.number,
                             });
                         }
@@ -415,12 +421,12 @@ impl PanelItem for PullsPanelItem {
                     return None;
                 }
 
-                if let Some((owner, repo)) = data.owner_repo() {
+                if let Some(ctx) = data.repo_context() {
                     self.last_fetch_attempts
                         .borrow_mut()
                         .insert(pr_number, Instant::now());
                     return Some(Cmd::FetchPrComments {
-                        ctx: RepoContext::new(owner.to_string(), repo.to_string()),
+                        ctx,
                         pr_number,
                     });
                 }
@@ -430,9 +436,9 @@ impl PanelItem for PullsPanelItem {
     }
 
     fn fetch_cmd(&self, data: &ListPanelData<Self::Item>) -> Cmd {
-        if let Some((owner, repo)) = data.owner_repo() {
+        if let Some(ctx) = data.repo_context() {
             Cmd::FetchPulls {
-                ctx: RepoContext::new(owner.to_string(), repo.to_string()),
+                ctx,
                 state: self.state_filter,
             }
         } else {
@@ -592,6 +598,20 @@ mod tests {
         assert!(text.contains("bug"), "should contain label");
         assert!(text.contains("security"), "should contain label");
         assert!(text.contains("login redirect"), "should contain body");
+    }
+
+    #[test]
+    fn detail_lines_snapshot() {
+        let pr = test_pr();
+        let item = PullsPanelItem::default();
+        let theme = Theme::default();
+        let lines = item.detail_lines(&pr, &theme);
+        let text: String = lines
+            .iter()
+            .map(|l| l.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        insta::assert_snapshot!("pr_detail_lines", text);
     }
 
     #[test]

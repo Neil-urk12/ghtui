@@ -105,6 +105,12 @@ impl<T> ListPanelData<T> {
         }
     }
 
+    /// Return a `RepoContext` if both owner and repo are set.
+    pub fn repo_context(&self) -> Option<crate::cmd::RepoContext> {
+        let (owner, repo) = self.owner_repo()?;
+        Some(crate::cmd::RepoContext::new(owner, repo))
+    }
+
     /// Build an empty state that adapts its message based on whether a repo
     /// context is available.
     pub fn repo_aware_empty_state(
@@ -777,4 +783,29 @@ mod tests {
         let diff_es = item.diff_empty_state();
         assert_eq!(diff_es.message, "No diff available");
     }
+
+    #[test]
+    fn repo_context_returns_some_when_both_set() {
+        let mut data: ListPanelData<Repo> = ListPanelData::new();
+        data.owner = Some("octocat".into());
+        data.repo = Some("hello-world".into());
+        let ctx = data.repo_context().unwrap();
+        assert_eq!(ctx.owner, "octocat");
+        assert_eq!(ctx.repo, "hello-world");
+    }
+
+    #[test]
+    fn repo_context_returns_none_when_owner_missing() {
+        let mut data: ListPanelData<Repo> = ListPanelData::new();
+        data.repo = Some("hello-world".into());
+        assert!(data.repo_context().is_none());
+    }
+
+    #[test]
+    fn repo_context_returns_none_when_repo_missing() {
+        let mut data: ListPanelData<Repo> = ListPanelData::new();
+        data.owner = Some("octocat".into());
+        assert!(data.repo_context().is_none());
+    }
+
 }

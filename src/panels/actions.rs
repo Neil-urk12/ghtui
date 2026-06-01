@@ -2,7 +2,7 @@ use ratatui::prelude::*;
 use ratatui::widgets::*;
 
 use super::panel::{ListPanelData, PanelItem, SelectionState};
-use crate::cmd::{Cmd, RepoContext};
+use crate::cmd::Cmd;
 use crate::domain::WorkflowRun;
 use crate::theme::Theme;
 use crate::util::format::relative_time;
@@ -169,9 +169,9 @@ impl PanelItem for ActionsPanelItem {
             }
             'r' => {
                 if let Some(run) = selected {
-                    if let Some((owner, repo)) = data.owner_repo() {
+                    if let Some(ctx) = data.repo_context() {
                         return Some(Cmd::RerunWorkflow {
-                            ctx: RepoContext::new(owner.to_string(), repo.to_string()),
+                            ctx,
                             run_id: run.id,
                         });
                     }
@@ -180,9 +180,9 @@ impl PanelItem for ActionsPanelItem {
             }
             'c' => {
                 if let Some(run) = selected {
-                    if let Some((owner, repo)) = data.owner_repo() {
+                    if let Some(ctx) = data.repo_context() {
                         return Some(Cmd::CancelWorkflow {
-                            ctx: RepoContext::new(owner.to_string(), repo.to_string()),
+                            ctx,
                             run_id: run.id,
                         });
                     }
@@ -212,9 +212,9 @@ impl PanelItem for ActionsPanelItem {
     }
 
     fn fetch_cmd(&self, data: &ListPanelData<Self::Item>) -> Cmd {
-        if let Some((owner, repo)) = data.owner_repo() {
+        if let Some(ctx) = data.repo_context() {
             Cmd::FetchActions {
-                ctx: RepoContext::new(owner.to_string(), repo.to_string()),
+                ctx,
             }
         } else {
             Cmd::None

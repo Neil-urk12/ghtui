@@ -2,7 +2,7 @@ use ratatui::prelude::*;
 use ratatui::widgets::*;
 
 use super::panel::{ListPanelData, PanelItem, SelectionState, StateFilterable};
-use crate::cmd::{Cmd, RepoContext};
+use crate::cmd::Cmd;
 use crate::domain::{FilterState, Issue};
 use crate::theme::{Theme, status_style};
 use crate::util::format;
@@ -97,9 +97,9 @@ impl IssuesPanelItem {
         &self,
         data: &ListPanelData<Issue>,
     ) -> Option<Cmd> {
-        let (owner, repo) = data.owner_repo()?;
+        let ctx = data.repo_context()?;
         Some(Cmd::FetchIssues {
-            ctx: RepoContext::new(owner.to_string(), repo.to_string()),
+            ctx,
             state: self.state_filter,
         })
     }
@@ -143,19 +143,25 @@ impl PanelItem for IssuesPanelItem {
     ) -> Option<Cmd> {
         match key {
             '1' => {
-                StateFilterable::set_filter(self, FilterState::Open)
-                    .then_some(())
-                    .and_then(|_| self.fetch_issues_cmd(data))
+                if self.set_filter(FilterState::Open) {
+                    self.fetch_issues_cmd(data)
+                } else {
+                    None
+                }
             }
             '2' => {
-                StateFilterable::set_filter(self, FilterState::Closed)
-                    .then_some(())
-                    .and_then(|_| self.fetch_issues_cmd(data))
+                if self.set_filter(FilterState::Closed) {
+                    self.fetch_issues_cmd(data)
+                } else {
+                    None
+                }
             }
             '3' => {
-                StateFilterable::set_filter(self, FilterState::All)
-                    .then_some(())
-                    .and_then(|_| self.fetch_issues_cmd(data))
+                if self.set_filter(FilterState::All) {
+                    self.fetch_issues_cmd(data)
+                } else {
+                    None
+                }
             }
             'o' => {
                 if let Some(issue) = selected {
@@ -170,9 +176,9 @@ impl PanelItem for IssuesPanelItem {
     }
 
     fn fetch_cmd(&self, data: &ListPanelData<Self::Item>) -> Cmd {
-        if let Some((owner, repo)) = data.owner_repo() {
+        if let Some(ctx) = data.repo_context() {
             Cmd::FetchIssues {
-                ctx: RepoContext::new(owner.to_string(), repo.to_string()),
+                ctx,
                 state: self.state_filter,
             }
         } else {

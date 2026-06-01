@@ -1,0 +1,12 @@
+---
+source: src/panels/pulls.rs
+expression: text
+---
+#42 Fix login bug
+by octocat | opened 2y ago | 2y ago
+
+Labels: [bug][security]
+
+This fixes the login redirect issue.
+
+1:open 2:closed 3:all | o:browser | d:diff | f:fullscreen | c:collapse | a:approve | m:merge | x:close | X:reopen
