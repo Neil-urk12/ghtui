@@ -394,4 +394,52 @@ mod tests {
         let app = App::new(Config::default(), None).unwrap();
         assert!(matches!(app.state, AppState::Login));
     }
+
+    #[test]
+    fn panel_state_isolation_switching_tabs() {
+        let mut app = test_app();
+        // Start on Repos
+        assert_eq!(app.active_panel, PanelKind::Repos);
+        // Switch to Pulls
+        app.next_tab();
+        assert_eq!(app.active_panel, PanelKind::Pulls);
+        // Switch to Issues
+        app.next_tab();
+        assert_eq!(app.active_panel, PanelKind::Issues);
+        // Back to Pulls
+        app.prev_tab();
+        assert_eq!(app.active_panel, PanelKind::Pulls);
+        // Back to Repos
+        app.prev_tab();
+        assert_eq!(app.active_panel, PanelKind::Repos);
+    }
+
+    #[test]
+    fn all_panel_kinds_are_represented() {
+        let panels = PanelKind::ALL;
+        assert_eq!(panels.len(), 5);
+        assert!(panels.contains(&PanelKind::Repos));
+        assert!(panels.contains(&PanelKind::Pulls));
+        assert!(panels.contains(&PanelKind::Issues));
+        assert!(panels.contains(&PanelKind::Notifications));
+        assert!(panels.contains(&PanelKind::Actions));
+    }
+
+    #[test]
+    fn app_with_default_config_has_correct_defaults() {
+        let app = App::new(Config::default(), None).unwrap();
+        assert_eq!(app.active_panel, PanelKind::Repos);
+        assert!(!app.show_help);
+        assert!(app.search.query.is_empty());
+        assert!(!app.search.active);
+    }
+
+    #[test]
+    fn display_impl_for_panel_kind() {
+        assert_eq!(format!("{}", PanelKind::Repos), "Repos");
+        assert_eq!(format!("{}", PanelKind::Pulls), "PRs");
+        assert_eq!(format!("{}", PanelKind::Issues), "Issues");
+        assert_eq!(format!("{}", PanelKind::Notifications), "Notif");
+        assert_eq!(format!("{}", PanelKind::Actions), "Actions");
+    }
 }

@@ -1175,4 +1175,193 @@ mod tests {
     // requires dependency injection — build_http_client() uses reqwest::Client::builder()
     // which does not validate tokens and essentially never fails. To test this path,
     // GitHubClient::new would need to accept an injectable HTTP client factory.
+
+    // --- Integration-style tests (#12) ---
+
+    #[test]
+    fn api_loaded_pulls_routes_to_pulls_panel() {
+        use crate::domain;
+        use crate::event::ApiPayload;
+
+        let mut app = test_app();
+        let prs = vec![domain::PullRequest {
+            number: 42,
+            title: "Fix bug".into(),
+            ..Default::default()
+        }];
+        update(&mut app, Message::ApiLoaded(ApiPayload::Pulls(prs)));
+        if let Some(crate::app::PanelState::Pulls(panel)) = app.panels.get(&PanelKind::Pulls) {
+            assert_eq!(panel.data.items.len(), 1);
+            assert_eq!(panel.data.items[0].number, 42);
+        } else {
+            panic!("Expected Pulls panel");
+        }
+    }
+
+    #[test]
+    fn api_loaded_issues_routes_to_issues_panel() {
+        use crate::domain;
+        use crate::event::ApiPayload;
+
+        let mut app = test_app();
+        let issues = vec![domain::Issue {
+            number: 10,
+            title: "Bug report".into(),
+            labels: vec!["bug".into()],
+            ..Default::default()
+        }];
+        update(&mut app, Message::ApiLoaded(ApiPayload::Issues(issues)));
+        if let Some(crate::app::PanelState::Issues(panel)) = app.panels.get(&PanelKind::Issues) {
+            assert_eq!(panel.data.items.len(), 1);
+            assert_eq!(panel.data.items[0].number, 10);
+            assert_eq!(panel.data.items[0].labels, vec!["bug"]);
+        } else {
+            panic!("Expected Issues panel");
+        }
+    }
+
+    #[test]
+    fn api_loaded_notifications_routes_to_notifications_panel() {
+        use crate::domain;
+        use crate::event::ApiPayload;
+
+        let mut app = test_app();
+        let notifs = vec![domain::Notification {
+            id: "abc".into(),
+            repo_name: "owner/repo".into(),
+            subject_title: "PR #1".into(),
+            subject_type: "PullRequest".into(),
+            reason: "review_requested".into(),
+            unread: true,
+            updated_at: "2024-01-01T00:00:00Z".into(),
+        }];
+        update(&mut app, Message::ApiLoaded(ApiPayload::Notifications(notifs)));
+        if let Some(crate::app::PanelState::Notifications(panel)) = app.panels.get(&PanelKind::Notifications) {
+            assert_eq!(panel.data.items.len(), 1);
+            assert_eq!(panel.data.items[0].id, "abc");
+        } else {
+            panic!("Expected Notifications panel");
+        }
+    }
+
+    #[test]
+    fn api_loaded_actions_routes_to_actions_panel() {
+        use crate::domain;
+        use crate::event::ApiPayload;
+
+        let mut app = test_app();
+        let runs = vec![domain::WorkflowRun {
+            id: 99,
+            name: "CI".into(),
+            status: "completed".into(),
+            conclusion: Some("success".into()),
+            branch: "main".into(),
+            event: "push".into(),
+            created_at: "2024-01-01T00:00:00Z".into(),
+            run_number: 1,
+        }];
+        update(&mut app, Message::ApiLoaded(ApiPayload::Actions(runs)));
+        if let Some(crate::app::PanelState::Actions(panel)) = app.panels.get(&PanelKind::Actions) {
+            assert_eq!(panel.data.items.len(), 1);
+            assert_eq!(panel.data.items[0].id, 99);
+        } else {
+            panic!("Expected Actions panel");
+        }
+    }
+
+    #[test]
+    fn panel_state_preserved_across_tab_switches() {
+        use crate::domain;
+        use crate::event::ApiPayload;
+
+        let mut app = test_app();
+
+        // Load repos
+        let repos = vec![
+            domain::Repo { name: "a/repo".into(), ..Default::default() },
+            domain::Repo { name: "b/repo".into(), ..Default::default() },
+        ];
+        update(&mut app, Message::ApiLoaded(ApiPayload::Repos(repos)));
+
+        // Switch away and back
+        update(&mut app, Message::NextTab);
+        assert_eq!(app.active_panel, PanelKind::Pulls);
+        update(&mut app, Message::PrevTab);
+        assert_eq!(app.active_panel, PanelKind::Repos);
+
+        // Repos data should be preserved
+        if let Some(crate::app::PanelState::Repos(panel)) = app.panels.get(&PanelKind::Repos) {
+            assert_eq!(panel.data.items.len(), 2);
+            assert_eq!(panel.data.items[0].name, "a/repo");
+        } else {
+            panic!("Expected Repos panel");
+        }
+    }
+
+    #[test]
+    fn event_api_result_repos_produces_correct_messages() {
+        use crate::event::{process_event, Event, ApiPayload};
+
+        let app = test_app();
+        let msgs = process_event(
+            Event::ApiResult {
+                payload: ApiPayload::Repos(vec![]),
+            },
+            &app,
+        );
+        assert_eq!(msgs.len(), 1);
+        assert!(matches!(&msgs[0], Message::ApiLoaded(_)));
+    }
+
+    #[test]
+    fn event_api_result_pulls_produces_correct_messages() {
+        use crate::event::{process_event, Event, ApiPayload};
+
+        let app = test_app();
+        let msgs = process_event(
+            Event::ApiResult {
+                payload: ApiPayload::Pulls(vec![]),
+            },
+            &app,
+        );
+        assert_eq!(msgs.len(), 1);
+        assert!(matches!(&msgs[0], Message::ApiLoaded(_)));
+    }
+
+    #[test]
+    fn event_api_result_issues_produces_correct_messages() {
+        use crate::event::{process_event, Event, ApiPayload};
+
+        let app = test_app();
+        let msgs = process_event(
+            Event::ApiResult {
+                payload: ApiPayload::Issues(vec![]),
+            },
+            &app,
+        );
+        assert_eq!(msgs.len(), 1);
+        assert!(matches!(&msgs[0], Message::ApiLoaded(_)));
+    }
+
+    #[test]
+    fn event_api_error_produces_error_message() {
+        use crate::event::{process_event, Event};
+
+        let app = test_app();
+        let msgs = process_event(Event::ApiError("network timeout".into()), &app);
+        assert_eq!(msgs.len(), 1);
+        assert!(matches!(&msgs[0], Message::ApiError(msg) if msg == "network timeout"));
+    }
+
+    #[test]
+    fn event_tick_produces_rate_limit_and_tick() {
+        use crate::event::{process_event, Event};
+
+        let app = test_app();
+        let msgs = process_event(Event::Tick, &app);
+        assert_eq!(msgs.len(), 2);
+        assert!(matches!(&msgs[0], Message::RateLimitUpdate { .. }));
+        assert!(matches!(&msgs[1], Message::Tick));
+    }
+
 }

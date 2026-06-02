@@ -294,4 +294,95 @@ mod tests {
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].filename, "a.rs");
     }
+
+    // --- Domain mapping edge-case tests (#13) ---
+
+    fn minimal_pr_json() -> serde_json::Value {
+        serde_json::json!({
+            "number": 1,
+            "title": "Test PR",
+            "user": {"login": "author", "id": 1},
+            "state": "open",
+            "merged_at": null,
+            "body": "PR body",
+            "html_url": "https://github.com/o/r/pull/1",
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-02T00:00:00Z",
+            "labels": [{"name": "bug", "color": "red"}],
+            "draft": false
+        })
+    }
+
+    #[tokio::test]
+    async fn pr_mapping_empty_labels() {
+        let server = MockServer::start().await;
+        let mut json = minimal_pr_json();
+        json["labels"] = serde_json::json!([]);
+        Mock::given(method("GET")).and(wiremock::matchers::path("/repos/o/r/pulls"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([json])))
+            .mount(&server).await;
+        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
+        let prs = client.get_pulls("o", "r", "open").await.unwrap();
+        assert_eq!(prs.len(), 1);
+        assert!(prs[0].labels.is_empty(), "empty labels array should map to empty vec");
+    }
+
+    #[tokio::test]
+    async fn pr_mapping_null_body() {
+        let server = MockServer::start().await;
+        let mut json = minimal_pr_json();
+        json["body"] = serde_json::Value::Null;
+        Mock::given(method("GET")).and(wiremock::matchers::path("/repos/o/r/pulls"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([json])))
+            .mount(&server).await;
+        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
+        let prs = client.get_pulls("o", "r", "open").await.unwrap();
+        assert_eq!(prs.len(), 1);
+        assert!(prs[0].body.is_none(), "null body should map to None");
+    }
+
+    #[tokio::test]
+    async fn pr_mapping_null_merged_at() {
+        let server = MockServer::start().await;
+        let mut json = minimal_pr_json();
+        json["merged_at"] = serde_json::Value::Null;
+        Mock::given(method("GET")).and(wiremock::matchers::path("/repos/o/r/pulls"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([json])))
+            .mount(&server).await;
+        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
+        let prs = client.get_pulls("o", "r", "open").await.unwrap();
+        assert_eq!(prs.len(), 1);
+        assert!(prs[0].merged_at.is_none(), "null merged_at should map to None");
+    }
+
+    #[tokio::test]
+    async fn pr_mapping_multiple_labels() {
+        let server = MockServer::start().await;
+        let mut json = minimal_pr_json();
+        json["labels"] = serde_json::json!([
+            {"name": "bug", "color": "red"},
+            {"name": "priority:high", "color": "orange"},
+            {"name": "needs-review", "color": "blue"}
+        ]);
+        Mock::given(method("GET")).and(wiremock::matchers::path("/repos/o/r/pulls"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([json])))
+            .mount(&server).await;
+        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
+        let prs = client.get_pulls("o", "r", "open").await.unwrap();
+        assert_eq!(prs[0].labels, vec!["bug", "priority:high", "needs-review"]);
+    }
+
+    #[tokio::test]
+    async fn pr_mapping_null_draft_field() {
+        let server = MockServer::start().await;
+        let mut json = minimal_pr_json();
+        json["draft"] = serde_json::Value::Null;
+        Mock::given(method("GET")).and(wiremock::matchers::path("/repos/o/r/pulls"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([json])))
+            .mount(&server).await;
+        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
+        let prs = client.get_pulls("o", "r", "open").await.unwrap();
+        assert_eq!(prs.len(), 1, "null draft should not cause deserialization failure");
+    }
+
 }
