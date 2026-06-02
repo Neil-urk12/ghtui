@@ -546,8 +546,7 @@ fn handle_key_d_no_selection_does_not_show_diff() {
 fn handle_key_d_no_selection_preserves_existing_diff_state() {
     let data = make_data(test_pr());
     let mut item = PullsPanelItem::default();
-    let mut dp = DetailPane::default();
-    dp.showing_diff = true;
+    let mut dp = DetailPane { showing_diff: true, ..Default::default() };
 
     let cmd = item.handle_key('d', None, &data, &mut dp);
 
