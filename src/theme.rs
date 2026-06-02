@@ -89,7 +89,10 @@ fn parse_color(s: &str) -> Color {
         "gray" | "grey" => Color::Gray,
         "darkgray" | "darkgrey" => Color::DarkGray,
         "white" => Color::White,
-        _ => Color::Cyan,
+        unknown => {
+            tracing::warn!(color = %unknown, "unknown color name in config, falling back to cyan");
+            Color::Cyan
+        }
     }
 }
 
