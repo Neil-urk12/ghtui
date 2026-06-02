@@ -171,70 +171,7 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
             }
             Cmd::None
         }
-        Message::PanelKeyInput(c) => {
-            if !matches!(app.state, AppState::Main) {
-                if c == 'q' {
-                    app.should_quit = true;
-                }
-                return Cmd::None;
-            }
-            let cmd = if let Some(entry) = app.panels.get_mut(&app.active_panel) {
-                entry.handle_key(c).unwrap_or(Cmd::None)
-            } else {
-                Cmd::None
-            };
-            match cmd {
-                Cmd::OpenRepoDetail { ctx } => {
-                    app.active_panel = PanelKind::Pulls;
-                    for entry in app.panels.values_mut() {
-                        entry.set_repo_context(&ctx.owner, &ctx.repo);
-                    }
-                    let cmd = Cmd::FetchPulls {
-                        ctx: ctx.clone(),
-                        state: FilterState::Open,
-                    };
-                    if let Some(entry) = app.panels.get_mut(&PanelKind::Pulls) {
-                        entry.set_loading(true);
-                    }
-                    cmd
-                }
-                Cmd::None => Cmd::None,
-                Cmd::CycleRepoSort => {
-                    if let Some(crate::app::PanelState::Repos(ref mut p)) =
-                        app.panels.get_mut(&PanelKind::Repos)
-                    {
-                        p.item.cycle_sort(&mut p.data, &mut p.selection);
-                    }
-                    Cmd::None
-                }
-                Cmd::FetchPrComments { .. } => {
-                    // Don't set loading on the whole panel — only detail pane
-                    // needs to refresh when navigating between PRs.
-                    cmd
-                }
-                other => match other.behavior() {
-                    CmdBehavior::Destructive { label } => {
-                        let detail = app
-                            .panels
-                            .get(&app.active_panel)
-                            .and_then(|e| e.selected_display())
-                            .unwrap_or_default();
-                        app.confirmation = Some(crate::app::ConfirmState {
-                            pending_cmd: other,
-                            action_label: label.to_string(),
-                            detail,
-                        });
-                        Cmd::None
-                    }
-                    CmdBehavior::Benign => {
-                        if let Some(entry) = app.panels.get_mut(&app.active_panel) {
-                            entry.set_loading(true);
-                        }
-                        other
-                    }
-                },
-            }
-        }
+        Message::PanelKeyInput(c) => handle_panel_key_input(app, c),
         Message::LoginInit(login) => {
             app.state = AppState::Login;
             app.login = Some(login);
@@ -285,71 +222,7 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
             Cmd::None
         }
 
-        Message::ApiLoaded(payload) => {
-            use crate::event::ApiPayload;
-            if let ApiPayload::Success(ref msg) = payload {
-                app.toast.set_success(msg.clone());
-            }
-            // Route by payload type to the correct panel, not just active panel.
-            // This handles the case where a fetch response arrives after the user
-            // has switched tabs — data still loads into the owning panel.
-            let target = match &payload {
-                ApiPayload::Repos(_) => Some(PanelKind::Repos),
-                ApiPayload::Pulls(_) => Some(PanelKind::Pulls),
-                ApiPayload::Issues(_) => Some(PanelKind::Issues),
-                ApiPayload::Notifications(_) => Some(PanelKind::Notifications),
-                ApiPayload::Actions(_) => Some(PanelKind::Actions),
-                ApiPayload::Success(_) => None,
-                ApiPayload::PrComments { .. } => Some(PanelKind::Pulls),
-            };
-            if let Some(kind) = target {
-                if let Some(entry) = app.panels.get_mut(&kind) {
-                    // Handle PrComments specially
-                    if let ApiPayload::PrComments {
-                        pr_number,
-                        comments,
-                        reviews,
-                        code_comments,
-                        files,
-                    } = payload
-                    {
-                        // Destructure: Ok data stored, Err stored as error string, None keeps existing state for retry
-                        let (c_ok, c_err) = match comments {
-                            Ok(v) => (Some(v), None),
-                            Err(e) => (None, Some(e)),
-                        };
-                        let (r_ok, r_err) = match reviews {
-                            Ok(v) => (Some(v), None),
-                            Err(e) => (None, Some(e)),
-                        };
-                        let (cc_ok, cc_err) = match code_comments {
-                            Ok(v) => (Some(v), None),
-                            Err(e) => (None, Some(e)),
-                        };
-                        let (f_ok, f_err) = match files {
-                            Ok(v) => (Some(v), None),
-                            Err(e) => (None, Some(e)),
-                        };
-                        entry.update_pr_comments(
-                            pr_number,
-                            PrCommentUpdate {
-                                comments: c_ok,
-                                reviews: r_ok,
-                                code_comments: cc_ok,
-                                files: f_ok,
-                                comment_err: c_err,
-                                review_err: r_err,
-                                code_comment_err: cc_err,
-                                file_err: f_err,
-                            },
-                        );
-                    } else {
-                        entry.load_data(payload);
-                    }
-                }
-            }
-            Cmd::None
-        }
+        Message::ApiLoaded(payload) => handle_api_loaded(app, payload),
         Message::ApiError(msg) => {
             app.toast.set_error(msg);
             Cmd::None
@@ -373,6 +246,130 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
             Cmd::None
         }
     }
+}
+
+fn handle_panel_key_input(app: &mut App, c: char) -> Cmd {
+    if !matches!(app.state, AppState::Main) {
+        if c == 'q' {
+            app.should_quit = true;
+        }
+        return Cmd::None;
+    }
+    let cmd = if let Some(entry) = app.panels.get_mut(&app.active_panel) {
+        entry.handle_key(c).unwrap_or(Cmd::None)
+    } else {
+        Cmd::None
+    };
+    match cmd {
+        Cmd::OpenRepoDetail { ctx } => {
+            app.active_panel = PanelKind::Pulls;
+            for entry in app.panels.values_mut() {
+                entry.set_repo_context(&ctx.owner, &ctx.repo);
+            }
+            let cmd = Cmd::FetchPulls {
+                ctx: ctx.clone(),
+                state: FilterState::Open,
+            };
+            if let Some(entry) = app.panels.get_mut(&PanelKind::Pulls) {
+                entry.set_loading(true);
+            }
+            cmd
+        }
+        Cmd::None => Cmd::None,
+        Cmd::CycleRepoSort => {
+            if let Some(crate::app::PanelState::Repos(ref mut p)) =
+                app.panels.get_mut(&PanelKind::Repos)
+            {
+                p.item.cycle_sort(&mut p.data, &mut p.selection);
+            }
+            Cmd::None
+        }
+        Cmd::FetchPrComments { .. } => {
+            // Don't set loading on the whole panel — only detail pane
+            // needs to refresh when navigating between PRs.
+            cmd
+        }
+        other => match other.behavior() {
+            CmdBehavior::Destructive { label } => {
+                let detail = app
+                    .panels
+                    .get(&app.active_panel)
+                    .and_then(|e| e.selected_display())
+                    .unwrap_or_default();
+                app.confirmation = Some(crate::app::ConfirmState {
+                    pending_cmd: other,
+                    action_label: label.to_string(),
+                    detail,
+                });
+                Cmd::None
+            }
+            CmdBehavior::Benign => {
+                if let Some(entry) = app.panels.get_mut(&app.active_panel) {
+                    entry.set_loading(true);
+                }
+                other
+            }
+        },
+    }
+}
+
+fn result_to_options<T, E>(r: Result<T, E>) -> (Option<T>, Option<E>) {
+    match r {
+        Ok(v) => (Some(v), None),
+        Err(e) => (None, Some(e)),
+    }
+}
+fn handle_api_loaded(app: &mut App, payload: crate::event::ApiPayload) -> Cmd {
+    use crate::event::ApiPayload;
+    if let ApiPayload::Success(ref msg) = payload {
+        app.toast.set_success(msg.clone());
+    }
+    // Route by payload type to the correct panel, not just active panel.
+    // This handles the case where a fetch response arrives after the user
+    // has switched tabs — data still loads into the owning panel.
+    let target = match &payload {
+        ApiPayload::Repos(_) => Some(PanelKind::Repos),
+        ApiPayload::Pulls(_) => Some(PanelKind::Pulls),
+        ApiPayload::Issues(_) => Some(PanelKind::Issues),
+        ApiPayload::Notifications(_) => Some(PanelKind::Notifications),
+        ApiPayload::Actions(_) => Some(PanelKind::Actions),
+        ApiPayload::Success(_) => None,
+        ApiPayload::PrComments { .. } => Some(PanelKind::Pulls),
+    };
+    if let Some(kind) = target {
+        if let Some(entry) = app.panels.get_mut(&kind) {
+            // Handle PrComments specially
+            if let ApiPayload::PrComments {
+                pr_number,
+                comments,
+                reviews,
+                code_comments,
+                files,
+            } = payload
+            {
+                let (c_ok, c_err) = result_to_options(comments);
+                let (r_ok, r_err) = result_to_options(reviews);
+                let (cc_ok, cc_err) = result_to_options(code_comments);
+                let (f_ok, f_err) = result_to_options(files);
+                entry.update_pr_comments(
+                    pr_number,
+                    PrCommentUpdate {
+                        comments: c_ok,
+                        reviews: r_ok,
+                        code_comments: cc_ok,
+                        files: f_ok,
+                        comment_err: c_err,
+                        review_err: r_err,
+                        code_comment_err: cc_err,
+                        file_err: f_err,
+                    },
+                );
+            } else {
+                entry.load_data(payload);
+            }
+        }
+    }
+    Cmd::None
 }
 
 fn fetch_and_set_loading(app: &mut App) -> Cmd {
