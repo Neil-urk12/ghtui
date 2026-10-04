@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::api::client::GitHubClient;
 use crate::config::Config;
-use crate::domain::FilterState;
+use crate::domain::{FilterState, PrCodeComment, PrComment, PrFile, PrReview};
 use crate::panels::login::LoginState;
 use crate::panels::panel::{ListPanel, ListPanelData, SelectionState};
 use crate::panels::{
@@ -66,16 +66,6 @@ macro_rules! panel_delegate {
     };
 }
 
-pub struct PrCommentUpdate {
-    pub comments: Option<Vec<crate::domain::PrComment>>,
-    pub reviews: Option<Vec<crate::domain::PrReview>>,
-    pub code_comments: Option<Vec<crate::domain::PrCodeComment>>,
-    pub comment_err: Option<String>,
-    pub review_err: Option<String>,
-    pub code_comment_err: Option<String>,
-    pub files: Option<Vec<crate::domain::PrFile>>,
-    pub file_err: Option<String>,
-}
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PanelKind {
     Repos,
@@ -119,7 +109,7 @@ impl PanelState {
     // Delegated methods — all variants share the same ListPanel<T> API.
     panel_delegate!(fn apply_filter(&mut self, query: &str));
     panel_delegate!(fn handle_key(&mut self, key: char) -> Option<crate::cmd::Cmd>);
-    panel_delegate!(fn render(&mut self, frame: &mut ratatui::Frame, area: ratatui::prelude::Rect, has_focus: bool, theme: &crate::theme::Theme, tick: u64));
+    panel_delegate!(fn render(&mut self, frame: &mut ratatui::Frame, area: ratatui::prelude::Rect, theme: &crate::theme::Theme, tick: u64));
     panel_delegate!(fn fetch_cmd(&self) -> crate::cmd::Cmd);
     panel_delegate!(fn set_loading(&mut self, loading: bool));
     panel_delegate!(fn set_repo_context(&mut self, owner: &str, repo: &str));
@@ -129,39 +119,33 @@ impl PanelState {
     panel_delegate!(fn selected_display(&self) -> Option<String>);
 
     /// Update PR with comment data (Pulls panel only).
-    pub fn update_pr_comments(&mut self, pr_number: u64, update: PrCommentUpdate) {
+    pub fn update_pr_comments(
+        &mut self,
+        pr_number: u64,
+        comments: Result<Vec<PrComment>, String>,
+        reviews: Result<Vec<PrReview>, String>,
+        code_comments: Result<Vec<PrCodeComment>, String>,
+        files: Result<Vec<PrFile>, String>,
+    ) {
         if let PanelState::Pulls(p) = self {
             if let Some(pr) = p.data.items.iter_mut().find(|pr| pr.number == pr_number) {
                 // On success: store data, clear error. On error: clear stale data, store error.
-                // Neither: keep existing state for retry.
-                if let Some(c) = update.comments {
-                    pr.comments = Some(c);
-                    pr.comment_errors = None;
-                } else if let Some(e) = update.comment_err {
-                    pr.comments = None;
-                    pr.comment_errors = Some(e);
-                }
-                if let Some(r) = update.reviews {
-                    pr.reviews = Some(r);
-                    pr.review_errors = None;
-                } else if let Some(e) = update.review_err {
-                    pr.reviews = None;
-                    pr.review_errors = Some(e);
-                }
-                if let Some(cc) = update.code_comments {
-                    pr.code_comments = Some(cc);
-                    pr.code_comment_errors = None;
-                } else if let Some(e) = update.code_comment_err {
-                    pr.code_comments = None;
-                    pr.code_comment_errors = Some(e);
-                }
-                if let Some(f) = update.files {
-                    pr.files = Some(f);
-                    pr.file_errors = None;
-                } else if let Some(e) = update.file_err {
-                    pr.files = None;
-                    pr.file_errors = Some(e);
-                }
+                (pr.comments, pr.comment_errors) = match comments {
+                    Ok(v) => (Some(v), None),
+                    Err(e) => (None, Some(e)),
+                };
+                (pr.reviews, pr.review_errors) = match reviews {
+                    Ok(v) => (Some(v), None),
+                    Err(e) => (None, Some(e)),
+                };
+                (pr.code_comments, pr.code_comment_errors) = match code_comments {
+                    Ok(v) => (Some(v), None),
+                    Err(e) => (None, Some(e)),
+                };
+                (pr.files, pr.file_errors) = match files {
+                    Ok(v) => (Some(v), None),
+                    Err(e) => (None, Some(e)),
+                };
             }
         }
         self.set_loading(false);

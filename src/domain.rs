@@ -45,43 +45,22 @@ pub struct Issue {
 }
 #[derive(Debug, Default, Clone)]
 pub struct PrComment {
-    #[allow(dead_code)]
-    // from GitHub API response, not currently rendered in TUI
-    pub id: u64,
     pub author: String,
     pub body: String,
-    #[allow(dead_code)]
-    // from GitHub API response, kept for future chronological sorting
-    pub created_at: String,
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct PrReview {
-    #[allow(dead_code)]
-    // from GitHub API response, not currently rendered in TUI
-    pub id: u64,
     pub author: String,
     pub state: String,
     pub body: Option<String>,
-    #[allow(dead_code)]
-    // from GitHub API response, kept for future chronological sorting
-    pub submitted_at: String,
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct PrCodeComment {
-    #[allow(dead_code)]
-    // from GitHub API response, not currently rendered in TUI
-    pub id: u64,
-    #[allow(dead_code)]
-    // from GitHub API response, not currently rendered in TUI
-    pub author: String,
     pub body: String,
     pub path: String,
     pub line: Option<u32>,
-    #[allow(dead_code)]
-    // from GitHub API response, kept for future chronological sorting
-    pub created_at: String,
 }
 
 #[derive(Debug, Default, Clone)]

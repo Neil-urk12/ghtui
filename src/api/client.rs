@@ -507,10 +507,8 @@ impl GitHubClient {
         Ok(models
             .into_iter()
             .map(|c| domain::PrComment {
-                id: c.id,
                 author: c.user.login,
                 body: c.body,
-                created_at: c.created_at,
             })
             .collect())
     }
@@ -537,11 +535,9 @@ impl GitHubClient {
         Ok(models
             .into_iter()
             .map(|r| domain::PrReview {
-                id: r.id,
                 author: r.user.login,
                 state: r.state,
                 body: r.body,
-                submitted_at: r.submitted_at,
             })
             .collect())
     }
@@ -568,12 +564,9 @@ impl GitHubClient {
         Ok(models
             .into_iter()
             .map(|c| domain::PrCodeComment {
-                id: c.id,
-                author: c.user.login,
                 body: c.body,
                 path: c.path,
                 line: c.line,
-                created_at: c.created_at,
             })
             .collect())
     }
@@ -1465,61 +1458,5 @@ mod tests {
             parse_next_link(header, Some("https://api.github.com")),
             Some("https://api.github.com:443/repos?page=2".to_string())
         );
-    }
-
-    // --- TDD: get_all with extract closure (unified API) ---
-
-    #[tokio::test]
-    async fn get_all_with_extract_identity() {
-        let server = MockServer::start().await;
-        Mock::given(method("GET")).and(path("/items"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_json(serde_json::json!(["a", "b"]))
-            )
-            .mount(&server).await;
-
-        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
-        let result: Vec<String> = client.get_all("/items", None, Duration::from_secs(60), None, |v| v).await.unwrap();
-        assert_eq!(result, vec!["a".to_string(), "b".to_string()]);
-    }
-
-    #[tokio::test]
-    async fn get_all_with_extract_wrapper() {
-        let server = MockServer::start().await;
-        Mock::given(method("GET")).and(path("/items"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_json(serde_json::json!({ "items": ["x", "y"] }))
-            )
-            .mount(&server).await;
-
-        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
-        let result: Vec<String> = client.get_all("/items", None, Duration::from_secs(60), None, |w: TestWrapper| w.items).await.unwrap();
-        assert_eq!(result, vec!["x".to_string(), "y".to_string()]);
-    }
-
-    #[tokio::test]
-    async fn get_all_with_extract_multi_page() {
-        let server = MockServer::start().await;
-
-        Mock::given(method("GET")).and(path("/runs")).and(query_param("page", "1"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_json(serde_json::json!({ "items": ["a"] }))
-                    .insert_header("Link", format!(r#"<{}/runs?page=2>; rel="next""#, server.uri()))
-            )
-            .mount(&server).await;
-
-        Mock::given(method("GET")).and(path("/runs")).and(query_param("page", "2"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_json(serde_json::json!({ "items": ["b"] }))
-            )
-            .mount(&server).await;
-
-        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
-        let result: Vec<String> = client.get_all("/runs?page=1", None, Duration::from_secs(60), None, |w: TestWrapper| w.items).await.unwrap();
-        assert_eq!(result, vec!["a".to_string(), "b".to_string()]);
     }
 }

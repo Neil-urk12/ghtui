@@ -263,11 +263,6 @@ pub trait PanelItem: std::fmt::Debug + Default {
         vec![]
     }
 
-    /// Wrap full (block wraps entire area, split inside). Default `true`.
-    fn wrap_full(&self) -> bool {
-        true
-    }
-
     /// Highlight symbol for selected row. Default `"▸ "`.
     fn highlight_symbol(&self) -> String {
         "▸ ".into()
@@ -410,14 +405,7 @@ impl<T: PanelItem + 'static> ListPanel<T> {
         self.item.fetch_cmd(&self.data)
     }
 
-    pub fn render(
-        &mut self,
-        frame: &mut Frame,
-        area: Rect,
-        focused: bool,
-        theme: &Theme,
-        tick: u64,
-    ) {
+    pub fn render(&mut self, frame: &mut Frame, area: Rect, theme: &Theme, tick: u64) {
         let left = self.item.left_content(&self.data, theme);
         let (sr_left, sr_right) = self.item.split_ratio();
 
@@ -433,9 +421,7 @@ impl<T: PanelItem + 'static> ListPanel<T> {
         let config = ListViewConfig {
             split_ratio: (sr_left, sr_right),
             margin: 1,
-            focused,
             block_title: self.item.block_title(&self.data),
-            wrap_full: self.item.wrap_full(),
             loading: self.data.loading,
             empty_state: self.item.empty_state(&self.data),
             detail_title: self.item.detail_title(self.detail_pane.showing_diff),

@@ -1001,11 +1001,9 @@ mod tests {
     fn detail_lines_shows_reviews_when_present() {
         let pr = PullRequest {
             reviews: Some(vec![crate::domain::PrReview {
-                id: 1,
                 author: "reviewer".into(),
                 state: "APPROVED".into(),
                 body: None,
-                submitted_at: "2024-01-15T10:30:00Z".into(),
             }]),
             ..test_pr()
         };
@@ -1033,10 +1031,8 @@ mod tests {
     fn detail_lines_shows_comments_when_present() {
         let pr = PullRequest {
             comments: Some(vec![crate::domain::PrComment {
-                id: 1,
                 author: "user".into(),
                 body: "Looks good!".into(),
-                created_at: "2024-01-15T10:30:00Z".into(),
             }]),
             ..test_pr()
         };
@@ -1061,12 +1057,9 @@ mod tests {
     fn detail_lines_shows_code_comments_when_present() {
         let pr = PullRequest {
             code_comments: Some(vec![crate::domain::PrCodeComment {
-                id: 1,
-                author: "reviewer".into(),
                 body: "Fix this".into(),
                 path: "src/main.rs".into(),
                 line: Some(42),
-                created_at: "2024-01-15T10:30:00Z".into(),
             }]),
             ..test_pr()
         };
@@ -1254,11 +1247,9 @@ mod tests {
     fn detail_lines_shows_partial_errors_with_mixed_results() {
         let mut pr = test_pr();
         pr.reviews = Some(vec![crate::domain::PrReview {
-            id: 1,
             author: "r".to_string(),
             state: "APPROVED".to_string(),
             body: None,
-            submitted_at: String::new(),
         }]);
         pr.comments = Some(vec![]);
         pr.review_errors = None;

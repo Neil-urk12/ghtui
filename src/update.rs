@@ -2,7 +2,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use crate::api::client::GitHubClient;
-use crate::app::{App, AppState, PanelKind, PrCommentUpdate};
+use crate::app::{App, AppState, PanelKind};
 use crate::cmd::{Cmd, CmdBehavior};
 use crate::panels::login::LoginState;
 
@@ -313,35 +313,12 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
                         files,
                     } = payload
                     {
-                        // Destructure: Ok data stored, Err stored as error string, None keeps existing state for retry
-                        let (c_ok, c_err) = match comments {
-                            Ok(v) => (Some(v), None),
-                            Err(e) => (None, Some(e)),
-                        };
-                        let (r_ok, r_err) = match reviews {
-                            Ok(v) => (Some(v), None),
-                            Err(e) => (None, Some(e)),
-                        };
-                        let (cc_ok, cc_err) = match code_comments {
-                            Ok(v) => (Some(v), None),
-                            Err(e) => (None, Some(e)),
-                        };
-                        let (f_ok, f_err) = match files {
-                            Ok(v) => (Some(v), None),
-                            Err(e) => (None, Some(e)),
-                        };
                         entry.update_pr_comments(
                             pr_number,
-                            PrCommentUpdate {
-                                comments: c_ok,
-                                reviews: r_ok,
-                                code_comments: cc_ok,
-                                files: f_ok,
-                                comment_err: c_err,
-                                review_err: r_err,
-                                code_comment_err: cc_err,
-                                file_err: f_err,
-                            },
+                            comments,
+                            reviews,
+                            code_comments,
+                            files,
                         );
                     } else {
                         entry.load_data(payload);

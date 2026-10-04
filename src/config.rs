@@ -15,7 +15,6 @@ pub struct Config {
 #[serde(default)]
 pub struct ThemeConfig {
     pub active_border_color: String,
-    pub inactive_border_color: String,
     pub highlight_color: String,
     pub muted_color: String,
     pub success_color: String,
@@ -59,7 +58,6 @@ impl Default for ThemeConfig {
     fn default() -> Self {
         Self {
             active_border_color: "cyan".to_string(),
-            inactive_border_color: "gray".to_string(),
             highlight_color: "blue".to_string(),
             muted_color: "gray".to_string(),
             success_color: "green".to_string(),
@@ -127,7 +125,6 @@ mod tests {
     fn default_config_values() {
         let config = Config::default();
         assert_eq!(config.theme.active_border_color, "cyan");
-        assert_eq!(config.theme.inactive_border_color, "gray");
         assert_eq!(config.keybindings.quit, "q");
         assert_eq!(config.keybindings.next_tab, "Tab");
         assert_eq!(config.keybindings.prev_tab, "Shift-Tab");

@@ -5,7 +5,6 @@ use crate::config::ThemeConfig;
 #[derive(Clone)]
 pub struct Theme {
     pub active_border: Style,
-    pub inactive_border: Style,
     pub highlight: Style,
     pub muted: Style,
     pub success: Style,
@@ -23,7 +22,6 @@ impl Default for Theme {
     fn default() -> Self {
         Self {
             active_border: Style::default().fg(Color::Cyan),
-            inactive_border: Style::default().fg(Color::DarkGray),
             highlight: Style::default()
                 .fg(Color::Blue)
                 .add_modifier(Modifier::BOLD),
@@ -47,7 +45,6 @@ impl Theme {
     pub fn from_config(config: &ThemeConfig) -> Self {
         Self {
             active_border: Style::default().fg(parse_color(&config.active_border_color)),
-            inactive_border: Style::default().fg(parse_color(&config.inactive_border_color)),
             highlight: Style::default()
                 .fg(parse_color(&config.highlight_color))
                 .add_modifier(Modifier::BOLD),

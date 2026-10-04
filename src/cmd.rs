@@ -23,7 +23,7 @@ pub enum CmdBehavior {
     Benign,
 }
 
-
+#[derive(Debug)]
 pub enum Cmd {
     None,
     FetchRepos,
@@ -77,48 +77,6 @@ pub enum Cmd {
         ctx: RepoContext,
         pr_number: u64,
     },
-}
-
-impl std::fmt::Debug for Cmd {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Cmd::None => write!(f, "None"),
-            Cmd::FetchRepos => write!(f, "FetchRepos"),
-            Cmd::FetchPulls { ctx, state } => {
-                write!(f, "FetchPulls({}, {}, {})", ctx.owner, ctx.repo, state)
-            }
-            Cmd::FetchIssues { ctx, state } => {
-                write!(f, "FetchIssues({}, {}, {})", ctx.owner, ctx.repo, state)
-            }
-            Cmd::FetchNotifications { all } => write!(f, "FetchNotifications(all={})", all),
-            Cmd::FetchActions { ctx } => write!(f, "FetchActions({}, {})", ctx.owner, ctx.repo),
-            Cmd::MarkNotificationRead { id } => write!(f, "MarkNotificationRead({})", id),
-            Cmd::MarkAllNotificationsRead => write!(f, "MarkAllNotificationsRead"),
-            Cmd::ApprovePr { ctx, pr_number } => {
-                write!(f, "ApprovePr({}/{}/{})", ctx.owner, ctx.repo, pr_number)
-            }
-            Cmd::MergePr { ctx, pr_number } => {
-                write!(f, "MergePr({}/{}/{})", ctx.owner, ctx.repo, pr_number)
-            }
-            Cmd::RerunWorkflow { ctx, run_id } => {
-                write!(f, "RerunWorkflow({}/{}/{})", ctx.owner, ctx.repo, run_id)
-            }
-            Cmd::CancelWorkflow { ctx, run_id } => {
-                write!(f, "CancelWorkflow({}/{}/{})", ctx.owner, ctx.repo, run_id)
-            }
-            Cmd::OpenRepoDetail { ctx } => write!(f, "OpenRepoDetail({}/{})", ctx.owner, ctx.repo),
-            Cmd::CycleRepoSort => write!(f, "CycleRepoSort"),
-            Cmd::FetchPrComments { ctx, pr_number } => {
-                write!(f, "FetchPrComments({}/{}/{})", ctx.owner, ctx.repo, pr_number)
-            }
-            Cmd::ClosePr { ctx, pr_number } => {
-                write!(f, "ClosePr({}/{}/{})", ctx.owner, ctx.repo, pr_number)
-            }
-            Cmd::ReopenPr { ctx, pr_number } => {
-                write!(f, "ReopenPr({}/{}/{})", ctx.owner, ctx.repo, pr_number)
-            }
-        }
-    }
 }
 
 impl Cmd {
@@ -249,42 +207,6 @@ mod tests {
                 cmd
             );
         }
-    }
-
-    #[test]
-    fn debug_format_has_closing_paren() {
-        let cmd = Cmd::FetchPrComments {
-            ctx: RepoContext::new("o", "r"),
-            pr_number: 1,
-        };
-        let debug = format!("{:?}", cmd);
-        assert!(
-            debug.ends_with(')'),
-            "Debug should have closing paren: {}",
-            debug
-        );
-
-        let cmd = Cmd::ClosePr {
-            ctx: RepoContext::new("o", "r"),
-            pr_number: 1,
-        };
-        let debug = format!("{:?}", cmd);
-        assert!(
-            debug.ends_with(')'),
-            "Debug should have closing paren: {}",
-            debug
-        );
-
-        let cmd = Cmd::ReopenPr {
-            ctx: RepoContext::new("o", "r"),
-            pr_number: 1,
-        };
-        let debug = format!("{:?}", cmd);
-        assert!(
-            debug.ends_with(')'),
-            "Debug should have closing paren: {}",
-            debug
-        );
     }
 
     #[test]
