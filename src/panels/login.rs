@@ -6,6 +6,7 @@ use ratatui::widgets::*;
 
 use crate::api::auth;
 
+#[derive(Clone)]
 pub struct LoginState {
     pub user_code: String,
     pub verification_uri: String,
@@ -17,6 +18,7 @@ pub struct LoginState {
     pub http_client: reqwest::Client,
 }
 
+#[derive(Clone)]
 pub enum LoginStatus {
     Waiting,
     Success(String),
@@ -94,6 +96,11 @@ impl LoginState {
         })
     }
 
+    pub fn poll_due(&self) -> bool {
+        matches!(self.status, LoginStatus::Waiting)
+            && should_poll(self.last_poll, self.poll_interval)
+    }
+
     pub async fn tick(&mut self) {
         match &self.status {
             LoginStatus::Success(_) | LoginStatus::Error(_) => return,
@@ -114,10 +121,7 @@ impl LoginState {
             .await
         {
             Ok(resp) => match apply_token_response(resp.access_token, resp.interval, resp.scope) {
-                TokenEffect::Success(token, scopes) => {
-                    if let Err(e) = auth::save_token(&token, &scopes) {
-                        tracing::warn!(error = %e, "failed to persist token");
-                    }
+                TokenEffect::Success(token, _scopes) => {
                     self.status = LoginStatus::Success(token);
                 }
                 TokenEffect::UpdateInterval(interval) => {

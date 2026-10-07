@@ -259,6 +259,10 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
             Cmd::FetchRepos
         }
         Message::LoginError(msg) => {
+            if let Some(login) = &mut app.login {
+                login.status = crate::panels::login::LoginStatus::Error(msg.clone());
+            }
+            app.toast_tick = 0;
             app.error_toast = Some(msg);
             Cmd::None
         }

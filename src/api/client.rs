@@ -24,6 +24,8 @@ pub struct GitHubClient {
 
 pub(crate) fn build_http_client() -> color_eyre::Result<Client> {
     Client::builder()
+        .connect_timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(30))
         .redirect(Policy::custom(|attempt| {
             if attempt.previous().last().and_then(|u| u.host_str()) == attempt.url().host_str() {
                 attempt.follow()
@@ -737,6 +739,29 @@ fn parse_next_link(header_value: &str, expected_prefix: Option<&str>) -> Option<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn http_timeout_covers_a_stalled_response_body() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = [0; 1];
+            socket.read_exact(&mut request).await.unwrap();
+            socket
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n")
+                .await
+                .unwrap();
+            std::future::pending::<()>().await;
+        });
+        let response = build_http_client().unwrap().get(url).send().await.unwrap();
+        let result = tokio::time::timeout(Duration::from_secs(35), response.text())
+            .await
+            .unwrap();
+        server.abort();
+        assert!(result.unwrap_err().is_timeout());
+    }
 
     #[test]
     fn safe_u32_positive_value() {

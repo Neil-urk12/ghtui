@@ -5,12 +5,14 @@ use crossterm::event::EventStream;
 use futures::StreamExt;
 use ratatui::DefaultTerminal;
 use tokio::sync::mpsc;
+use tokio::task::JoinSet;
 use tokio::time;
 
 use crate::api::client::{build_http_client, GitHubClient};
 use crate::app::{App, AppState};
 use crate::cmd::Cmd;
 use crate::event::{self, ApiPayload, Event};
+use crate::panels::login::{LoginState, LoginStatus};
 use crate::update::{update, Message};
 use crate::view::view;
 
@@ -20,79 +22,49 @@ pub async fn run(app: &mut App, terminal: &mut DefaultTerminal) -> Result<()> {
     tracing::debug!("entering run loop");
     let mut event_stream = EventStream::new();
     let mut tick_interval = time::interval(crate::constants::TICK_INTERVAL);
-    let (tx, mut rx) = mpsc::channel::<Result<ApiPayload>>(CHANNEL_BUFFER_SIZE);
+    let (tx, mut rx) = mpsc::channel::<Message>(CHANNEL_BUFFER_SIZE);
+    let mut login_tasks = JoinSet::new();
 
-    // Initialize login if no token found
     if matches!(app.state, AppState::Login) {
-        let http = build_http_client()?;
-        match crate::panels::login::LoginState::new(http).await {
-            Ok(login) => {
-                // Intentionally discarded: always returns Cmd::None
-                let _ = update(app, Message::LoginInit(login));
-            }
-            Err(e) => {
-                // Intentionally discarded: always returns Cmd::None
-                let _ = update(app, Message::LoginError(e.to_string()));
-            }
-        }
+        spawn_login(None, &mut login_tasks, tx.clone());
     } else {
-        // Auto-fetch repos on startup (only when authenticated)
         spawn_cmd(Cmd::FetchRepos, &app.client, tx.clone());
     }
 
     loop {
         terminal.draw(|frame| view(frame, app))?;
 
-        let event = tokio::select! {
+        let messages = tokio::select! {
             crossterm_event = event_stream.next() => {
-                match crossterm_event {
+                let event = match crossterm_event {
                     Some(Ok(event)) => Event::Input(event),
                     Some(Err(e)) => {
                         tracing::error!(error = %e, "crossterm error");
                         Event::Tick
                     }
                     None => break,
+                };
+                event::process_event(event, app)
+            }
+            result = rx.recv() => {
+                match result {
+                    Some(Message::ApiLoaded(payload)) => {
+                        event::process_event(Event::ApiResult { payload }, app)
+                    }
+                    Some(Message::ApiError(msg)) => {
+                        event::process_event(Event::ApiError(msg), app)
+                    }
+                    Some(msg @ (Message::LoginInit(_) | Message::LoginSuccess(_) | Message::LoginError(_))) => {
+                        // The request is done; retain no task while waiting for the next poll.
+                        login_tasks.detach_all();
+                        vec![msg]
+                    }
+                    Some(msg) => vec![msg],
+                    None => vec![Message::Noop],
                 }
             }
-            api_result = rx.recv() => {
-                match api_result {
-                    Some(Ok(payload)) => Event::ApiResult { payload },
-                    Some(Err(e)) => Event::ApiError(e.to_string()),
-                    None => Event::Tick,
-                }
-            }
-            _ = tick_interval.tick() => Event::Tick,
+            _ = tick_interval.tick() => event::process_event(Event::Tick, app),
         };
-
-        let messages = event::process_event(event, app);
-
-        // Login tick — poll for auth on each tick (async, stays in run loop)
-        if matches!(app.state, AppState::Login) {
-            if let Some(ref mut login) = app.login {
-                login.tick().await;
-                match &login.status {
-                    crate::panels::login::LoginStatus::Success(token) => {
-                        let token = token.clone();
-                        let cmd = update(app, Message::LoginSuccess(token));
-                        if !matches!(cmd, Cmd::None) {
-                            spawn_cmd(cmd, &app.client, tx.clone());
-                        }
-                    }
-                    crate::panels::login::LoginStatus::Error(msg) => {
-                        let msg = msg.clone();
-                        // Intentionally discarded: always returns Cmd::None
-                        let _ = update(app, Message::LoginError(msg));
-                    }
-                    crate::panels::login::LoginStatus::Expired => {
-                        let http = build_http_client()?;
-                        if let Ok(new_login) = crate::panels::login::LoginState::new(http).await {
-                            app.login = Some(new_login);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
 
         for msg in messages {
             let cmd = update(app, msg);
@@ -104,11 +76,54 @@ pub async fn run(app: &mut App, terminal: &mut DefaultTerminal) -> Result<()> {
         if app.should_quit {
             break;
         }
+        schedule_login(app, &mut login_tasks, tx.clone());
     }
     Ok(())
 }
 
-fn spawn_cmd(cmd: Cmd, client: &Arc<GitHubClient>, tx: mpsc::Sender<Result<ApiPayload>>) {
+fn schedule_login(app: &mut App, tasks: &mut JoinSet<()>, tx: mpsc::Sender<Message>) {
+    if !matches!(app.state, AppState::Login) || !tasks.is_empty() {
+        return;
+    }
+    if let Some(login) = &mut app.login {
+        if !matches!(login.status, LoginStatus::Waiting | LoginStatus::Expired) {
+            return;
+        }
+        if std::time::Instant::now() >= login.expires_at {
+            login.status = LoginStatus::Expired;
+            spawn_login(None, tasks, tx);
+        } else if login.poll_due() {
+            spawn_login(Some(login.clone()), tasks, tx);
+        }
+    }
+}
+
+fn spawn_login(login: Option<LoginState>, tasks: &mut JoinSet<()>, tx: mpsc::Sender<Message>) {
+    // JoinSet aborts an outstanding login request when the run loop exits.
+    tasks.spawn(async move {
+        let result = match login {
+            Some(mut login) => {
+                login.tick().await;
+                Ok(login)
+            }
+            None => match build_http_client() {
+                Ok(http) => LoginState::new(http).await,
+                Err(e) => Err(e),
+            },
+        };
+        let msg = match result {
+            Ok(login) => match &login.status {
+                LoginStatus::Success(token) => Message::LoginSuccess(token.clone()),
+                LoginStatus::Error(msg) => Message::LoginError(msg.clone()),
+                _ => Message::LoginInit(login),
+            },
+            Err(e) => Message::LoginError(e.to_string()),
+        };
+        let _ = tx.send(msg).await;
+    });
+}
+
+fn spawn_cmd(cmd: Cmd, client: &Arc<GitHubClient>, tx: mpsc::Sender<Message>) {
     if matches!(
         cmd,
         Cmd::None | Cmd::OpenRepoDetail { .. } | Cmd::CycleRepoSort
@@ -185,7 +200,11 @@ fn spawn_cmd(cmd: Cmd, client: &Arc<GitHubClient>, tx: mpsc::Sender<Result<ApiPa
                 .await
                 .map(|_| ApiPayload::Success(format!("PR #{} reopened", pr_number))),
         };
-        let _ = tx.send(result).await;
+        let msg = match result {
+            Ok(payload) => Message::ApiLoaded(payload),
+            Err(e) => Message::ApiError(e.to_string()),
+        };
+        let _ = tx.send(msg).await;
     });
 }
 
@@ -198,6 +217,167 @@ mod tests {
     use crate::domain::{PrReview, PullRequest};
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[tokio::test]
+    async fn delayed_login_keeps_input_and_redraws_responsive_without_overlapping_polls() {
+        use std::time::{Duration, Instant};
+        use tokio::io::AsyncReadExt;
+
+        // A local proxy accepts the connection but never answers the HTTPS tunnel request.
+        let proxy = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let http = reqwest::Client::builder()
+            .proxy(reqwest::Proxy::all(format!("http://{}", proxy.local_addr().unwrap())).unwrap())
+            .build()
+            .unwrap();
+        let mut app = App::new(Config::default(), None).unwrap();
+        app.login = Some(LoginState {
+            user_code: "TEST-CODE".into(),
+            verification_uri: "https://github.com/login/device".into(),
+            device_code: "test-device".into(),
+            expires_at: Instant::now() + Duration::from_secs(60),
+            poll_interval: Duration::from_secs(5),
+            last_poll: Instant::now(),
+            status: LoginStatus::Waiting,
+            http_client: http,
+        });
+        let (tx, mut rx) = mpsc::channel(1);
+        let mut tasks = JoinSet::new();
+        schedule_login(&mut app, &mut tasks, tx.clone());
+        assert!(
+            tasks.is_empty(),
+            "must wait for the server's polling interval"
+        );
+
+        app.login.as_mut().unwrap().last_poll = Instant::now() - Duration::from_secs(6);
+        schedule_login(&mut app, &mut tasks, tx.clone());
+        let (mut connection, _) = time::timeout(Duration::from_secs(2), proxy.accept())
+            .await
+            .unwrap()
+            .unwrap();
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 40)).unwrap();
+        for _ in 0..3 {
+            for message in event::process_event(Event::Tick, &app) {
+                update(&mut app, message);
+            }
+            schedule_login(&mut app, &mut tasks, tx.clone());
+            terminal.draw(|frame| view(frame, &mut app)).unwrap();
+        }
+        assert_eq!(app.tick, 3);
+        assert_eq!(tasks.len(), 1, "only one poll may be in flight");
+        assert!(
+            rx.try_recv().is_err(),
+            "the proxy is still blocking the login request"
+        );
+        for message in event::process_event(
+            Event::Input(crossterm::event::Event::Key(
+                crossterm::event::KeyEvent::new(
+                    crossterm::event::KeyCode::Char('q'),
+                    crossterm::event::KeyModifiers::NONE,
+                ),
+            )),
+            &app,
+        ) {
+            update(&mut app, message);
+        }
+        assert!(app.should_quit);
+        drop(tasks);
+        time::timeout(
+            Duration::from_secs(2),
+            connection.read_to_end(&mut Vec::new()),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn expired_login_starts_one_background_renewal_and_errors_stop_polling() {
+        use std::time::{Duration, Instant};
+        let mut app = App::new(Config::default(), None).unwrap();
+        app.login = Some(LoginState {
+            user_code: "old-code".into(),
+            verification_uri: "https://github.com/login/device".into(),
+            device_code: "old-device".into(),
+            expires_at: Instant::now() - Duration::from_secs(1),
+            poll_interval: Duration::from_secs(5),
+            last_poll: Instant::now() - Duration::from_secs(6),
+            status: LoginStatus::Waiting,
+            http_client: build_http_client().unwrap(),
+        });
+        let (tx, _rx) = mpsc::channel(1);
+        let mut tasks = JoinSet::new();
+        schedule_login(&mut app, &mut tasks, tx.clone());
+        schedule_login(&mut app, &mut tasks, tx.clone());
+        assert_eq!(tasks.len(), 1);
+        assert!(matches!(
+            app.login.as_ref().unwrap().status,
+            LoginStatus::Expired
+        ));
+        // Cancel before yielding so this test never contacts GitHub.
+        tasks.abort_all();
+        assert!(tasks.join_next().await.unwrap().unwrap_err().is_cancelled());
+        update(&mut app, Message::LoginError("renewal failed".into()));
+        schedule_login(&mut app, &mut tasks, tx);
+        assert!(tasks.is_empty());
+        assert!(matches!(app.login.unwrap().status, LoginStatus::Error(_)));
+    }
+
+    #[tokio::test]
+    async fn pr_comment_timeout_preserves_successful_sections() {
+        use std::time::Duration;
+        let server = MockServer::start().await;
+        for endpoint in [
+            "/repos/o/r/issues/1/comments",
+            "/repos/o/r/pulls/1/comments",
+            "/repos/o/r/pulls/1/files",
+        ] {
+            Mock::given(method("GET"))
+                .and(path(endpoint))
+                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
+                .expect(1)
+                .mount(&server)
+                .await;
+        }
+        Mock::given(method("GET"))
+            .and(path("/repos/o/r/pulls/1/reviews"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_delay(Duration::from_secs(31))
+                    .set_body_json(serde_json::json!([])),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let client = Arc::new(GitHubClient::new_for_test("tok".into(), server.uri()).unwrap());
+        let (tx, mut rx) = mpsc::channel(1);
+        spawn_cmd(
+            Cmd::FetchPrComments {
+                ctx: RepoContext::new("o", "r"),
+                pr_number: 1,
+            },
+            &client,
+            tx,
+        );
+        let result = time::timeout(Duration::from_secs(35), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        let Message::ApiLoaded(ApiPayload::PrComments {
+            comments,
+            reviews,
+            code_comments,
+            files,
+            ..
+        }) = result
+        else {
+            panic!("Expected partial PR details");
+        };
+        assert!(reviews.unwrap_err().contains("timed out"));
+        assert!(comments.unwrap().is_empty());
+        assert!(code_comments.unwrap().is_empty());
+        assert!(files.unwrap().is_empty());
+    }
 
     #[tokio::test]
     async fn pr_comment_results_preserve_partial_success_and_retry() {
@@ -234,8 +414,10 @@ mod tests {
         let payload = time::timeout(std::time::Duration::from_secs(5), rx.recv())
             .await
             .unwrap()
-            .unwrap()
             .unwrap();
+        let Message::ApiLoaded(payload) = payload else {
+            panic!("Expected API payload");
+        };
 
         let mut app = App::new(Config::default(), Some("tok".into())).unwrap();
         update(
@@ -307,6 +489,6 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert!(result.unwrap_err().to_string().contains("500"));
+        assert!(matches!(result, Message::ApiError(msg) if msg.contains("500")));
     }
 }
