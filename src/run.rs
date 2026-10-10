@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use color_eyre::Result;
 use crossterm::event::EventStream;
 use futures::StreamExt;
@@ -8,9 +6,9 @@ use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 use tokio::time;
 
-use crate::api::client::{build_http_client, GitHubClient};
+use crate::api::client::build_http_client;
 use crate::app::{App, AppState};
-use crate::cmd::Cmd;
+use crate::cmd::{self, Cmd, PendingCmd};
 use crate::event::{self, ApiPayload, Event};
 use crate::panels::login::{LoginState, LoginStatus};
 use crate::update::{update, Message};
@@ -28,7 +26,7 @@ pub async fn run(app: &mut App, terminal: &mut DefaultTerminal) -> Result<()> {
     if matches!(app.state, AppState::Login) {
         spawn_login(None, &mut login_tasks, tx.clone());
     } else {
-        spawn_cmd(Cmd::FetchRepos, &app.client, tx.clone());
+        spawn_cmd(Cmd::FetchRepos, app, tx.clone());
     }
 
     loop {
@@ -48,12 +46,6 @@ pub async fn run(app: &mut App, terminal: &mut DefaultTerminal) -> Result<()> {
             }
             result = rx.recv() => {
                 match result {
-                    Some(Message::ApiLoaded(payload)) => {
-                        event::process_event(Event::ApiResult { payload }, app)
-                    }
-                    Some(Message::ApiError(msg)) => {
-                        event::process_event(Event::ApiError(msg), app)
-                    }
                     Some(msg @ (Message::LoginInit(_) | Message::LoginSuccess(_) | Message::LoginError(_))) => {
                         // The request is done; retain no task while waiting for the next poll.
                         login_tasks.detach_all();
@@ -69,7 +61,7 @@ pub async fn run(app: &mut App, terminal: &mut DefaultTerminal) -> Result<()> {
         for msg in messages {
             let cmd = update(app, msg);
             if !matches!(cmd, Cmd::None) {
-                spawn_cmd(cmd, &app.client, tx.clone());
+                spawn_cmd(cmd, app, tx.clone());
             }
         }
 
@@ -123,15 +115,11 @@ fn spawn_login(login: Option<LoginState>, tasks: &mut JoinSet<()>, tx: mpsc::Sen
     });
 }
 
-fn spawn_cmd(cmd: Cmd, client: &Arc<GitHubClient>, tx: mpsc::Sender<Message>) {
-    if matches!(
-        cmd,
-        Cmd::None | Cmd::OpenRepoDetail { .. } | Cmd::CycleRepoSort
-    ) {
-        // Local commands are handled in update().
+fn spawn_cmd(cmd: Cmd, app: &mut App, tx: mpsc::Sender<Message>) {
+    let Some(PendingCmd { cmd, ticket }) = cmd::start(app, cmd) else {
         return;
-    }
-    let client = Arc::clone(client);
+    };
+    let client = std::sync::Arc::clone(&app.client);
     tokio::spawn(async move {
         let result = match cmd {
             Cmd::None | Cmd::OpenRepoDetail { .. } | Cmd::CycleRepoSort => return,
@@ -200,10 +188,7 @@ fn spawn_cmd(cmd: Cmd, client: &Arc<GitHubClient>, tx: mpsc::Sender<Message>) {
                 .await
                 .map(|_| ApiPayload::Success(format!("PR #{} reopened", pr_number))),
         };
-        let msg = match result {
-            Ok(payload) => Message::ApiLoaded(payload),
-            Err(e) => Message::ApiError(e.to_string()),
-        };
+        let msg = Message::CmdCompleted(ticket.finish(result.map_err(|e| e.to_string())));
         let _ = tx.send(msg).await;
     });
 }
@@ -211,10 +196,12 @@ fn spawn_cmd(cmd: Cmd, client: &Arc<GitHubClient>, tx: mpsc::Sender<Message>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::api::client::GitHubClient;
     use crate::app::{PanelKind, PanelState};
     use crate::cmd::RepoContext;
     use crate::config::Config;
     use crate::domain::{PrReview, PullRequest};
+    use std::sync::Arc;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -350,26 +337,35 @@ mod tests {
             .mount(&server)
             .await;
         let client = Arc::new(GitHubClient::new_for_test("tok".into(), server.uri()).unwrap());
+        let mut app = App::new(Config::default(), Some("tok".into())).unwrap();
+        app.client = client;
+        app.panels
+            .get_mut(&PanelKind::Pulls)
+            .unwrap()
+            .set_repo_context("o", "r");
         let (tx, mut rx) = mpsc::channel(1);
         spawn_cmd(
             Cmd::FetchPrComments {
                 ctx: RepoContext::new("o", "r"),
                 pr_number: 1,
             },
-            &client,
+            &mut app,
             tx,
         );
         let result = time::timeout(Duration::from_secs(35), rx.recv())
             .await
             .unwrap()
             .unwrap();
-        let Message::ApiLoaded(ApiPayload::PrComments {
+        let Message::CmdCompleted(completion) = result else {
+            panic!("Expected Cmd completion");
+        };
+        let Ok(ApiPayload::PrComments {
             comments,
             reviews,
             code_comments,
             files,
             ..
-        }) = result
+        }) = completion.result
         else {
             panic!("Expected partial PR details");
         };
@@ -402,36 +398,32 @@ mod tests {
             .await;
 
         let client = Arc::new(GitHubClient::new_for_test("tok".into(), server.uri()).unwrap());
+        let mut app = App::new(Config::default(), Some("tok".into())).unwrap();
+        app.client = client;
+        let entry = app.panels.get_mut(&PanelKind::Pulls).unwrap();
+        entry.set_repo_context("o", "r");
+        entry.load_data(ApiPayload::Pulls(vec![PullRequest {
+            number: 1,
+            reviews: Some(vec![PrReview::default()]),
+            comment_errors: Some("previous failure".into()),
+            code_comment_errors: Some("previous failure".into()),
+            file_errors: Some("previous failure".into()),
+            ..Default::default()
+        }]));
         let (tx, mut rx) = mpsc::channel(1);
         spawn_cmd(
             Cmd::FetchPrComments {
                 ctx: RepoContext::new("o", "r"),
                 pr_number: 1,
             },
-            &client,
+            &mut app,
             tx,
         );
         let payload = time::timeout(std::time::Duration::from_secs(5), rx.recv())
             .await
             .unwrap()
             .unwrap();
-        let Message::ApiLoaded(payload) = payload else {
-            panic!("Expected API payload");
-        };
-
-        let mut app = App::new(Config::default(), Some("tok".into())).unwrap();
-        update(
-            &mut app,
-            Message::ApiLoaded(ApiPayload::Pulls(vec![PullRequest {
-                number: 1,
-                reviews: Some(vec![PrReview::default()]),
-                comment_errors: Some("previous failure".into()),
-                code_comment_errors: Some("previous failure".into()),
-                file_errors: Some("previous failure".into()),
-                ..Default::default()
-            }])),
-        );
-        update(&mut app, Message::ApiLoaded(payload));
+        update(&mut app, payload);
         assert_eq!(app.active_panel, PanelKind::Repos);
         let PanelState::Pulls(panel) = app.panels.get(&PanelKind::Pulls).unwrap() else {
             panic!("Expected Pulls panel");
@@ -446,15 +438,23 @@ mod tests {
         assert!(pr.reviews.is_none());
         assert!(pr.review_errors.as_ref().unwrap().contains("500"));
 
+        let pending = cmd::start(
+            &mut app,
+            Cmd::FetchPrComments {
+                ctx: RepoContext::new("o", "r"),
+                pr_number: 1,
+            },
+        )
+        .unwrap();
         update(
             &mut app,
-            Message::ApiLoaded(ApiPayload::PrComments {
+            Message::CmdCompleted(pending.ticket.finish(Ok(ApiPayload::PrComments {
                 pr_number: 1,
                 comments: Err("comments failed".into()),
                 reviews: Ok(vec![PrReview::default()]),
                 code_comments: Err("code comments failed".into()),
                 files: Err("files failed".into()),
-            }),
+            }))),
         );
         let PanelState::Pulls(panel) = app.panels.get(&PanelKind::Pulls).unwrap() else {
             panic!("Expected Pulls panel");
@@ -474,6 +474,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn repo_completion_after_tab_switch_keeps_its_ownership() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/user/repos"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let mut app = App::new(Config::default(), Some("tok".into())).unwrap();
+        app.client = Arc::new(GitHubClient::new_for_test("tok".into(), server.uri()).unwrap());
+        app.panels
+            .get_mut(&PanelKind::Repos)
+            .unwrap()
+            .load_data(ApiPayload::Repos(vec![Default::default()]));
+        let (tx, mut rx) = mpsc::channel(1);
+        spawn_cmd(Cmd::FetchRepos, &mut app, tx);
+        app.active_panel = PanelKind::Notifications;
+        let _notification_read =
+            cmd::start(&mut app, Cmd::FetchNotifications { all: false }).unwrap();
+        let result = time::timeout(std::time::Duration::from_secs(5), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(update(&mut app, result), Cmd::None));
+        let PanelState::Repos(panel) = &app.panels[&PanelKind::Repos] else {
+            unreachable!();
+        };
+        assert!(panel.data.items.is_empty());
+        assert!(!panel.data.loading);
+        let PanelState::Notifications(panel) = &app.panels[&PanelKind::Notifications] else {
+            unreachable!();
+        };
+        assert!(panel.data.loading);
+        assert_eq!(app.active_panel, PanelKind::Notifications);
+    }
+
+    #[tokio::test]
     async fn api_failure_is_sent_through_channel() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
@@ -483,12 +520,19 @@ mod tests {
             .mount(&server)
             .await;
         let client = Arc::new(GitHubClient::new_for_test("tok".into(), server.uri()).unwrap());
+        let mut app = App::new(Config::default(), Some("tok".into())).unwrap();
+        app.client = client;
         let (tx, mut rx) = mpsc::channel(1);
-        spawn_cmd(Cmd::FetchRepos, &client, tx);
+        spawn_cmd(Cmd::FetchRepos, &mut app, tx);
         let result = time::timeout(std::time::Duration::from_secs(5), rx.recv())
             .await
             .unwrap()
             .unwrap();
-        assert!(matches!(result, Message::ApiError(msg) if msg.contains("500")));
+        update(&mut app, result);
+        assert!(app.error_toast.as_ref().unwrap().contains("500"));
+        let PanelState::Repos(panel) = &app.panels[&PanelKind::Repos] else {
+            panic!("Expected Repos panel");
+        };
+        assert!(!panel.data.loading);
     }
 }

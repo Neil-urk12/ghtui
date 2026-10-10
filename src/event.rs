@@ -8,8 +8,6 @@ use crate::update::Message;
 pub enum Event {
     Input(crossterm::event::Event),
     Tick,
-    ApiResult { payload: ApiPayload },
-    ApiError(String),
 }
 
 #[derive(Debug)]
@@ -100,15 +98,6 @@ pub fn process_event(event: Event, app: &App) -> Vec<Message> {
                 vec![Message::Noop]
             }
         }
-        Event::ApiResult { payload } => {
-            let is_success = matches!(payload, ApiPayload::Success(_));
-            let mut msgs = vec![Message::ApiLoaded(payload)];
-            if is_success {
-                msgs.push(Message::Refresh);
-            }
-            msgs
-        }
-        Event::ApiError(msg) => vec![Message::ApiError(msg)],
         Event::Tick => {
             let (remaining, reset) = app.client.rate_info();
             let reset_secs = reset.map(|inst| {
@@ -237,40 +226,6 @@ mod tests {
         let app = test_app();
         let msgs = process_event(Event::Input(key_event(KeyCode::Enter)), &app);
         assert!(matches!(msgs[0], Message::PanelKeyInput('\n')));
-    }
-
-    #[test]
-    fn api_result_success_produces_loaded_and_refresh() {
-        let app = test_app();
-        let msgs = process_event(
-            Event::ApiResult {
-                payload: ApiPayload::Success("ok".into()),
-            },
-            &app,
-        );
-        assert_eq!(msgs.len(), 2);
-        assert!(matches!(&msgs[0], Message::ApiLoaded(_)));
-        assert!(matches!(msgs[1], Message::Refresh));
-    }
-
-    #[test]
-    fn api_result_data_produces_loaded_only() {
-        let app = test_app();
-        let msgs = process_event(
-            Event::ApiResult {
-                payload: ApiPayload::Repos(vec![]),
-            },
-            &app,
-        );
-        assert_eq!(msgs.len(), 1);
-        assert!(matches!(&msgs[0], Message::ApiLoaded(_)));
-    }
-
-    #[test]
-    fn api_error_produces_message() {
-        let app = test_app();
-        let msgs = process_event(Event::ApiError("fail".into()), &app);
-        assert!(matches!(&msgs[0], Message::ApiError(msg) if msg == "fail"));
     }
 
     #[test]

@@ -75,6 +75,7 @@ pub struct ListPanelData<T> {
     pub loading: bool,
     pub owner: Option<String>,
     pub repo: Option<String>,
+    pub(crate) revision: u64,
 }
 
 impl<T> Default for ListPanelData<T> {
@@ -85,6 +86,7 @@ impl<T> Default for ListPanelData<T> {
             loading: false,
             owner: None,
             repo: None,
+            revision: 0,
         }
     }
 }
@@ -96,6 +98,7 @@ impl<T> ListPanelData<T> {
 
     /// Replace items, reset selection to 0 (or None if empty).
     pub fn set_items(&mut self, items: Vec<T>, selection: &mut SelectionState) {
+        self.revision += 1;
         self.items = items;
         self.filtered_indices = (0..self.items.len()).collect();
         selection.select(if self.filtered_indices.is_empty() {
@@ -369,7 +372,20 @@ impl<T: PanelItem + 'static> ListPanel<T> {
     }
 
     pub fn set_repo_context(&mut self, owner: &str, repo: &str) {
-        self.data.set_repo(owner.to_string(), repo.to_string());
+        if self.data.owner_repo() != Some((owner, repo)) {
+            self.data.set_repo(owner.to_string(), repo.to_string());
+            self.data.load_items(Vec::new(), &mut self.selection);
+            self.detail_pane.reset_scroll();
+            self.item.on_loaded(&mut self.data);
+        }
+    }
+
+    pub fn data_context(&self) -> (Option<crate::cmd::RepoContext>, u64) {
+        let ctx = self
+            .data
+            .owner_repo()
+            .map(|(owner, repo)| crate::cmd::RepoContext::new(owner, repo));
+        (ctx, self.data.revision)
     }
 
     pub fn load_data(&mut self, payload: ApiPayload) {

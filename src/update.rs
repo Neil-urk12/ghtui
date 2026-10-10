@@ -26,8 +26,7 @@ pub enum Message {
     LoginInit(LoginState),
     LoginSuccess(String),
     LoginError(String),
-    ApiLoaded(crate::event::ApiPayload),
-    ApiError(String),
+    CmdCompleted(crate::cmd::CmdCompletion),
     RateLimitUpdate {
         remaining: Option<u32>,
         reset_secs: Option<u64>,
@@ -59,8 +58,7 @@ impl fmt::Debug for Message {
             Message::LoginInit(_) => write!(f, "LoginInit"),
             Message::LoginSuccess(_) => write!(f, "LoginSuccess"),
             Message::LoginError(msg) => write!(f, "LoginError({})", msg),
-            Message::ApiLoaded(_) => write!(f, "ApiLoaded"),
-            Message::ApiError(ref msg) => write!(f, "ApiError({})", msg),
+            Message::CmdCompleted(_) => write!(f, "CmdCompleted"),
             Message::RateLimitUpdate {
                 remaining,
                 reset_secs,
@@ -83,14 +81,14 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
         Message::NextTab => {
             app.search.active = false;
             app.next_tab();
-            fetch_and_set_loading(app)
+            fetch_cmd(app)
         }
         Message::PrevTab => {
             app.search.active = false;
             app.prev_tab();
-            fetch_and_set_loading(app)
+            fetch_cmd(app)
         }
-        Message::Refresh => fetch_and_set_loading(app),
+        Message::Refresh => fetch_cmd(app),
 
         Message::SearchActivate => {
             app.search.active = true;
@@ -185,17 +183,12 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
             match cmd {
                 Cmd::OpenRepoDetail { ctx } => {
                     app.active_panel = PanelKind::Pulls;
-                    for entry in app.panels.values_mut() {
-                        entry.set_repo_context(&ctx.owner, &ctx.repo);
+                    for kind in [PanelKind::Pulls, PanelKind::Issues, PanelKind::Actions] {
+                        if let Some(entry) = app.panels.get_mut(&kind) {
+                            entry.set_repo_context(&ctx.owner, &ctx.repo);
+                        }
                     }
-                    let cmd = Cmd::FetchPulls {
-                        ctx: ctx.clone(),
-                        state: "open".to_string(),
-                    };
-                    if let Some(entry) = app.panels.get_mut(&PanelKind::Pulls) {
-                        entry.set_loading(true);
-                    }
-                    cmd
+                    fetch_cmd(app)
                 }
                 Cmd::None => Cmd::None,
                 Cmd::CycleRepoSort => {
@@ -205,11 +198,6 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
                         p.item.cycle_sort(&mut p.data, &mut p.selection);
                     }
                     Cmd::None
-                }
-                Cmd::FetchPrComments { .. } => {
-                    // Don't set loading on the whole panel — only detail pane
-                    // needs to refresh when navigating between PRs.
-                    cmd
                 }
                 other => match other.behavior() {
                     CmdBehavior::Destructive { label } => {
@@ -225,12 +213,7 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
                         });
                         Cmd::None
                     }
-                    CmdBehavior::Benign => {
-                        if let Some(entry) = app.panels.get_mut(&app.active_panel) {
-                            entry.set_loading(true);
-                        }
-                        other
-                    }
+                    CmdBehavior::Benign => other,
                 },
             }
         }
@@ -253,9 +236,6 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
             });
             app.login = None;
             app.state = AppState::Main;
-            if let Some(entry) = app.panels.get_mut(&PanelKind::Repos) {
-                entry.set_loading(true);
-            }
             Cmd::FetchRepos
         }
         Message::LoginError(msg) => {
@@ -274,11 +254,7 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
 
         Message::ConfirmYes => {
             if let Some(confirm) = app.confirmation.take() {
-                let cmd = confirm.pending_cmd;
-                if let Some(entry) = app.panels.get_mut(&app.active_panel) {
-                    entry.set_loading(true);
-                }
-                cmd
+                confirm.pending_cmd
             } else {
                 Cmd::None
             }
@@ -288,54 +264,7 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
             Cmd::None
         }
 
-        Message::ApiLoaded(payload) => {
-            use crate::event::ApiPayload;
-            if let ApiPayload::Success(ref msg) = payload {
-                app.success_toast = Some(msg.clone());
-                app.toast_tick = 0;
-            }
-            // Route by payload type to the correct panel, not just active panel.
-            // This handles the case where a fetch response arrives after the user
-            // has switched tabs — data still loads into the owning panel.
-            let target = match &payload {
-                ApiPayload::Repos(_) => Some(PanelKind::Repos),
-                ApiPayload::Pulls(_) => Some(PanelKind::Pulls),
-                ApiPayload::Issues(_) => Some(PanelKind::Issues),
-                ApiPayload::Notifications(_) => Some(PanelKind::Notifications),
-                ApiPayload::Actions(_) => Some(PanelKind::Actions),
-                ApiPayload::Success(_) => None,
-                ApiPayload::PrComments { .. } => Some(PanelKind::Pulls),
-            };
-            if let Some(kind) = target {
-                if let Some(entry) = app.panels.get_mut(&kind) {
-                    // Handle PrComments specially
-                    if let ApiPayload::PrComments {
-                        pr_number,
-                        comments,
-                        reviews,
-                        code_comments,
-                        files,
-                    } = payload
-                    {
-                        entry.update_pr_comments(
-                            pr_number,
-                            comments,
-                            reviews,
-                            code_comments,
-                            files,
-                        );
-                    } else {
-                        entry.load_data(payload);
-                    }
-                }
-            }
-            Cmd::None
-        }
-        Message::ApiError(msg) => {
-            app.error_toast = Some(msg);
-            app.toast_tick = 0;
-            Cmd::None
-        }
+        Message::CmdCompleted(completion) => crate::cmd::complete(app, completion),
         Message::RateLimitUpdate {
             remaining,
             reset_secs,
@@ -359,18 +288,11 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
     }
 }
 
-fn fetch_and_set_loading(app: &mut App) -> Cmd {
-    let cmd = app
-        .panels
+fn fetch_cmd(app: &App) -> Cmd {
+    app.panels
         .get(&app.active_panel)
         .map(|entry| entry.fetch_cmd())
-        .unwrap_or(Cmd::None);
-    if !matches!(cmd, Cmd::None) {
-        if let Some(entry) = app.panels.get_mut(&app.active_panel) {
-            entry.set_loading(true);
-        }
-    }
-    cmd
+        .unwrap_or(Cmd::None)
 }
 
 #[cfg(test)]
@@ -380,6 +302,36 @@ mod tests {
 
     fn test_app() -> App {
         App::new(Config::default(), Some("test-token".into())).unwrap()
+    }
+
+    fn receive(app: &mut App, payload: crate::event::ApiPayload) -> Cmd {
+        use crate::event::ApiPayload;
+        let panel = match &payload {
+            ApiPayload::Repos(_) => PanelKind::Repos,
+            ApiPayload::Pulls(_) => PanelKind::Pulls,
+            ApiPayload::Issues(_) => PanelKind::Issues,
+            ApiPayload::Notifications(_) | ApiPayload::Success(_) => PanelKind::Notifications,
+            ApiPayload::Actions(_) => PanelKind::Actions,
+            ApiPayload::PrComments { .. } => panic!("use a registered detail request"),
+        };
+        let entry = app.panels.get_mut(&panel).unwrap();
+        if matches!(
+            panel,
+            PanelKind::Pulls | PanelKind::Issues | PanelKind::Actions
+        ) && entry.data_context().0.is_none()
+        {
+            entry.set_repo_context("o", "r");
+        }
+        let cmd = if matches!(payload, ApiPayload::Success(_)) {
+            Cmd::MarkAllNotificationsRead
+        } else {
+            entry.fetch_cmd()
+        };
+        let pending = crate::cmd::start(app, cmd).unwrap();
+        update(
+            app,
+            Message::CmdCompleted(pending.ticket.finish(Ok(payload))),
+        )
     }
 
     #[test]
@@ -496,7 +448,7 @@ mod tests {
             name: "test/repo".into(),
             ..Default::default()
         }];
-        update(&mut app, Message::ApiLoaded(ApiPayload::Repos(repos)));
+        receive(&mut app, ApiPayload::Repos(repos));
 
         // Verify data landed in Repos panel
         if let Some(entry) = app.panels.get(&PanelKind::Repos) {
@@ -515,17 +467,18 @@ mod tests {
     fn api_loaded_success_shows_toast() {
         use crate::event::ApiPayload;
         let mut app = test_app();
-        update(
-            &mut app,
-            Message::ApiLoaded(ApiPayload::Success("done".into())),
-        );
+        receive(&mut app, ApiPayload::Success("done".into()));
         assert_eq!(app.success_toast.as_deref(), Some("done"));
     }
 
     #[test]
     fn api_error_shows_toast() {
         let mut app = test_app();
-        update(&mut app, Message::ApiError("fail".into()));
+        let pending = crate::cmd::start(&mut app, Cmd::FetchRepos).unwrap();
+        update(
+            &mut app,
+            Message::CmdCompleted(pending.ticket.finish(Err("fail".into()))),
+        );
         assert_eq!(app.error_toast.as_deref(), Some("fail"));
     }
 
@@ -574,7 +527,7 @@ mod tests {
                 ..Default::default()
             },
         ];
-        update(&mut app, Message::ApiLoaded(ApiPayload::Repos(repos)));
+        receive(&mut app, ApiPayload::Repos(repos));
 
         // All 3 repos visible initially
         if let Some(entry) = app.panels.get(&PanelKind::Repos) {
@@ -627,7 +580,7 @@ mod tests {
                 ..Default::default()
             },
         ];
-        update(&mut app, Message::ApiLoaded(ApiPayload::Repos(repos)));
+        receive(&mut app, ApiPayload::Repos(repos));
 
         update(&mut app, Message::SearchActivate);
         for ch in "octo".chars() {
@@ -680,7 +633,7 @@ mod tests {
                 ..Default::default()
             },
         ];
-        update(&mut app, Message::ApiLoaded(ApiPayload::Pulls(pulls)));
+        receive(&mut app, ApiPayload::Pulls(pulls));
 
         update(&mut app, Message::SearchActivate);
         for ch in "dark".chars() {
@@ -726,7 +679,7 @@ mod tests {
                 ..Default::default()
             },
         ];
-        update(&mut app, Message::ApiLoaded(ApiPayload::Repos(repos)));
+        receive(&mut app, ApiPayload::Repos(repos));
 
         // Apply filter
         update(&mut app, Message::SearchActivate);
@@ -768,7 +721,7 @@ mod tests {
             name: "octocat/hello".into(),
             ..Default::default()
         }];
-        update(&mut app, Message::ApiLoaded(ApiPayload::Repos(repos)));
+        receive(&mut app, ApiPayload::Repos(repos));
 
         update(&mut app, Message::SearchActivate);
         for ch in "octo".chars() {
@@ -802,7 +755,7 @@ mod tests {
                 ..Default::default()
             },
         ];
-        update(&mut app, Message::ApiLoaded(ApiPayload::Repos(repos)));
+        receive(&mut app, ApiPayload::Repos(repos));
 
         // Activate and immediately submit (empty query)
         update(&mut app, Message::SearchActivate);
@@ -834,12 +787,9 @@ mod tests {
         update(&mut app, Message::NextTab); // Notifications
         assert_eq!(app.active_panel, PanelKind::Notifications);
 
-        // NextTab sets loading=true via fetch_and_set_loading.
+        // Complete a registered fetch before testing the filter change.
         // Simulate API response to clear it.
-        update(
-            &mut app,
-            Message::ApiLoaded(ApiPayload::Notifications(vec![])),
-        );
+        receive(&mut app, ApiPayload::Notifications(vec![]));
 
         // Verify loading is now false
         match app.panels.get(&PanelKind::Notifications) {
@@ -853,7 +803,7 @@ mod tests {
         }
 
         // Press 'a' on notifications panel — returns FetchNotifications (non-destructive)
-        // This flows through the non-destructive else-if branch which sets loading = true
+        // The returned Cmd starts loading when registered below.
         let cmd = update(&mut app, Message::PanelKeyInput('a'));
         assert!(
             matches!(cmd, Cmd::FetchNotifications { .. }),
@@ -861,7 +811,10 @@ mod tests {
             cmd
         );
 
-        // Verify loading was set to true by the non-destructive path
+        // Register the returned Cmd to begin loading.
+        let _pending = crate::cmd::start(&mut app, cmd).unwrap();
+
+        // Verify loading was set to true by the Cmd lifecycle.
         match app.panels.get(&PanelKind::Notifications) {
             Some(crate::app::PanelState::Notifications(panel)) => {
                 assert!(
@@ -898,21 +851,18 @@ mod tests {
                 ..Default::default()
             },
         ];
-        update(
-            &mut app,
-            Message::ApiLoaded(ApiPayload::Pulls(pulls.clone())),
-        );
+        receive(&mut app, ApiPayload::Pulls(pulls.clone()));
 
         // Switch to Pulls panel
         update(&mut app, Message::NextTab);
         assert_eq!(app.active_panel, PanelKind::Pulls);
 
-        // NextTab triggers fetch_and_set_loading which sets loading=true.
+        // Complete the list fetch before testing detail navigation.
         // Simulate API response to clear it.
-        update(&mut app, Message::ApiLoaded(ApiPayload::Pulls(vec![])));
+        receive(&mut app, ApiPayload::Pulls(vec![]));
 
         // Reload PRs so items exist for navigation
-        update(&mut app, Message::ApiLoaded(ApiPayload::Pulls(pulls)));
+        receive(&mut app, ApiPayload::Pulls(pulls));
 
         // Verify loading is false
         match app.panels.get(&PanelKind::Pulls) {
@@ -933,7 +883,8 @@ mod tests {
             cmd
         );
 
-        // Verify loading is STILL false (not set to true)
+        // Register detail work and verify list loading stays false.
+        let _pending = crate::cmd::start(&mut app, cmd).unwrap();
         match app.panels.get(&PanelKind::Pulls) {
             Some(crate::app::PanelState::Pulls(panel)) => {
                 assert!(
@@ -959,7 +910,7 @@ mod tests {
             title: "Fix bug".into(),
             ..Default::default()
         }];
-        update(&mut app, Message::ApiLoaded(ApiPayload::Pulls(pulls)));
+        receive(&mut app, ApiPayload::Pulls(pulls));
         update(&mut app, Message::NextTab);
         assert_eq!(app.active_panel, PanelKind::Pulls);
 
@@ -1001,7 +952,7 @@ mod tests {
             title: "Fix bug".into(),
             ..Default::default()
         }];
-        update(&mut app, Message::ApiLoaded(ApiPayload::Pulls(pulls)));
+        receive(&mut app, ApiPayload::Pulls(pulls));
         update(&mut app, Message::NextTab);
         assert_eq!(app.active_panel, PanelKind::Pulls);
 
@@ -1041,7 +992,7 @@ mod tests {
         assert_eq!(app.active_panel, PanelKind::Pulls);
 
         // Clear any PRs that may have loaded from NextTab fetch
-        update(&mut app, Message::ApiLoaded(ApiPayload::Pulls(vec![])));
+        receive(&mut app, ApiPayload::Pulls(vec![]));
 
         // Press 'f' — should work even with no selection
         update(&mut app, Message::PanelKeyInput('f'));
@@ -1068,7 +1019,7 @@ mod tests {
         assert_eq!(app.active_panel, PanelKind::Pulls);
 
         // Clear any PRs that may have loaded from NextTab fetch
-        update(&mut app, Message::ApiLoaded(ApiPayload::Pulls(vec![])));
+        receive(&mut app, ApiPayload::Pulls(vec![]));
 
         // Press 'c' — should work even with no selection
         update(&mut app, Message::PanelKeyInput('c'));

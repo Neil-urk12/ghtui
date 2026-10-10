@@ -113,6 +113,7 @@ impl PanelState {
     panel_delegate!(fn fetch_cmd(&self) -> crate::cmd::Cmd);
     panel_delegate!(fn set_loading(&mut self, loading: bool));
     panel_delegate!(fn set_repo_context(&mut self, owner: &str, repo: &str));
+    panel_delegate!(fn data_context(&self) -> (Option<crate::cmd::RepoContext>, u64));
     panel_delegate!(fn load_data(&mut self, payload: crate::event::ApiPayload));
     panel_delegate!(fn scroll_detail_up(&mut self));
     panel_delegate!(fn scroll_detail_down(&mut self));
@@ -148,7 +149,6 @@ impl PanelState {
                 };
             }
         }
-        self.set_loading(false);
     }
 
     // Pulls-only detail pane toggles.
@@ -217,6 +217,7 @@ pub struct App {
     pub rate_reset_secs: Option<u64>,
     pub client: Arc<GitHubClient>,
     pub confirmation: Option<ConfirmState>,
+    pub commands: crate::cmd::CmdState,
 }
 
 impl App {
@@ -285,6 +286,7 @@ impl App {
             rate_reset_secs: None,
             client,
             confirmation: None,
+            commands: crate::cmd::CmdState::default(),
         })
     }
 

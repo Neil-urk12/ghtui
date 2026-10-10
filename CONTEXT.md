@@ -16,13 +16,13 @@
 
 **ListView** — The reusable split-pane widget (list on left, detail on right). Renders loading, empty, and normal states.
 
-**Cmd** — A declarative side effect returned by update. Spawned asynchronously by the run loop.
+**Cmd** — A requested side effect belonging to an originating Panel and, where applicable, a repository. Its outcome belongs to that origin regardless of which tab is currently shown.
 
-**Message** — A state transition instruction processed by update. Produced by event::process_event from raw Events.
+**Message** — An instruction to transition the app's state, including input decisions and Cmd outcomes.
 
-**Event** — A raw input from one of three sources: crossterm keys, API results, or ticks.
+**Event** — Raw terminal input or a periodic tick.
 
-**ApiPayload** — A typed API response routed to the owning panel by variant, not by active tab.
+**ApiPayload** — Data or an outcome returned from GitHub for a Cmd. Its owning Panel is independent of the tab currently shown.
 **Status Bar** — Bottom row of the terminal. Shows per-panel key hints (left) and global hints (right).
 
 **Detail Footer** — Muted key-hint line appended below the detail pane content.
