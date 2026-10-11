@@ -6,6 +6,7 @@ use crate::cmd::{Cmd, RepoContext};
 use crate::domain::WorkflowRun;
 use crate::theme::Theme;
 use crate::util::format::relative_time;
+use crate::widgets::detail_pane::DetailPane;
 use crate::widgets::empty_state::EmptyState;
 use crate::widgets::list_view::LeftContent;
 
@@ -149,6 +150,7 @@ impl PanelItem for ActionsPanelItem {
         key: char,
         selected: Option<&Self::Item>,
         data: &ListPanelData<Self::Item>,
+        _detail_pane: &mut DetailPane,
     ) -> Option<Cmd> {
         // Compute selected index via pointer comparison into data.items
         let selected_index =
@@ -411,7 +413,7 @@ mod tests {
         let mut item = ActionsPanelItem::default();
 
         let selected = data.items.first();
-        let cmd = item.handle_key('r', selected, &data);
+        let cmd = item.handle_key('r', selected, &data, &mut DetailPane::new());
 
         assert!(cmd.is_some());
         assert!(matches!(
@@ -427,7 +429,7 @@ mod tests {
         let mut item = ActionsPanelItem::default();
 
         let selected = data.items.first();
-        let cmd = item.handle_key('c', selected, &data);
+        let cmd = item.handle_key('c', selected, &data, &mut DetailPane::new());
 
         assert!(cmd.is_some());
         assert!(matches!(
@@ -443,7 +445,7 @@ mod tests {
         let mut item = ActionsPanelItem::default();
 
         let selected = data.items.first();
-        let cmd = item.handle_key('r', selected, &data);
+        let cmd = item.handle_key('r', selected, &data, &mut DetailPane::new());
 
         assert!(cmd.is_none());
     }
@@ -454,7 +456,7 @@ mod tests {
         let mut item = ActionsPanelItem::default();
 
         let selected = data.items.first();
-        let cmd = item.handle_key('c', selected, &data);
+        let cmd = item.handle_key('c', selected, &data, &mut DetailPane::new());
 
         assert!(cmd.is_none());
     }
@@ -464,10 +466,10 @@ mod tests {
         let data = make_data();
         let mut item = ActionsPanelItem::default();
 
-        let cmd = item.handle_key('r', None, &data);
+        let cmd = item.handle_key('r', None, &data, &mut DetailPane::new());
         assert!(cmd.is_none());
 
-        let cmd = item.handle_key('c', None, &data);
+        let cmd = item.handle_key('c', None, &data, &mut DetailPane::new());
         assert!(cmd.is_none());
     }
 
@@ -481,12 +483,12 @@ mod tests {
 
         // Press enter on item 0 -> expand
         let selected = data.items.first();
-        let cmd = item.handle_key('\n', selected, &data);
+        let cmd = item.handle_key('\n', selected, &data, &mut DetailPane::new());
         assert!(cmd.is_none());
         assert_eq!(item.expanded_run, Some(0));
 
         // Press enter again -> collapse
-        let cmd = item.handle_key('\n', selected, &data);
+        let cmd = item.handle_key('\n', selected, &data, &mut DetailPane::new());
         assert!(cmd.is_none());
         assert_eq!(item.expanded_run, None);
     }

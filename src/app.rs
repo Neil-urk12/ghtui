@@ -4,67 +4,14 @@ use std::sync::Arc;
 
 use crate::api::client::GitHubClient;
 use crate::config::Config;
-use crate::domain::{FilterState, PrCodeComment, PrComment, PrFile, PrReview};
+use crate::domain::FilterState;
 use crate::panels::login::LoginState;
-use crate::panels::panel::{ListPanel, ListPanelData, SelectionState};
+use crate::panels::panel::{ListPanel, ListPanelData, Panel, SelectionState};
 use crate::panels::{
     ActionsPanelItem, IssuesPanelItem, NotificationsPanelItem, PullsPanelItem, ReposPanelItem,
 };
 use crate::theme::Theme;
 use crate::widgets::detail_pane::DetailPane;
-
-/// Macro to delegate method calls across all PanelState variants.
-/// Eliminates repetitive match statements for common panel operations.
-macro_rules! panel_delegate {
-    // &mut self with args, returning a value
-    (fn $method:ident(&mut self, $($arg:ident : $ty:ty),*) -> $ret:ty) => {
-        pub fn $method(&mut self, $($arg: $ty),*) -> $ret {
-            match self {
-                PanelState::Repos(p) => p.$method($($arg),*),
-                PanelState::Pulls(p) => p.$method($($arg),*),
-                PanelState::Issues(p) => p.$method($($arg),*),
-                PanelState::Notifications(p) => p.$method($($arg),*),
-                PanelState::Actions(p) => p.$method($($arg),*),
-            }
-        }
-    };
-    // &mut self with args, returning nothing
-    (fn $method:ident(&mut self, $($arg:ident : $ty:ty),*)) => {
-        pub fn $method(&mut self, $($arg: $ty),*) {
-            match self {
-                PanelState::Repos(p) => p.$method($($arg),*),
-                PanelState::Pulls(p) => p.$method($($arg),*),
-                PanelState::Issues(p) => p.$method($($arg),*),
-                PanelState::Notifications(p) => p.$method($($arg),*),
-                PanelState::Actions(p) => p.$method($($arg),*),
-            }
-        }
-    };
-    // &mut self without args, returning nothing
-    (fn $method:ident(&mut self)) => {
-        pub fn $method(&mut self) {
-            match self {
-                PanelState::Repos(p) => p.$method(),
-                PanelState::Pulls(p) => p.$method(),
-                PanelState::Issues(p) => p.$method(),
-                PanelState::Notifications(p) => p.$method(),
-                PanelState::Actions(p) => p.$method(),
-            }
-        }
-    };
-    // &self without args, returning a value
-    (fn $method:ident(&self) -> $ret:ty) => {
-        pub fn $method(&self) -> $ret {
-            match self {
-                PanelState::Repos(p) => p.$method(),
-                PanelState::Pulls(p) => p.$method(),
-                PanelState::Issues(p) => p.$method(),
-                PanelState::Notifications(p) => p.$method(),
-                PanelState::Actions(p) => p.$method(),
-            }
-        }
-    };
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PanelKind {
@@ -93,80 +40,6 @@ impl fmt::Display for PanelKind {
             PanelKind::Issues => write!(f, "Issues"),
             PanelKind::Notifications => write!(f, "Notif"),
             PanelKind::Actions => write!(f, "Actions"),
-        }
-    }
-}
-
-pub enum PanelState {
-    Repos(ListPanel<ReposPanelItem>),
-    Pulls(ListPanel<PullsPanelItem>),
-    Issues(ListPanel<IssuesPanelItem>),
-    Notifications(ListPanel<NotificationsPanelItem>),
-    Actions(ListPanel<ActionsPanelItem>),
-}
-
-impl PanelState {
-    // Delegated methods — all variants share the same ListPanel<T> API.
-    panel_delegate!(fn apply_filter(&mut self, query: &str));
-    panel_delegate!(fn handle_key(&mut self, key: char) -> Option<crate::cmd::Cmd>);
-    panel_delegate!(fn render(&mut self, frame: &mut ratatui::Frame, area: ratatui::prelude::Rect, theme: &crate::theme::Theme, tick: u64));
-    panel_delegate!(fn fetch_cmd(&self) -> crate::cmd::Cmd);
-    panel_delegate!(fn set_loading(&mut self, loading: bool));
-    panel_delegate!(fn set_repo_context(&mut self, owner: &str, repo: &str));
-    panel_delegate!(fn data_context(&self) -> (Option<crate::cmd::RepoContext>, u64));
-    panel_delegate!(fn load_data(&mut self, payload: crate::event::ApiPayload));
-    panel_delegate!(fn scroll_detail_up(&mut self));
-    panel_delegate!(fn scroll_detail_down(&mut self));
-    panel_delegate!(fn selected_display(&self) -> Option<String>);
-
-    /// Update PR with comment data (Pulls panel only).
-    pub fn update_pr_comments(
-        &mut self,
-        pr_number: u64,
-        comments: Result<Vec<PrComment>, String>,
-        reviews: Result<Vec<PrReview>, String>,
-        code_comments: Result<Vec<PrCodeComment>, String>,
-        files: Result<Vec<PrFile>, String>,
-    ) {
-        if let PanelState::Pulls(p) = self {
-            if let Some(pr) = p.data.items.iter_mut().find(|pr| pr.number == pr_number) {
-                // On success: store data, clear error. On error: clear stale data, store error.
-                (pr.comments, pr.comment_errors) = match comments {
-                    Ok(v) => (Some(v), None),
-                    Err(e) => (None, Some(e)),
-                };
-                (pr.reviews, pr.review_errors) = match reviews {
-                    Ok(v) => (Some(v), None),
-                    Err(e) => (None, Some(e)),
-                };
-                (pr.code_comments, pr.code_comment_errors) = match code_comments {
-                    Ok(v) => (Some(v), None),
-                    Err(e) => (None, Some(e)),
-                };
-                (pr.files, pr.file_errors) = match files {
-                    Ok(v) => (Some(v), None),
-                    Err(e) => (None, Some(e)),
-                };
-            }
-        }
-    }
-
-    // Pulls-only detail pane toggles.
-    pub fn toggle_diff(&mut self) {
-        if let PanelState::Pulls(p) = self {
-            p.detail_pane.toggle_diff();
-        }
-    }
-
-    pub fn toggle_fullscreen(&mut self) {
-        if let PanelState::Pulls(p) = self {
-            p.detail_pane.toggle_fullscreen();
-        }
-    }
-
-    pub fn toggle_collapse(&mut self) {
-        if let PanelState::Pulls(p) = self {
-            p.detail_pane.toggle_collapse();
         }
     }
 }
@@ -203,7 +76,7 @@ pub struct App {
     pub state: AppState,
     pub login: Option<LoginState>,
     pub active_panel: PanelKind,
-    pub panels: HashMap<PanelKind, PanelState>,
+    pub panels: HashMap<PanelKind, Box<dyn Panel>>,
     pub config: Config,
     pub theme: Theme,
     pub search: SearchState,
@@ -230,11 +103,14 @@ impl App {
         };
 
         // Apply config defaults
-        let mut panels = HashMap::new();
-        panels.insert(PanelKind::Repos, PanelState::Repos(ListPanel::default()));
+        let mut panels: HashMap<PanelKind, Box<dyn Panel>> = HashMap::new();
+        panels.insert(
+            PanelKind::Repos,
+            Box::new(ListPanel::<ReposPanelItem>::default()),
+        );
         panels.insert(
             PanelKind::Pulls,
-            PanelState::Pulls(ListPanel {
+            Box::new(ListPanel {
                 data: ListPanelData::new(),
                 selection: SelectionState::table(),
                 detail_pane: DetailPane::new(),
@@ -243,7 +119,7 @@ impl App {
         );
         panels.insert(
             PanelKind::Issues,
-            PanelState::Issues(ListPanel {
+            Box::new(ListPanel {
                 data: ListPanelData::new(),
                 selection: SelectionState::list(),
                 detail_pane: DetailPane::new(),
@@ -254,7 +130,7 @@ impl App {
         );
         panels.insert(
             PanelKind::Notifications,
-            PanelState::Notifications(ListPanel {
+            Box::new(ListPanel {
                 data: ListPanelData::new(),
                 selection: SelectionState::list(),
                 detail_pane: DetailPane::new(),
@@ -265,7 +141,7 @@ impl App {
         );
         panels.insert(
             PanelKind::Actions,
-            PanelState::Actions(ListPanel::default()),
+            Box::new(ListPanel::<ActionsPanelItem>::default()),
         );
 
         Ok(Self {
@@ -304,6 +180,15 @@ impl App {
             .position(|&p| p == self.active_panel)
             .unwrap_or(0);
         self.active_panel = PanelKind::ALL[(idx + PanelKind::ALL.len() - 1) % PanelKind::ALL.len()];
+    }
+
+    #[allow(dead_code)]
+    pub fn panel<T: 'static>(&self, kind: PanelKind) -> Option<&T> {
+        self.panels.get(&kind)?.as_any().downcast_ref::<T>()
+    }
+
+    pub fn panel_mut<T: 'static>(&mut self, kind: PanelKind) -> Option<&mut T> {
+        self.panels.get_mut(&kind)?.as_any_mut().downcast_mut::<T>()
     }
 }
 

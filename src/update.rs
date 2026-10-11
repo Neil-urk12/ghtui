@@ -150,31 +150,6 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
                 }
                 return Cmd::None;
             }
-            // Handle 'd' toggle for diff view (Pulls panel only)
-            if c == 'd' && app.active_panel == PanelKind::Pulls {
-                if let Some(entry) = app.panels.get_mut(&app.active_panel) {
-                    if let crate::app::PanelState::Pulls(ref panel) = entry {
-                        if panel.data.selected(&panel.selection).is_some() {
-                            entry.toggle_diff();
-                        }
-                    }
-                }
-                return Cmd::None;
-            }
-            // Handle 'f' toggle for fullscreen detail (Pulls panel only)
-            if c == 'f' && app.active_panel == PanelKind::Pulls {
-                if let Some(entry) = app.panels.get_mut(&app.active_panel) {
-                    entry.toggle_fullscreen();
-                }
-                return Cmd::None;
-            }
-            // Handle 'c' toggle for collapsed detail (Pulls panel only)
-            if c == 'c' && app.active_panel == PanelKind::Pulls {
-                if let Some(entry) = app.panels.get_mut(&app.active_panel) {
-                    entry.toggle_collapse();
-                }
-                return Cmd::None;
-            }
             let cmd = if let Some(entry) = app.panels.get_mut(&app.active_panel) {
                 entry.handle_key(c).unwrap_or(Cmd::None)
             } else {
@@ -192,9 +167,7 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
                 }
                 Cmd::None => Cmd::None,
                 Cmd::CycleRepoSort => {
-                    if let Some(crate::app::PanelState::Repos(ref mut p)) =
-                        app.panels.get_mut(&PanelKind::Repos)
-                    {
+                    if let Some(p) = app.panel_mut::<crate::panels::ReposPanel>(PanelKind::Repos) {
                         p.item.cycle_sort(&mut p.data, &mut p.selection);
                     }
                     Cmd::None
@@ -299,6 +272,7 @@ fn fetch_cmd(app: &App) -> Cmd {
 mod tests {
     use super::*;
     use crate::config::Config;
+    use crate::panels::{NotificationsPanel, PullsPanel, ReposPanel};
 
     fn test_app() -> App {
         App::new(Config::default(), Some("test-token".into())).unwrap()
@@ -451,16 +425,9 @@ mod tests {
         receive(&mut app, ApiPayload::Repos(repos));
 
         // Verify data landed in Repos panel
-        if let Some(entry) = app.panels.get(&PanelKind::Repos) {
-            if let crate::app::PanelState::Repos(panel) = entry {
-                assert_eq!(panel.data.items.len(), 1);
-                assert_eq!(panel.data.items[0].name, "test/repo");
-            } else {
-                panic!("Expected Repos panel");
-            }
-        } else {
-            panic!("Expected PanelState for Repos");
-        }
+        let panel: &ReposPanel = app.panel(PanelKind::Repos).expect("Expected Repos panel");
+        assert_eq!(panel.data.items.len(), 1);
+        assert_eq!(panel.data.items[0].name, "test/repo");
     }
 
     #[test]
@@ -530,13 +497,8 @@ mod tests {
         receive(&mut app, ApiPayload::Repos(repos));
 
         // All 3 repos visible initially
-        if let Some(entry) = app.panels.get(&PanelKind::Repos) {
-            if let crate::app::PanelState::Repos(panel) = entry {
-                assert_eq!(panel.data.filtered_indices.len(), 3);
-            } else {
-                panic!("Expected Repos panel");
-            }
-        }
+        let panel: &ReposPanel = app.panel(PanelKind::Repos).expect("Expected Repos panel");
+        assert_eq!(panel.data.filtered_indices.len(), 3);
 
         // Activate search, type query, submit
         update(&mut app, Message::SearchActivate);
@@ -547,17 +509,12 @@ mod tests {
 
         // After submit: search closed, filtered_indices should be reduced
         assert!(!app.search.active);
-        if let Some(entry) = app.panels.get(&PanelKind::Repos) {
-            if let crate::app::PanelState::Repos(panel) = entry {
-                assert!(
-                    panel.data.filtered_indices.len() < 3,
-                    "Expected filtered_indices to be less than 3 after search, got {}",
-                    panel.data.filtered_indices.len()
-                );
-            } else {
-                panic!("Expected Repos panel");
-            }
-        }
+        let panel: &ReposPanel = app.panel(PanelKind::Repos).expect("Expected Repos panel");
+        assert!(
+            panel.data.filtered_indices.len() < 3,
+            "Expected filtered_indices to be less than 3 after search, got {}",
+            panel.data.filtered_indices.len()
+        );
     }
 
     #[test]
@@ -588,22 +545,17 @@ mod tests {
         }
         update(&mut app, Message::SearchSubmit);
 
-        if let Some(entry) = app.panels.get(&PanelKind::Repos) {
-            if let crate::app::PanelState::Repos(panel) = entry {
-                assert_eq!(
-                    panel.data.filtered_indices.len(),
-                    1,
-                    "Expected 1 match for 'octo', got {}",
-                    panel.data.filtered_indices.len()
-                );
-                assert_eq!(
-                    panel.data.items[panel.data.filtered_indices[0]].name,
-                    "octocat/hello"
-                );
-            } else {
-                panic!("Expected Repos panel");
-            }
-        }
+        let panel: &ReposPanel = app.panel(PanelKind::Repos).expect("Expected Repos panel");
+        assert_eq!(
+            panel.data.filtered_indices.len(),
+            1,
+            "Expected 1 match for 'octo', got {}",
+            panel.data.filtered_indices.len()
+        );
+        assert_eq!(
+            panel.data.items[panel.data.filtered_indices[0]].name,
+            "octocat/hello"
+        );
     }
 
     #[test]
@@ -641,22 +593,17 @@ mod tests {
         }
         update(&mut app, Message::SearchSubmit);
 
-        if let Some(entry) = app.panels.get(&PanelKind::Pulls) {
-            if let crate::app::PanelState::Pulls(panel) = entry {
-                assert_eq!(
-                    panel.data.filtered_indices.len(),
-                    1,
-                    "Expected 1 match for 'dark', got {}",
-                    panel.data.filtered_indices.len()
-                );
-                assert_eq!(
-                    panel.data.items[panel.data.filtered_indices[0]].title,
-                    "Add dark mode"
-                );
-            } else {
-                panic!("Expected Pulls panel");
-            }
-        }
+        let panel: &PullsPanel = app.panel(PanelKind::Pulls).expect("Expected Pulls panel");
+        assert_eq!(
+            panel.data.filtered_indices.len(),
+            1,
+            "Expected 1 match for 'dark', got {}",
+            panel.data.filtered_indices.len()
+        );
+        assert_eq!(
+            panel.data.items[panel.data.filtered_indices[0]].title,
+            "Add dark mode"
+        );
     }
 
     #[test]
@@ -689,26 +636,20 @@ mod tests {
         update(&mut app, Message::SearchSubmit);
 
         // Verify filtered
-        if let Some(crate::app::PanelState::Repos(panel)) = app.panels.get(&PanelKind::Repos) {
-            assert_eq!(panel.data.filtered_indices.len(), 1);
-        }
+        let panel: &ReposPanel = app.panel(PanelKind::Repos).expect("Expected Repos panel");
+        assert_eq!(panel.data.filtered_indices.len(), 1);
 
         // Clear search
         update(&mut app, Message::SearchClear);
 
         // Verify all items restored
-        if let Some(entry) = app.panels.get(&PanelKind::Repos) {
-            if let crate::app::PanelState::Repos(panel) = entry {
-                assert_eq!(
-                    panel.data.filtered_indices.len(),
-                    3,
-                    "Expected all 3 repos after clear, got {}",
-                    panel.data.filtered_indices.len()
-                );
-            } else {
-                panic!("Expected Repos panel");
-            }
-        }
+        let panel: &ReposPanel = app.panel(PanelKind::Repos).expect("Expected Repos panel");
+        assert_eq!(
+            panel.data.filtered_indices.len(),
+            3,
+            "Expected all 3 repos after clear, got {}",
+            panel.data.filtered_indices.len()
+        );
     }
 
     #[test]
@@ -762,18 +703,13 @@ mod tests {
         update(&mut app, Message::SearchSubmit);
 
         // All repos should still be visible
-        if let Some(entry) = app.panels.get(&PanelKind::Repos) {
-            if let crate::app::PanelState::Repos(panel) = entry {
-                assert_eq!(
-                    panel.data.filtered_indices.len(),
-                    3,
-                    "Expected all 3 repos with empty query, got {}",
-                    panel.data.filtered_indices.len()
-                );
-            } else {
-                panic!("Expected Repos panel");
-            }
-        }
+        let panel: &ReposPanel = app.panel(PanelKind::Repos).expect("Expected Repos panel");
+        assert_eq!(
+            panel.data.filtered_indices.len(),
+            3,
+            "Expected all 3 repos with empty query, got {}",
+            panel.data.filtered_indices.len()
+        );
     }
 
     #[test]
@@ -792,15 +728,13 @@ mod tests {
         receive(&mut app, ApiPayload::Notifications(vec![]));
 
         // Verify loading is now false
-        match app.panels.get(&PanelKind::Notifications) {
-            Some(crate::app::PanelState::Notifications(panel)) => {
-                assert!(
-                    !panel.data.loading,
-                    "Loading should be false after API response"
-                );
-            }
-            _ => panic!("Expected Notifications panel"),
-        }
+        let panel: &NotificationsPanel = app
+            .panel(PanelKind::Notifications)
+            .expect("Expected Notifications panel");
+        assert!(
+            !panel.data.loading,
+            "Loading should be false after API response"
+        );
 
         // Press 'a' on notifications panel — returns FetchNotifications (non-destructive)
         // The returned Cmd starts loading when registered below.
@@ -815,15 +749,13 @@ mod tests {
         let _pending = crate::cmd::start(&mut app, cmd).unwrap();
 
         // Verify loading was set to true by the Cmd lifecycle.
-        match app.panels.get(&PanelKind::Notifications) {
-            Some(crate::app::PanelState::Notifications(panel)) => {
-                assert!(
-                    panel.data.loading,
-                    "Loading should be true after non-destructive cmd"
-                );
-            }
-            _ => panic!("Expected Notifications panel"),
-        }
+        let panel: &NotificationsPanel = app
+            .panel(PanelKind::Notifications)
+            .expect("Expected Notifications panel");
+        assert!(
+            panel.data.loading,
+            "Loading should be true after non-destructive cmd"
+        );
     }
 
     #[test]
@@ -865,13 +797,9 @@ mod tests {
         receive(&mut app, ApiPayload::Pulls(pulls));
 
         // Verify loading is false
-        match app.panels.get(&PanelKind::Pulls) {
-            Some(crate::app::PanelState::Pulls(panel)) => {
-                assert!(!panel.data.loading, "Loading should be false initially");
-                assert_eq!(panel.data.items.len(), 2, "Should have 2 PRs loaded");
-            }
-            _ => panic!("Expected Pulls panel"),
-        }
+        let panel: &PullsPanel = app.panel(PanelKind::Pulls).expect("Expected Pulls panel");
+        assert!(!panel.data.loading, "Loading should be false initially");
+        assert_eq!(panel.data.items.len(), 2, "Should have 2 PRs loaded");
 
         // Navigate down to trigger on_select which returns FetchPrComments
         let cmd = update(&mut app, Message::PanelKeyInput('j'));
@@ -885,15 +813,11 @@ mod tests {
 
         // Register detail work and verify list loading stays false.
         let _pending = crate::cmd::start(&mut app, cmd).unwrap();
-        match app.panels.get(&PanelKind::Pulls) {
-            Some(crate::app::PanelState::Pulls(panel)) => {
-                assert!(
-                    !panel.data.loading,
-                    "Loading should remain false for FetchPrComments"
-                );
-            }
-            _ => panic!("Expected Pulls panel"),
-        }
+        let panel: &PullsPanel = app.panel(PanelKind::Pulls).expect("Expected Pulls panel");
+        assert!(
+            !panel.data.loading,
+            "Loading should remain false for FetchPrComments"
+        );
     }
 
     #[test]
@@ -915,27 +839,18 @@ mod tests {
         assert_eq!(app.active_panel, PanelKind::Pulls);
 
         // Verify starts at Normal
-        if let Some(crate::app::PanelState::Pulls(panel)) = app.panels.get(&PanelKind::Pulls) {
-            assert_eq!(panel.detail_pane.mode, DetailPaneMode::Normal);
-        } else {
-            panic!("Expected Pulls panel");
-        }
+        let panel: &PullsPanel = app.panel(PanelKind::Pulls).expect("Expected Pulls panel");
+        assert_eq!(panel.detail_pane.mode, DetailPaneMode::Normal);
 
         // Press 'f' to enter fullscreen
         update(&mut app, Message::PanelKeyInput('f'));
-        if let Some(crate::app::PanelState::Pulls(panel)) = app.panels.get(&PanelKind::Pulls) {
-            assert_eq!(panel.detail_pane.mode, DetailPaneMode::Fullscreen);
-        } else {
-            panic!("Expected Pulls panel");
-        }
+        let panel: &PullsPanel = app.panel(PanelKind::Pulls).expect("Expected Pulls panel");
+        assert_eq!(panel.detail_pane.mode, DetailPaneMode::Fullscreen);
 
         // Press 'f' again to exit fullscreen
         update(&mut app, Message::PanelKeyInput('f'));
-        if let Some(crate::app::PanelState::Pulls(panel)) = app.panels.get(&PanelKind::Pulls) {
-            assert_eq!(panel.detail_pane.mode, DetailPaneMode::Normal);
-        } else {
-            panic!("Expected Pulls panel");
-        }
+        let panel: &PullsPanel = app.panel(PanelKind::Pulls).expect("Expected Pulls panel");
+        assert_eq!(panel.detail_pane.mode, DetailPaneMode::Normal);
     }
 
     #[test]
@@ -957,27 +872,18 @@ mod tests {
         assert_eq!(app.active_panel, PanelKind::Pulls);
 
         // Verify starts at Normal
-        if let Some(crate::app::PanelState::Pulls(panel)) = app.panels.get(&PanelKind::Pulls) {
-            assert_eq!(panel.detail_pane.mode, DetailPaneMode::Normal);
-        } else {
-            panic!("Expected Pulls panel");
-        }
+        let panel: &PullsPanel = app.panel(PanelKind::Pulls).expect("Expected Pulls panel");
+        assert_eq!(panel.detail_pane.mode, DetailPaneMode::Normal);
 
         // Press 'c' to enter collapsed
         update(&mut app, Message::PanelKeyInput('c'));
-        if let Some(crate::app::PanelState::Pulls(panel)) = app.panels.get(&PanelKind::Pulls) {
-            assert_eq!(panel.detail_pane.mode, DetailPaneMode::Collapsed);
-        } else {
-            panic!("Expected Pulls panel");
-        }
+        let panel: &PullsPanel = app.panel(PanelKind::Pulls).expect("Expected Pulls panel");
+        assert_eq!(panel.detail_pane.mode, DetailPaneMode::Collapsed);
 
         // Press 'c' again to exit collapsed
         update(&mut app, Message::PanelKeyInput('c'));
-        if let Some(crate::app::PanelState::Pulls(panel)) = app.panels.get(&PanelKind::Pulls) {
-            assert_eq!(panel.detail_pane.mode, DetailPaneMode::Normal);
-        } else {
-            panic!("Expected Pulls panel");
-        }
+        let panel: &PullsPanel = app.panel(PanelKind::Pulls).expect("Expected Pulls panel");
+        assert_eq!(panel.detail_pane.mode, DetailPaneMode::Normal);
     }
 
     #[test]
@@ -996,15 +902,12 @@ mod tests {
 
         // Press 'f' — should work even with no selection
         update(&mut app, Message::PanelKeyInput('f'));
-        if let Some(crate::app::PanelState::Pulls(panel)) = app.panels.get(&PanelKind::Pulls) {
-            assert_eq!(
-                panel.detail_pane.mode,
-                DetailPaneMode::Fullscreen,
-                "f should toggle fullscreen even with empty list"
-            );
-        } else {
-            panic!("Expected Pulls panel");
-        }
+        let panel: &PullsPanel = app.panel(PanelKind::Pulls).expect("Expected Pulls panel");
+        assert_eq!(
+            panel.detail_pane.mode,
+            DetailPaneMode::Fullscreen,
+            "f should toggle fullscreen even with empty list"
+        );
     }
 
     #[test]
@@ -1023,15 +926,12 @@ mod tests {
 
         // Press 'c' — should work even with no selection
         update(&mut app, Message::PanelKeyInput('c'));
-        if let Some(crate::app::PanelState::Pulls(panel)) = app.panels.get(&PanelKind::Pulls) {
-            assert_eq!(
-                panel.detail_pane.mode,
-                DetailPaneMode::Collapsed,
-                "c should toggle collapse even with empty list"
-            );
-        } else {
-            panic!("Expected Pulls panel");
-        }
+        let panel: &PullsPanel = app.panel(PanelKind::Pulls).expect("Expected Pulls panel");
+        assert_eq!(
+            panel.detail_pane.mode,
+            DetailPaneMode::Collapsed,
+            "c should toggle collapse even with empty list"
+        );
     }
 
     #[test]

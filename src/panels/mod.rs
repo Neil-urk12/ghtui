@@ -23,5 +23,7 @@ pub mod repos;
 pub use actions::ActionsPanelItem;
 pub use issues::IssuesPanelItem;
 pub use notifications::NotificationsPanelItem;
+#[allow(unused_imports)]
+pub use panel::{ActionsPanel, IssuesPanel, NotificationsPanel, Panel, PullsPanel, ReposPanel};
 pub use pulls::PullsPanelItem;
 pub use repos::ReposPanelItem;

@@ -6,6 +6,7 @@ use crate::cmd::Cmd;
 use crate::domain::Notification;
 use crate::theme::Theme;
 use crate::util::format::relative_time;
+use crate::widgets::detail_pane::DetailPane;
 use crate::widgets::empty_state::EmptyState;
 use crate::widgets::list_view::LeftContent;
 
@@ -98,6 +99,7 @@ impl PanelItem for NotificationsPanelItem {
         key: char,
         selected: Option<&Self::Item>,
         _data: &ListPanelData<Self::Item>,
+        _detail_pane: &mut DetailPane,
     ) -> Option<Cmd> {
         match key {
             'a' => {
@@ -244,7 +246,7 @@ mod tests {
         let mut panel = NotificationsPanelItem::default();
         let data: ListPanelData<Notification> = ListPanelData::default();
 
-        let result = panel.handle_key('m', Some(&notif), &data);
+        let result = panel.handle_key('m', Some(&notif), &data, &mut DetailPane::new());
 
         assert!(
             matches!(result, Some(Cmd::MarkNotificationRead { ref id }) if id == "notif-1"),
@@ -258,7 +260,7 @@ mod tests {
         let mut panel = NotificationsPanelItem::default();
         let data: ListPanelData<Notification> = ListPanelData::default();
 
-        let result = panel.handle_key('m', None, &data);
+        let result = panel.handle_key('m', None, &data, &mut DetailPane::new());
 
         assert!(
             result.is_none(),
@@ -272,7 +274,7 @@ mod tests {
         let mut panel = NotificationsPanelItem::default();
         let data: ListPanelData<Notification> = ListPanelData::default();
 
-        let result = panel.handle_key('M', None, &data);
+        let result = panel.handle_key('M', None, &data, &mut DetailPane::new());
 
         assert!(
             matches!(result, Some(Cmd::MarkAllNotificationsRead)),
@@ -288,7 +290,7 @@ mod tests {
 
         assert!(!panel.show_all, "show_all should default to false");
 
-        let result = panel.handle_key('a', None, &data);
+        let result = panel.handle_key('a', None, &data, &mut DetailPane::new());
 
         assert!(panel.show_all, "show_all should be toggled to true");
         assert!(
@@ -400,13 +402,11 @@ mod tests {
     fn apply_filter_is_case_insensitive() {
         let mut data = ListPanelData::<Notification>::new();
         let mut selection = SelectionState::list();
-        let items = vec![
-            Notification {
-                id: "1".into(),
-                subject_title: "Fix login bug".into(),
-                ..Default::default()
-            },
-        ];
+        let items = vec![Notification {
+            id: "1".into(),
+            subject_title: "Fix login bug".into(),
+            ..Default::default()
+        }];
         data.set_items(items, &mut selection);
         let panel = NotificationsPanelItem::default();
         panel.apply_filter(&mut data, "FIX", &mut selection);

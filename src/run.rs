@@ -197,10 +197,11 @@ fn spawn_cmd(cmd: Cmd, app: &mut App, tx: mpsc::Sender<Message>) {
 mod tests {
     use super::*;
     use crate::api::client::GitHubClient;
-    use crate::app::{PanelKind, PanelState};
+    use crate::app::PanelKind;
     use crate::cmd::RepoContext;
     use crate::config::Config;
     use crate::domain::{PrReview, PullRequest};
+    use crate::panels::{NotificationsPanel, PullsPanel, ReposPanel};
     use std::sync::Arc;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -402,7 +403,7 @@ mod tests {
         app.client = client;
         let entry = app.panels.get_mut(&PanelKind::Pulls).unwrap();
         entry.set_repo_context("o", "r");
-        entry.load_data(ApiPayload::Pulls(vec![PullRequest {
+        entry.apply_payload(ApiPayload::Pulls(vec![PullRequest {
             number: 1,
             reviews: Some(vec![PrReview::default()]),
             comment_errors: Some("previous failure".into()),
@@ -425,9 +426,7 @@ mod tests {
             .unwrap();
         update(&mut app, payload);
         assert_eq!(app.active_panel, PanelKind::Repos);
-        let PanelState::Pulls(panel) = app.panels.get(&PanelKind::Pulls).unwrap() else {
-            panic!("Expected Pulls panel");
-        };
+        let panel: &PullsPanel = app.panel(PanelKind::Pulls).unwrap();
         let pr = &panel.data.items[0];
         assert!(pr.comments.as_ref().unwrap().is_empty());
         assert!(pr.code_comments.as_ref().unwrap().is_empty());
@@ -456,9 +455,7 @@ mod tests {
                 files: Err("files failed".into()),
             }))),
         );
-        let PanelState::Pulls(panel) = app.panels.get(&PanelKind::Pulls).unwrap() else {
-            panic!("Expected Pulls panel");
-        };
+        let panel: &PullsPanel = app.panel(PanelKind::Pulls).unwrap();
         let pr = &panel.data.items[0];
         assert_eq!(pr.reviews.as_ref().unwrap().len(), 1);
         assert!(pr.review_errors.is_none());
@@ -487,7 +484,7 @@ mod tests {
         app.panels
             .get_mut(&PanelKind::Repos)
             .unwrap()
-            .load_data(ApiPayload::Repos(vec![Default::default()]));
+            .apply_payload(ApiPayload::Repos(vec![Default::default()]));
         let (tx, mut rx) = mpsc::channel(1);
         spawn_cmd(Cmd::FetchRepos, &mut app, tx);
         app.active_panel = PanelKind::Notifications;
@@ -498,14 +495,10 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(matches!(update(&mut app, result), Cmd::None));
-        let PanelState::Repos(panel) = &app.panels[&PanelKind::Repos] else {
-            unreachable!();
-        };
+        let panel: &ReposPanel = app.panel(PanelKind::Repos).unwrap();
         assert!(panel.data.items.is_empty());
         assert!(!panel.data.loading);
-        let PanelState::Notifications(panel) = &app.panels[&PanelKind::Notifications] else {
-            unreachable!();
-        };
+        let panel: &NotificationsPanel = app.panel(PanelKind::Notifications).unwrap();
         assert!(panel.data.loading);
         assert_eq!(app.active_panel, PanelKind::Notifications);
     }
@@ -530,9 +523,7 @@ mod tests {
             .unwrap();
         update(&mut app, result);
         assert!(app.error_toast.as_ref().unwrap().contains("500"));
-        let PanelState::Repos(panel) = &app.panels[&PanelKind::Repos] else {
-            panic!("Expected Repos panel");
-        };
+        let panel: &ReposPanel = app.panel(PanelKind::Repos).unwrap();
         assert!(!panel.data.loading);
     }
 }

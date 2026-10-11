@@ -9,12 +9,13 @@ use ratatui::widgets::{Cell, Row};
 use super::panel::{ListPanelData, PanelItem, SelectionState, StateFilterable};
 use crate::cmd::{Cmd, RepoContext};
 use crate::domain::{FilterState, PullRequest};
-use crate::theme::{Theme, status_style};
+use crate::event::ApiPayload;
+use crate::theme::{status_style, Theme};
 use crate::util::diff::parse_diff_patch;
 use crate::util::format;
+use crate::widgets::detail_pane::DetailPane;
 use crate::widgets::empty_state::EmptyState;
 use crate::widgets::list_view::LeftContent;
-
 
 fn pr_to_diff(pr: &PullRequest, theme: &Theme) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
@@ -23,12 +24,21 @@ fn pr_to_diff(pr: &PullRequest, theme: &Theme) -> Vec<Line<'static>> {
         for (i, file) in files.iter().enumerate() {
             let header = if file.status == "renamed" {
                 if let Some(old_name) = &file.previous_filename {
-                    format!("{} → {}  (+{} -{})  {}", old_name, file.filename, file.additions, file.deletions, file.status)
+                    format!(
+                        "{} → {}  (+{} -{})  {}",
+                        old_name, file.filename, file.additions, file.deletions, file.status
+                    )
                 } else {
-                    format!("{}  (+{} -{})  {}", file.filename, file.additions, file.deletions, file.status)
+                    format!(
+                        "{}  (+{} -{})  {}",
+                        file.filename, file.additions, file.deletions, file.status
+                    )
                 }
             } else {
-                format!("{}  (+{} -{})  {}", file.filename, file.additions, file.deletions, file.status)
+                format!(
+                    "{}  (+{} -{})  {}",
+                    file.filename, file.additions, file.deletions, file.status
+                )
             };
             lines.push(Line::from(Span::styled(
                 header,
@@ -47,10 +57,7 @@ fn pr_to_diff(pr: &PullRequest, theme: &Theme) -> Vec<Line<'static>> {
 
             if i + 1 < files.len() {
                 lines.push(Line::from(""));
-                lines.push(Line::from(Span::styled(
-                    "─".repeat(60),
-                    theme.muted,
-                )));
+                lines.push(Line::from(Span::styled("─".repeat(60), theme.muted)));
                 lines.push(Line::from(""));
             }
         }
@@ -249,11 +256,7 @@ impl PullsPanelItem {
         }
     }
 
-
-    fn fetch_pulls_cmd(
-        &self,
-        data: &ListPanelData<PullRequest>,
-    ) -> Option<Cmd> {
+    fn fetch_pulls_cmd(&self, data: &ListPanelData<PullRequest>) -> Option<Cmd> {
         let (owner, repo) = data.owner_repo()?;
         Some(Cmd::FetchPulls {
             ctx: RepoContext::new(owner.to_string(), repo.to_string()),
@@ -313,23 +316,32 @@ impl PanelItem for PullsPanelItem {
         key: char,
         selected: Option<&Self::Item>,
         data: &ListPanelData<Self::Item>,
+        detail_pane: &mut DetailPane,
     ) -> Option<Cmd> {
         match key {
-            '1' => {
-                StateFilterable::set_filter(self, FilterState::Open)
-                    .then_some(())
-                    .and_then(|_| self.fetch_pulls_cmd(data))
+            'd' => {
+                if selected.is_some() {
+                    detail_pane.toggle_diff();
+                }
+                None
             }
-            '2' => {
-                StateFilterable::set_filter(self, FilterState::Closed)
-                    .then_some(())
-                    .and_then(|_| self.fetch_pulls_cmd(data))
+            'f' => {
+                detail_pane.toggle_fullscreen();
+                None
             }
-            '3' => {
-                StateFilterable::set_filter(self, FilterState::All)
-                    .then_some(())
-                    .and_then(|_| self.fetch_pulls_cmd(data))
+            'c' => {
+                detail_pane.toggle_collapse();
+                None
             }
+            '1' => StateFilterable::set_filter(self, FilterState::Open)
+                .then_some(())
+                .and_then(|_| self.fetch_pulls_cmd(data)),
+            '2' => StateFilterable::set_filter(self, FilterState::Closed)
+                .then_some(())
+                .and_then(|_| self.fetch_pulls_cmd(data)),
+            '3' => StateFilterable::set_filter(self, FilterState::All)
+                .then_some(())
+                .and_then(|_| self.fetch_pulls_cmd(data)),
             'o' => {
                 if let Some(pr) = selected {
                     if let Some((owner, repo)) = data.owner_repo() {
@@ -398,10 +410,11 @@ impl PanelItem for PullsPanelItem {
         selected: Option<&Self::Item>,
         data: &ListPanelData<Self::Item>,
     ) -> Option<Cmd> {
-
         if let Some(pr) = selected {
-            let needs_fetch =
-                pr.comments.is_none() || pr.reviews.is_none() || pr.code_comments.is_none() || pr.files.is_none();
+            let needs_fetch = pr.comments.is_none()
+                || pr.reviews.is_none()
+                || pr.code_comments.is_none()
+                || pr.files.is_none();
             if needs_fetch {
                 let pr_number = pr.number;
                 let within_debounce = self
@@ -458,6 +471,47 @@ impl PanelItem for PullsPanelItem {
 
     extract_items!(Pulls);
 
+    fn apply_payload(
+        &mut self,
+        data: &mut ListPanelData<Self::Item>,
+        selection: &mut SelectionState,
+        payload: ApiPayload,
+    ) {
+        match payload {
+            ApiPayload::Pulls(items) => {
+                data.load_items(items, selection);
+                self.on_loaded(data);
+            }
+            ApiPayload::PrComments {
+                pr_number,
+                comments,
+                reviews,
+                code_comments,
+                files,
+            } => {
+                if let Some(pr) = data.items.iter_mut().find(|pr| pr.number == pr_number) {
+                    (pr.comments, pr.comment_errors) = match comments {
+                        Ok(v) => (Some(v), None),
+                        Err(e) => (None, Some(e)),
+                    };
+                    (pr.reviews, pr.review_errors) = match reviews {
+                        Ok(v) => (Some(v), None),
+                        Err(e) => (None, Some(e)),
+                    };
+                    (pr.code_comments, pr.code_comment_errors) = match code_comments {
+                        Ok(v) => (Some(v), None),
+                        Err(e) => (None, Some(e)),
+                    };
+                    (pr.files, pr.file_errors) = match files {
+                        Ok(v) => (Some(v), None),
+                        Err(e) => (None, Some(e)),
+                    };
+                }
+            }
+            _ => {}
+        }
+    }
+
     fn split_ratio(&self) -> (u16, u16) {
         (50, 50)
     }
@@ -511,8 +565,8 @@ impl PanelItem for PullsPanelItem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::util::diff::parse_hunk_header;
     use crate::event::ApiPayload;
+    use crate::util::diff::parse_hunk_header;
     use std::time::Duration;
 
     fn test_pr() -> PullRequest {
@@ -635,7 +689,7 @@ mod tests {
         let mut item = PullsPanelItem::default();
 
         let selected = data.items.first();
-        let cmd = item.handle_key('a', selected, &data);
+        let cmd = item.handle_key('a', selected, &data, &mut DetailPane::new());
 
         assert!(cmd.is_some());
         assert!(matches!(
@@ -652,7 +706,7 @@ mod tests {
         let mut item = PullsPanelItem::default();
 
         let selected = data.items.first();
-        let cmd = item.handle_key('m', selected, &data);
+        let cmd = item.handle_key('m', selected, &data, &mut DetailPane::new());
 
         assert!(cmd.is_some());
         assert!(matches!(
@@ -671,7 +725,7 @@ mod tests {
         let mut item = PullsPanelItem::default();
 
         let selected = data.items.first();
-        let cmd = item.handle_key('a', selected, &data);
+        let cmd = item.handle_key('a', selected, &data, &mut DetailPane::new());
 
         assert!(cmd.is_none());
     }
@@ -682,7 +736,7 @@ mod tests {
         let data = make_data(pr);
         let mut item = PullsPanelItem::default();
 
-        let cmd = item.handle_key('a', None, &data);
+        let cmd = item.handle_key('a', None, &data, &mut DetailPane::new());
 
         assert!(cmd.is_none());
     }
@@ -692,7 +746,7 @@ mod tests {
         let data = ListPanelData::<PullRequest>::new();
         let mut item = PullsPanelItem::default();
 
-        let cmd = item.handle_key('1', None, &data);
+        let cmd = item.handle_key('1', None, &data, &mut DetailPane::new());
 
         // Without owner/repo, returns None but sets the filter
         assert_eq!(item.state_filter, FilterState::Open);
@@ -706,23 +760,23 @@ mod tests {
         let mut item = PullsPanelItem::default();
 
         // Default is Open, pressing '1' again is a no-op
-        let cmd = item.handle_key('1', None, &data);
+        let cmd = item.handle_key('1', None, &data, &mut DetailPane::new());
         assert_eq!(item.state_filter, FilterState::Open);
         assert!(cmd.is_none());
 
         // Pressing '2' switches to Closed
-        let cmd = item.handle_key('2', None, &data);
+        let cmd = item.handle_key('2', None, &data, &mut DetailPane::new());
         assert_eq!(item.state_filter, FilterState::Closed);
         assert!(cmd.is_some());
 
         // Pressing '1' now switches back to Open and fetches
-        let cmd = item.handle_key('1', None, &data);
+        let cmd = item.handle_key('1', None, &data, &mut DetailPane::new());
         assert_eq!(item.state_filter, FilterState::Open);
         assert!(matches!(
-            cmd.unwrap(),
-            Cmd::FetchPulls { ctx, state }
-                if ctx.owner == "octocat" && ctx.repo == "hello-world" && state == "open"
-            ));
+        cmd.unwrap(),
+        Cmd::FetchPulls { ctx, state }
+            if ctx.owner == "octocat" && ctx.repo == "hello-world" && state == "open"
+        ));
     }
 
     #[test]
@@ -732,28 +786,28 @@ mod tests {
         let mut item = PullsPanelItem::default();
 
         // Switch to Closed first
-        let cmd = item.handle_key('2', None, &data);
+        let cmd = item.handle_key('2', None, &data, &mut DetailPane::new());
         assert_eq!(item.state_filter, FilterState::Closed);
         assert!(cmd.is_some());
 
         // Pressing '2' again is a no-op
-        let cmd = item.handle_key('2', None, &data);
+        let cmd = item.handle_key('2', None, &data, &mut DetailPane::new());
         assert_eq!(item.state_filter, FilterState::Closed);
         assert!(cmd.is_none());
 
         // Switch to All
-        let cmd = item.handle_key('3', None, &data);
+        let cmd = item.handle_key('3', None, &data, &mut DetailPane::new());
         assert_eq!(item.state_filter, FilterState::All);
         assert!(cmd.is_some());
 
         // Pressing '2' switches back to Closed and fetches
-        let cmd = item.handle_key('2', None, &data);
+        let cmd = item.handle_key('2', None, &data, &mut DetailPane::new());
         assert_eq!(item.state_filter, FilterState::Closed);
         assert!(matches!(
-            cmd.unwrap(),
-            Cmd::FetchPulls { ctx, state }
-                if ctx.owner == "octocat" && ctx.repo == "hello-world" && state == "closed"
-            ));
+        cmd.unwrap(),
+        Cmd::FetchPulls { ctx, state }
+            if ctx.owner == "octocat" && ctx.repo == "hello-world" && state == "closed"
+        ));
     }
 
     #[test]
@@ -763,28 +817,28 @@ mod tests {
         let mut item = PullsPanelItem::default();
 
         // Switch to All first
-        let cmd = item.handle_key('3', None, &data);
+        let cmd = item.handle_key('3', None, &data, &mut DetailPane::new());
         assert_eq!(item.state_filter, FilterState::All);
         assert!(cmd.is_some());
 
         // Pressing '3' again is a no-op
-        let cmd = item.handle_key('3', None, &data);
+        let cmd = item.handle_key('3', None, &data, &mut DetailPane::new());
         assert_eq!(item.state_filter, FilterState::All);
         assert!(cmd.is_none());
 
         // Switch to Open
-        let cmd = item.handle_key('1', None, &data);
+        let cmd = item.handle_key('1', None, &data, &mut DetailPane::new());
         assert_eq!(item.state_filter, FilterState::Open);
         assert!(cmd.is_some());
 
         // Pressing '3' switches back to All and fetches
-        let cmd = item.handle_key('3', None, &data);
+        let cmd = item.handle_key('3', None, &data, &mut DetailPane::new());
         assert_eq!(item.state_filter, FilterState::All);
         assert!(matches!(
-            cmd.unwrap(),
-            Cmd::FetchPulls { ctx, state }
-                if ctx.owner == "octocat" && ctx.repo == "hello-world" && state == "all"
-            ));
+        cmd.unwrap(),
+        Cmd::FetchPulls { ctx, state }
+            if ctx.owner == "octocat" && ctx.repo == "hello-world" && state == "all"
+        ));
     }
 
     // --- extract_items ---
@@ -938,7 +992,7 @@ mod tests {
         let mut item = PullsPanelItem::default();
 
         let selected = data.items.first();
-        let cmd = item.handle_key('x', selected, &data);
+        let cmd = item.handle_key('x', selected, &data, &mut DetailPane::new());
 
         assert!(cmd.is_some());
         assert!(matches!(
@@ -958,7 +1012,7 @@ mod tests {
         let mut item = PullsPanelItem::default();
 
         let selected = data.items.first();
-        let cmd = item.handle_key('x', selected, &data);
+        let cmd = item.handle_key('x', selected, &data, &mut DetailPane::new());
 
         assert!(cmd.is_none());
     }
@@ -973,7 +1027,7 @@ mod tests {
         let mut item = PullsPanelItem::default();
 
         let selected = data.items.first();
-        let cmd = item.handle_key('X', selected, &data);
+        let cmd = item.handle_key('X', selected, &data, &mut DetailPane::new());
 
         assert!(cmd.is_some());
         assert!(matches!(
@@ -990,7 +1044,7 @@ mod tests {
         let mut item = PullsPanelItem::default();
 
         let selected = data.items.first();
-        let cmd = item.handle_key('X', selected, &data);
+        let cmd = item.handle_key('X', selected, &data, &mut DetailPane::new());
 
         assert!(cmd.is_none());
     }
@@ -1351,10 +1405,16 @@ mod tests {
         let lines = parse_diff_patch(patch, &theme);
         // context line should show line 10
         let context_text = lines[1].to_string();
-        assert!(context_text.contains("10"), "context line should show line 10, got: {context_text}");
+        assert!(
+            context_text.contains("10"),
+            "context line should show line 10, got: {context_text}"
+        );
         // added line should show line 11
         let added_text = lines[2].to_string();
-        assert!(added_text.contains("11"), "added line should show line 11, got: {added_text}");
+        assert!(
+            added_text.contains("11"),
+            "added line should show line 11, got: {added_text}"
+        );
     }
 
     #[test]
@@ -1385,7 +1445,11 @@ mod tests {
         let lines = item.diff_lines(&pr, &theme);
 
         assert!(!lines.is_empty(), "should return non-empty content");
-        let text: String = lines.iter().map(|l| l.to_string()).collect::<Vec<_>>().join("\n");
+        let text: String = lines
+            .iter()
+            .map(|l| l.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
         assert!(text.contains("src/main.rs"), "should contain file header");
     }
 
@@ -1400,7 +1464,10 @@ mod tests {
 
         let lines = item.diff_lines(&pr, &theme);
 
-        assert!(lines.is_empty(), "should return empty vec when files is None");
+        assert!(
+            lines.is_empty(),
+            "should return empty vec when files is None"
+        );
     }
 
     #[test]
@@ -1428,7 +1495,11 @@ mod tests {
         let theme = Theme::default();
 
         let lines = item.diff_lines(&pr, &theme);
-        let text: String = lines.iter().map(|l| l.to_string()).collect::<Vec<_>>().join("\n");
+        let text: String = lines
+            .iter()
+            .map(|l| l.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
 
         assert!(
             text.contains("diff too large"),
@@ -1453,7 +1524,11 @@ mod tests {
         let theme = Theme::default();
 
         let lines = item.diff_lines(&pr, &theme);
-        let text: String = lines.iter().map(|l| l.to_string()).collect::<Vec<_>>().join("\n");
+        let text: String = lines
+            .iter()
+            .map(|l| l.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
 
         assert!(
             text.contains("old.rs") && text.contains("new.rs"),
@@ -1487,8 +1562,14 @@ mod tests {
         let lines = parse_diff_patch(patch, &theme);
         assert_eq!(lines.len(), 5);
         let line3_text = lines[4].to_string();
-        assert!(line3_text.contains("3"), "line3 should show line 3, got: {line3_text}");
-        assert!(!line3_text.contains("4"), "line3 should NOT show line 4, got: {line3_text}");
+        assert!(
+            line3_text.contains("3"),
+            "line3 should show line 3, got: {line3_text}"
+        );
+        assert!(
+            !line3_text.contains("4"),
+            "line3 should NOT show line 4, got: {line3_text}"
+        );
     }
 
     #[test]
@@ -1500,7 +1581,10 @@ mod tests {
         assert_eq!(lines.len(), 4);
         // removed line should show line 1 (old_line), not line 2
         let removed_text = lines[3].to_string();
-        assert!(removed_text.contains("1"), "removed should show old line 1, got: {removed_text}");
+        assert!(
+            removed_text.contains("1"),
+            "removed should show old line 1, got: {removed_text}"
+        );
     }
 
     #[test]
@@ -1508,7 +1592,10 @@ mod tests {
         let item = PullsPanelItem::default();
         let detail_es = item.detail_empty_state();
         let diff_es = item.diff_empty_state();
-        assert_ne!(diff_es.message, detail_es.message, "diff empty state should differ from detail empty state");
+        assert_ne!(
+            diff_es.message, detail_es.message,
+            "diff empty state should differ from detail empty state"
+        );
     }
 
     #[test]
@@ -1538,11 +1625,25 @@ mod tests {
         // Verify they don't have the diff_deletion or diff_addition style by checking they use theme.muted
         let header_old = lines[0].to_string();
         let header_new = lines[1].to_string();
-        assert!(header_old.contains("--- a/file.rs"), "first line should be --- header, got: {header_old}");
-        assert!(header_new.contains("+++ b/file.rs"), "second line should be +++ header, got: {header_new}");
+        assert!(
+            header_old.contains("--- a/file.rs"),
+            "first line should be --- header, got: {header_old}"
+        );
+        assert!(
+            header_new.contains("+++ b/file.rs"),
+            "second line should be +++ header, got: {header_new}"
+        );
         // Check that these are single-span lines (muted style, not prefix + styled)
-        assert_eq!(lines[0].spans.len(), 1, "--- header should be single muted span");
-        assert_eq!(lines[1].spans.len(), 1, "+++ header should be single muted span");
+        assert_eq!(
+            lines[0].spans.len(),
+            1,
+            "--- header should be single muted span"
+        );
+        assert_eq!(
+            lines[1].spans.len(),
+            1,
+            "+++ header should be single muted span"
+        );
     }
     #[test]
     fn derive_pr_status_merged_pr_returns_merged() {
@@ -1565,7 +1666,6 @@ mod tests {
         let pr = test_pr();
         assert_eq!(derive_pr_status(&pr), "open");
     }
-
 
     #[test]
     fn can_reopen_closed_unmerged_pr() {

@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
-use crate::app::{App, PanelKind, PanelState};
+use crate::app::{App, PanelKind};
 use crate::event::ApiPayload;
+use crate::panels::Panel;
 
 /// Shared owner/repo context used by multiple Cmd variants.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,56 +33,21 @@ pub enum CmdBehavior {
 pub enum Cmd {
     None,
     FetchRepos,
-    FetchPulls {
-        ctx: RepoContext,
-        state: String,
-    },
-    FetchIssues {
-        ctx: RepoContext,
-        state: String,
-    },
-    FetchNotifications {
-        all: bool,
-    },
-    FetchActions {
-        ctx: RepoContext,
-    },
-    MarkNotificationRead {
-        id: String,
-    },
+    FetchPulls { ctx: RepoContext, state: String },
+    FetchIssues { ctx: RepoContext, state: String },
+    FetchNotifications { all: bool },
+    FetchActions { ctx: RepoContext },
+    MarkNotificationRead { id: String },
     MarkAllNotificationsRead,
-    ApprovePr {
-        ctx: RepoContext,
-        pr_number: u64,
-    },
-    MergePr {
-        ctx: RepoContext,
-        pr_number: u64,
-    },
-    RerunWorkflow {
-        ctx: RepoContext,
-        run_id: u64,
-    },
-    CancelWorkflow {
-        ctx: RepoContext,
-        run_id: u64,
-    },
-    OpenRepoDetail {
-        ctx: RepoContext,
-    },
+    ApprovePr { ctx: RepoContext, pr_number: u64 },
+    MergePr { ctx: RepoContext, pr_number: u64 },
+    RerunWorkflow { ctx: RepoContext, run_id: u64 },
+    CancelWorkflow { ctx: RepoContext, run_id: u64 },
+    OpenRepoDetail { ctx: RepoContext },
     CycleRepoSort,
-    FetchPrComments {
-        ctx: RepoContext,
-        pr_number: u64,
-    },
-    ClosePr {
-        ctx: RepoContext,
-        pr_number: u64,
-    },
-    ReopenPr {
-        ctx: RepoContext,
-        pr_number: u64,
-    },
+    FetchPrComments { ctx: RepoContext, pr_number: u64 },
+    ClosePr { ctx: RepoContext, pr_number: u64 },
+    ReopenPr { ctx: RepoContext, pr_number: u64 },
 }
 
 impl Cmd {
@@ -159,7 +125,7 @@ struct Origin {
 }
 
 impl Origin {
-    fn is_current(&self, panels: &HashMap<PanelKind, PanelState>) -> bool {
+    fn is_current(&self, panels: &HashMap<PanelKind, Box<dyn Panel>>) -> bool {
         panels.get(&self.panel).is_some_and(|panel| {
             let (ctx, revision) = panel.data_context();
             self.ctx == ctx && (self.kind == RequestKind::Mutation || self.revision == revision)
@@ -233,23 +199,11 @@ pub fn complete(app: &mut App, completion: CmdCompletion) -> Cmd {
                 refresh = app.panels[&origin.panel].fetch_cmd();
             }
         }
-        Ok(ApiPayload::PrComments {
-            pr_number,
-            comments,
-            reviews,
-            code_comments,
-            files,
-        }) => {
-            app.panels
-                .get_mut(&origin.panel)
-                .unwrap()
-                .update_pr_comments(pr_number, comments, reviews, code_comments, files);
-        }
         Ok(payload) => {
             app.panels
                 .get_mut(&origin.panel)
                 .unwrap()
-                .load_data(payload);
+                .apply_payload(payload);
         }
         Err(msg) => {
             app.error_toast = Some(msg);
@@ -279,8 +233,7 @@ mod tests {
     use super::*;
     use crate::config::Config;
     use crate::domain::{FilterState, PrComment, PullRequest, Repo};
-    use crate::panels::panel::ListPanel;
-    use crate::panels::PullsPanelItem;
+    use crate::panels::{ActionsPanel, IssuesPanel, NotificationsPanel, PullsPanel, ReposPanel};
     use crate::update::{update, Message};
 
     fn test_app() -> App {
@@ -294,15 +247,13 @@ mod tests {
         app.panels
             .get_mut(&PanelKind::Pulls)
             .unwrap()
-            .load_data(pull_list("original"));
+            .apply_payload(pull_list("original"));
         app
     }
 
-    fn pulls(app: &App) -> &ListPanel<PullsPanelItem> {
-        let PanelState::Pulls(panel) = &app.panels[&PanelKind::Pulls] else {
-            panic!("Expected Pulls panel");
-        };
-        panel
+    fn pulls(app: &App) -> &PullsPanel {
+        app.panel::<PullsPanel>(PanelKind::Pulls)
+            .expect("Expected Pulls panel")
     }
 
     fn pull_list(title: &str) -> ApiPayload {
@@ -355,9 +306,7 @@ mod tests {
     #[test]
     fn failed_refresh_preserves_items_selection_filter_and_scroll() {
         let mut app = test_app();
-        let PanelState::Pulls(panel) = app.panels.get_mut(&PanelKind::Pulls).unwrap() else {
-            unreachable!();
-        };
+        let panel: &mut PullsPanel = app.panel_mut(PanelKind::Pulls).unwrap();
         panel.selection.select(Some(1));
         panel.data.filtered_indices = vec![1, 0];
         panel.detail_pane.scroll = 9;
@@ -432,9 +381,7 @@ mod tests {
         let mut app = test_app();
         app.active_panel = PanelKind::Pulls;
         let pending = start(&mut app, mutation()).unwrap();
-        let PanelState::Pulls(panel) = app.panels.get_mut(&PanelKind::Pulls).unwrap() else {
-            unreachable!();
-        };
+        let panel: &mut PullsPanel = app.panel_mut(PanelKind::Pulls).unwrap();
         panel.item.state_filter = FilterState::Closed;
         app.active_panel = PanelKind::Issues;
         let refresh = update(
@@ -585,7 +532,7 @@ mod tests {
         let details = start(&mut app, detail(1)).unwrap();
         let entry = app.panels.get_mut(&PanelKind::Pulls).unwrap();
         entry.set_repo_context("o", "other");
-        entry.load_data(pull_list("other repo"));
+        entry.apply_payload(pull_list("other repo"));
         complete(
             &mut app,
             details.ticket.finish(Ok(detail_result(1, "wrong repo"))),
@@ -593,7 +540,7 @@ mod tests {
         assert!(pulls(&app).data.items[0].comments.is_none());
         let entry = app.panels.get_mut(&PanelKind::Pulls).unwrap();
         entry.set_repo_context("o", "r");
-        entry.load_data(pull_list("returned"));
+        entry.apply_payload(pull_list("returned"));
         complete(&mut app, list.ticket.finish(Ok(pull_list("old visit"))));
         assert_eq!(pulls(&app).data.items[0].title, "returned");
         assert!(app.error_toast.is_none());
@@ -629,40 +576,31 @@ mod tests {
         app.panels
             .get_mut(&PanelKind::Repos)
             .unwrap()
-            .load_data(ApiPayload::Repos(vec![Repo {
+            .apply_payload(ApiPayload::Repos(vec![Repo {
                 name: "o/other".into(),
                 ..Default::default()
             }]));
         app.panels
             .get_mut(&PanelKind::Issues)
             .unwrap()
-            .load_data(ApiPayload::Issues(vec![Default::default()]));
+            .apply_payload(ApiPayload::Issues(vec![Default::default()]));
         app.panels
             .get_mut(&PanelKind::Actions)
             .unwrap()
-            .load_data(ApiPayload::Actions(vec![Default::default()]));
+            .apply_payload(ApiPayload::Actions(vec![Default::default()]));
         app.panels
             .get_mut(&PanelKind::Notifications)
             .unwrap()
-            .load_data(ApiPayload::Notifications(vec![Default::default()]));
+            .apply_payload(ApiPayload::Notifications(vec![Default::default()]));
         let old_list = start(&mut app, fetch()).unwrap();
         let old_detail = start(&mut app, detail(1)).unwrap();
         let switched = update(&mut app, Message::PanelKeyInput('\n'));
         assert!(pulls(&app).data.items.is_empty());
         assert_eq!(pulls(&app).selection.selected(), None);
-        let PanelState::Issues(issues) = &app.panels[&PanelKind::Issues] else {
-            unreachable!();
-        };
-        let PanelState::Actions(actions) = &app.panels[&PanelKind::Actions] else {
-            unreachable!();
-        };
-        let PanelState::Repos(repos) = &app.panels[&PanelKind::Repos] else {
-            unreachable!();
-        };
-        let PanelState::Notifications(notifications) = &app.panels[&PanelKind::Notifications]
-        else {
-            unreachable!();
-        };
+        let issues: &IssuesPanel = app.panel(PanelKind::Issues).unwrap();
+        let actions: &ActionsPanel = app.panel(PanelKind::Actions).unwrap();
+        let repos: &ReposPanel = app.panel(PanelKind::Repos).unwrap();
+        let notifications: &NotificationsPanel = app.panel(PanelKind::Notifications).unwrap();
         assert!(issues.data.items.is_empty() && actions.data.items.is_empty());
         assert_eq!(repos.data.items.len(), 1);
         assert_eq!(notifications.data.items.len(), 1);
@@ -684,7 +622,7 @@ mod tests {
         app.panels
             .get_mut(&PanelKind::Pulls)
             .unwrap()
-            .load_data(pull_list("returned"));
+            .apply_payload(pull_list("returned"));
         complete(&mut app, old_list.ticket.finish(Ok(pull_list("obsolete"))));
         complete(
             &mut app,
@@ -698,9 +636,7 @@ mod tests {
     #[test]
     fn reopening_same_repo_preserves_rows_selection_scroll_and_detail_validity() {
         let mut app = test_app();
-        let PanelState::Pulls(panel) = app.panels.get_mut(&PanelKind::Pulls).unwrap() else {
-            unreachable!();
-        };
+        let panel: &mut PullsPanel = app.panel_mut(PanelKind::Pulls).unwrap();
         panel.selection.select(Some(1));
         panel.detail_pane.scroll = 7;
         panel.item.state_filter = FilterState::Closed;
@@ -708,7 +644,7 @@ mod tests {
         app.panels
             .get_mut(&PanelKind::Repos)
             .unwrap()
-            .load_data(ApiPayload::Repos(vec![Repo {
+            .apply_payload(ApiPayload::Repos(vec![Repo {
                 name: "o/r".into(),
                 ..Default::default()
             }]));
@@ -730,11 +666,7 @@ mod tests {
     fn global_notification_mutation_refreshes_current_notification_filter() {
         let mut app = test_app();
         let pending = start(&mut app, Cmd::MarkNotificationRead { id: "1".into() }).unwrap();
-        let PanelState::Notifications(panel) =
-            app.panels.get_mut(&PanelKind::Notifications).unwrap()
-        else {
-            unreachable!();
-        };
+        let panel: &mut NotificationsPanel = app.panel_mut(PanelKind::Notifications).unwrap();
         panel.item.show_all = true;
         let refresh = complete(
             &mut app,
@@ -777,7 +709,10 @@ mod tests {
                 },
                 "Rerun Workflow",
             ),
-            (Cmd::MarkAllNotificationsRead, "Mark All Notifications as Read"),
+            (
+                Cmd::MarkAllNotificationsRead,
+                "Mark All Notifications as Read",
+            ),
             (
                 Cmd::ClosePr {
                     ctx: RepoContext::new("o", "r"),

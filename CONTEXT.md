@@ -2,11 +2,11 @@
 
 ## Terms
 
-**Panel** — A full-screen tab in the TUI (Repos, Pulls, Issues, Notifications, Actions). Each owns data, handles keys, and renders content.
+**Panel** — Polymorphic interface for full-screen tabs in the TUI (Repos, Pulls, Issues, Notifications, Actions). The app stores panels as `Box<dyn Panel>` and uses this interface for rendering, key handling, and payload ingestion.
 
-**PanelItem** — Trait defining panel-specific behavior (data rendering, key handling, fetch commands). Each panel implements this; `ListPanel<T>` provides the generic `Panel` implementation.
+**PanelItem** — Trait defining panel-specific content, key handling, fetch commands, and payload ingestion. Each panel's item struct implements this trait.
 
-**ListPanel** — Generic wrapper `ListPanel<T: PanelItem>` that implements `Panel` once. Owns selection state, detail pane, and delegates to `PanelItem` methods. Eliminates per-panel boilerplate.
+**ListPanel** — Generic wrapper `ListPanel<T: PanelItem>` that implements `Panel`. Owns data, selection state, and the detail pane, and delegates panel-specific behavior to `PanelItem`. Concrete panel names such as `PullsPanel` are aliases for this wrapper.
 
 **SelectionState** — Tracks which item is selected in a panel's list. Wraps either ListState or TableState. Also stores list length for navigation bounds.
 

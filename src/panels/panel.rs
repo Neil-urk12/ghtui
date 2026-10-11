@@ -2,8 +2,8 @@ use ratatui::prelude::*;
 use ratatui::widgets::{ListState, TableState};
 
 use crate::cmd::Cmd;
-use crate::event::ApiPayload;
 use crate::domain::FilterState;
+use crate::event::ApiPayload;
 use crate::theme::Theme;
 use crate::widgets::detail_pane::DetailPane;
 use crate::widgets::empty_state::EmptyState;
@@ -230,7 +230,21 @@ pub trait PanelItem: std::fmt::Debug + Default {
         key: char,
         selected: Option<&Self::Item>,
         data: &ListPanelData<Self::Item>,
+        detail_pane: &mut DetailPane,
     ) -> Option<Cmd>;
+
+    /// Apply an ApiPayload to this panel's data. Defaults to extracting items and loading them.
+    fn apply_payload(
+        &mut self,
+        data: &mut ListPanelData<Self::Item>,
+        selection: &mut SelectionState,
+        payload: ApiPayload,
+    ) {
+        if let Some(items) = Self::extract_items(payload) {
+            data.load_items(items, selection);
+            self.on_loaded(data);
+        }
+    }
 
     /// Return the fetch command for this panel (e.g. `Cmd::FetchIssues`).
     fn fetch_cmd(&self, data: &ListPanelData<Self::Item>) -> Cmd;
@@ -388,17 +402,18 @@ impl<T: PanelItem + 'static> ListPanel<T> {
         (ctx, self.data.revision)
     }
 
-    pub fn load_data(&mut self, payload: ApiPayload) {
-        if let Some(items) = T::extract_items(payload) {
-            self.data.load_items(items, &mut self.selection);
-            self.item.on_loaded(&mut self.data);
-        }
+    pub fn apply_payload(&mut self, payload: ApiPayload) {
+        self.item
+            .apply_payload(&mut self.data, &mut self.selection, payload);
     }
 
     pub fn handle_key(&mut self, key: char) -> Option<Cmd> {
         // Try the PanelItem's custom key handler first.
         let selected = self.data.selected(&self.selection);
-        if let Some(cmd) = self.item.handle_key(key, selected, &self.data) {
+        if let Some(cmd) = self
+            .item
+            .handle_key(key, selected, &self.data, &mut self.detail_pane)
+        {
             return Some(cmd);
         }
         // Fall through to default j/k navigation.
@@ -481,6 +496,89 @@ impl<T: PanelItem + 'static> ListPanel<T> {
             .apply_filter(&mut self.data, query, &mut self.selection);
     }
 }
+
+/// The core polymorphic interface for panels in ghtui.
+pub trait Panel: std::any::Any {
+    fn apply_filter(&mut self, query: &str);
+    fn handle_key(&mut self, key: char) -> Option<Cmd>;
+    fn render(&mut self, frame: &mut Frame, area: Rect, theme: &Theme, tick: u64);
+    fn fetch_cmd(&self) -> Cmd;
+    fn set_loading(&mut self, loading: bool);
+    fn set_repo_context(&mut self, owner: &str, repo: &str);
+    fn data_context(&self) -> (Option<crate::cmd::RepoContext>, u64);
+    fn apply_payload(&mut self, payload: ApiPayload);
+    fn scroll_detail_up(&mut self);
+    fn scroll_detail_down(&mut self);
+    fn selected_display(&self) -> Option<String>;
+    #[allow(dead_code)]
+    fn as_any(&self) -> &dyn std::any::Any;
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
+}
+
+impl<T: PanelItem + 'static> Panel for ListPanel<T> {
+    fn apply_filter(&mut self, query: &str) {
+        self.apply_filter(query);
+    }
+
+    fn handle_key(&mut self, key: char) -> Option<Cmd> {
+        self.handle_key(key)
+    }
+
+    fn render(&mut self, frame: &mut Frame, area: Rect, theme: &Theme, tick: u64) {
+        self.render(frame, area, theme, tick);
+    }
+
+    fn fetch_cmd(&self) -> Cmd {
+        self.fetch_cmd()
+    }
+
+    fn set_loading(&mut self, loading: bool) {
+        self.set_loading(loading);
+    }
+
+    fn set_repo_context(&mut self, owner: &str, repo: &str) {
+        self.set_repo_context(owner, repo);
+    }
+
+    fn data_context(&self) -> (Option<crate::cmd::RepoContext>, u64) {
+        self.data_context()
+    }
+
+    fn apply_payload(&mut self, payload: ApiPayload) {
+        self.apply_payload(payload);
+    }
+
+    fn scroll_detail_up(&mut self) {
+        self.scroll_detail_up();
+    }
+
+    fn scroll_detail_down(&mut self) {
+        self.scroll_detail_down();
+    }
+
+    fn selected_display(&self) -> Option<String> {
+        self.selected_display()
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
+pub type ReposPanel = ListPanel<crate::panels::ReposPanelItem>;
+#[allow(dead_code)]
+pub type PullsPanel = ListPanel<crate::panels::PullsPanelItem>;
+#[allow(dead_code)]
+pub type IssuesPanel = ListPanel<crate::panels::IssuesPanelItem>;
+#[allow(dead_code)]
+pub type NotificationsPanel = ListPanel<crate::panels::NotificationsPanelItem>;
+#[allow(dead_code)]
+pub type ActionsPanel = ListPanel<crate::panels::ActionsPanelItem>;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -598,6 +696,7 @@ mod tests {
             _key: char,
             _selected: Option<&Self::Item>,
             _data: &ListPanelData<Self::Item>,
+            _detail_pane: &mut DetailPane,
         ) -> Option<Cmd> {
             None
         }

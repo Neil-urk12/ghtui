@@ -4,10 +4,11 @@ use ratatui::widgets::*;
 use super::panel::{ListPanelData, PanelItem, SelectionState, StateFilterable};
 use crate::cmd::{Cmd, RepoContext};
 use crate::domain::{FilterState, Issue};
-use crate::theme::{Theme, status_style};
+use crate::theme::{status_style, Theme};
 use crate::util::format;
 use crate::util::format::relative_time;
 use crate::util::markdown::render_markdown;
+use crate::widgets::detail_pane::DetailPane;
 use crate::widgets::empty_state::EmptyState;
 use crate::widgets::list_view::LeftContent;
 
@@ -56,7 +57,14 @@ fn issue_to_detail(issue: &Issue, theme: &Theme) -> Vec<Line<'static>> {
     ]));
     content.push(Line::from(vec![
         Span::styled("State: ", theme.muted),
-        Span::styled(if issue.state == "open" { "open" } else { "closed" }, status_style(&issue.state, theme)),
+        Span::styled(
+            if issue.state == "open" {
+                "open"
+            } else {
+                "closed"
+            },
+            status_style(&issue.state, theme),
+        ),
     ]));
     if !issue.labels.is_empty() {
         content.push(Line::from(vec![
@@ -93,10 +101,7 @@ pub struct IssuesPanelItem {
 }
 
 impl IssuesPanelItem {
-    fn fetch_issues_cmd(
-        &self,
-        data: &ListPanelData<Issue>,
-    ) -> Option<Cmd> {
+    fn fetch_issues_cmd(&self, data: &ListPanelData<Issue>) -> Option<Cmd> {
         let (owner, repo) = data.owner_repo()?;
         Some(Cmd::FetchIssues {
             ctx: RepoContext::new(owner.to_string(), repo.to_string()),
@@ -140,23 +145,18 @@ impl PanelItem for IssuesPanelItem {
         key: char,
         selected: Option<&Self::Item>,
         data: &ListPanelData<Self::Item>,
+        _detail_pane: &mut DetailPane,
     ) -> Option<Cmd> {
         match key {
-            '1' => {
-                StateFilterable::set_filter(self, FilterState::Open)
-                    .then_some(())
-                    .and_then(|_| self.fetch_issues_cmd(data))
-            }
-            '2' => {
-                StateFilterable::set_filter(self, FilterState::Closed)
-                    .then_some(())
-                    .and_then(|_| self.fetch_issues_cmd(data))
-            }
-            '3' => {
-                StateFilterable::set_filter(self, FilterState::All)
-                    .then_some(())
-                    .and_then(|_| self.fetch_issues_cmd(data))
-            }
+            '1' => StateFilterable::set_filter(self, FilterState::Open)
+                .then_some(())
+                .and_then(|_| self.fetch_issues_cmd(data)),
+            '2' => StateFilterable::set_filter(self, FilterState::Closed)
+                .then_some(())
+                .and_then(|_| self.fetch_issues_cmd(data)),
+            '3' => StateFilterable::set_filter(self, FilterState::All)
+                .then_some(())
+                .and_then(|_| self.fetch_issues_cmd(data)),
             'o' => {
                 if let Some(issue) = selected {
                     if let Some((owner, repo)) = data.owner_repo() {
@@ -301,13 +301,13 @@ mod tests {
         data.set_repo("owner".into(), "repo".into());
 
         // Default is Open, pressing '1' again is a no-op
-        let cmd = panel.handle_key('1', None, &data);
+        let cmd = panel.handle_key('1', None, &data, &mut DetailPane::new());
         assert!(cmd.is_none());
         assert_eq!(panel.state_filter, FilterState::Open);
 
         // Switch to Closed, then pressing '1' fetches open
-        panel.handle_key('2', None, &data);
-        let cmd = panel.handle_key('1', None, &data);
+        panel.handle_key('2', None, &data, &mut DetailPane::new());
+        let cmd = panel.handle_key('1', None, &data, &mut DetailPane::new());
         assert!(matches!(cmd, Some(Cmd::FetchIssues { state, .. }) if state.as_str() == "open"));
         assert_eq!(panel.state_filter, FilterState::Open);
     }
@@ -319,14 +319,14 @@ mod tests {
         data.set_repo("owner".into(), "repo".into());
 
         // Switch to Closed, then pressing '2' again is a no-op
-        panel.handle_key('2', None, &data);
-        let cmd = panel.handle_key('2', None, &data);
+        panel.handle_key('2', None, &data, &mut DetailPane::new());
+        let cmd = panel.handle_key('2', None, &data, &mut DetailPane::new());
         assert!(cmd.is_none());
         assert_eq!(panel.state_filter, FilterState::Closed);
 
         // Switch to All, then pressing '2' fetches closed
-        panel.handle_key('3', None, &data);
-        let cmd = panel.handle_key('2', None, &data);
+        panel.handle_key('3', None, &data, &mut DetailPane::new());
+        let cmd = panel.handle_key('2', None, &data, &mut DetailPane::new());
         assert!(matches!(cmd, Some(Cmd::FetchIssues { state, .. }) if state.as_str() == "closed"));
         assert_eq!(panel.state_filter, FilterState::Closed);
     }
@@ -338,14 +338,14 @@ mod tests {
         data.set_repo("owner".into(), "repo".into());
 
         // Switch to All, then pressing '3' again is a no-op
-        panel.handle_key('3', None, &data);
-        let cmd = panel.handle_key('3', None, &data);
+        panel.handle_key('3', None, &data, &mut DetailPane::new());
+        let cmd = panel.handle_key('3', None, &data, &mut DetailPane::new());
         assert!(cmd.is_none());
         assert_eq!(panel.state_filter, FilterState::All);
 
         // Switch to Open, then pressing '3' fetches all
-        panel.handle_key('1', None, &data);
-        let cmd = panel.handle_key('3', None, &data);
+        panel.handle_key('1', None, &data, &mut DetailPane::new());
+        let cmd = panel.handle_key('3', None, &data, &mut DetailPane::new());
         assert!(matches!(cmd, Some(Cmd::FetchIssues { state, .. }) if state.as_str() == "all"));
         assert_eq!(panel.state_filter, FilterState::All);
     }
@@ -356,7 +356,7 @@ mod tests {
         let mut data = ListPanelData::<Issue>::new();
         data.set_repo("owner".into(), "repo".into());
 
-        let cmd = panel.handle_key('2', None, &data);
+        let cmd = panel.handle_key('2', None, &data, &mut DetailPane::new());
         assert!(matches!(cmd, Some(Cmd::FetchIssues { state, .. }) if state.as_str() == "closed"));
         assert_eq!(panel.state_filter, FilterState::Closed);
     }
@@ -367,7 +367,7 @@ mod tests {
         let mut data = ListPanelData::<Issue>::new();
         data.set_repo("owner".into(), "repo".into());
 
-        let cmd = panel.handle_key('3', None, &data);
+        let cmd = panel.handle_key('3', None, &data, &mut DetailPane::new());
         assert!(matches!(cmd, Some(Cmd::FetchIssues { state, .. }) if state.as_str() == "all"));
         assert_eq!(panel.state_filter, FilterState::All);
     }
@@ -377,9 +377,15 @@ mod tests {
         let mut panel = IssuesPanelItem::default();
         let data = ListPanelData::<Issue>::new(); // owner and repo are None
 
-        assert!(panel.handle_key('1', None, &data).is_none());
-        assert!(panel.handle_key('2', None, &data).is_none());
-        assert!(panel.handle_key('3', None, &data).is_none());
+        assert!(panel
+            .handle_key('1', None, &data, &mut DetailPane::new())
+            .is_none());
+        assert!(panel
+            .handle_key('2', None, &data, &mut DetailPane::new())
+            .is_none());
+        assert!(panel
+            .handle_key('3', None, &data, &mut DetailPane::new())
+            .is_none());
     }
 
     #[test]
