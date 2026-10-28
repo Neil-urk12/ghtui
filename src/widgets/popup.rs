@@ -256,7 +256,7 @@ fn build_help_text(panel: &str) -> Text<'static> {
             Line::from("  j / k            Navigate list"),
             Line::from("  Enter            Expand jobs"),
             Line::from("  v                View logs"),
-            Line::from("  r                Re-run"),
+            Line::from("  R                Re-run"),
             Line::from("  c                Cancel"),
         ],
         _ => vec![],

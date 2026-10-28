@@ -117,7 +117,6 @@ pub struct Review {
     pub user: User,
     pub state: String,
     pub body: Option<String>,
-    pub submitted_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

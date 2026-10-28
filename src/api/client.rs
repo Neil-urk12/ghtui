@@ -115,40 +115,6 @@ impl GitHubClient {
         }
     }
 
-    async fn get<T: serde::de::DeserializeOwned + Clone + Send + Sync + 'static>(
-        &self,
-        path: &str,
-        cache_key: Option<CacheKey>,
-        cache_ttl: Duration,
-    ) -> Result<T> {
-        // Check cache first
-        if let Some(ref key) = cache_key {
-            let hit: Option<T> = {
-                let mut result = None;
-                self.with_cache(|cache| {
-                    result = cache.get::<T>(key).cloned();
-                });
-                result
-            };
-            if let Some(cached) = hit {
-                return Ok(cached);
-            }
-        }
-
-        let resp = self.send_and_check(self.request(Method::GET, path)).await?;
-
-        let data = resp.json::<T>().await?;
-
-        // Store in cache
-        if let Some(key) = cache_key {
-            self.with_cache(|cache| {
-                cache.insert(key, data.clone(), cache_ttl);
-            });
-        }
-
-        Ok(data)
-    }
-
     /// Fetch all pages of a paginated GitHub API endpoint, collecting items into a `Vec<T>`.
     ///
     /// Follows RFC 5988 `Link` headers for pagination. Results are cached when `cache_key` is provided.
@@ -504,10 +470,12 @@ impl GitHubClient {
             pr_number,
         };
         let models: Vec<IssueComment> = self
-            .get(
+            .get_all(
                 &path,
                 Some(cache_key),
                 Duration::from_secs(PR_COMMENTS_CACHE_TTL_SECS),
+                None,
+                |v| v,
             )
             .await?;
         Ok(models
@@ -532,10 +500,12 @@ impl GitHubClient {
             pr_number,
         };
         let models: Vec<Review> = self
-            .get(
+            .get_all(
                 &path,
                 Some(cache_key),
                 Duration::from_secs(PR_COMMENTS_CACHE_TTL_SECS),
+                None,
+                |v| v,
             )
             .await?;
         Ok(models
@@ -561,10 +531,12 @@ impl GitHubClient {
             pr_number,
         };
         let models: Vec<ReviewComment> = self
-            .get(
+            .get_all(
                 &path,
                 Some(cache_key),
                 Duration::from_secs(PR_COMMENTS_CACHE_TTL_SECS),
+                None,
+                |v| v,
             )
             .await?;
         Ok(models
@@ -794,6 +766,34 @@ mod tests {
 
     use wiremock::{MockServer, Mock, ResponseTemplate};
     use wiremock::matchers::{method, path, query_param};
+
+    #[tokio::test]
+    async fn pr_discussions_fetch_all_pages_and_accept_pending_reviews() {
+        let server = MockServer::start().await;
+        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
+        for endpoint in ["issues/1/comments", "pulls/1/reviews", "pulls/1/comments"] {
+            let route = format!("/repos/o/r/{endpoint}");
+            let item = serde_json::json!({
+                "id": 1, "user": {"login": "u", "id": 1}, "body": "draft",
+                "created_at": "2026-01-01T00:00:00Z", "state": "PENDING",
+                "path": "file.rs", "line": 1
+            });
+            Mock::given(method("GET")).and(path(route.clone())).and(query_param("page", "2"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([item.clone()])))
+                .expect(1).mount(&server).await;
+            Mock::given(method("GET")).and(path(route.clone())).and(query_param("per_page", "100"))
+                .respond_with(ResponseTemplate::new(200)
+                    .insert_header("Link", format!("<{}{route}?per_page=100&page=2>; rel=\"next\"", server.uri()))
+                    .set_body_json(serde_json::json!([item])))
+                .expect(1).mount(&server).await;
+        }
+        assert_eq!(client.get_issue_comments("o", "r", 1).await.unwrap().len(), 2);
+        let reviews = client.get_reviews("o", "r", 1).await.unwrap();
+        assert_eq!(reviews.len(), 2);
+        assert_eq!(reviews[0].state, "PENDING");
+        assert_eq!(client.get_review_comments("o", "r", 1).await.unwrap().len(), 2);
+        server.verify().await;
+    }
 
     async fn mock_and_client(method_match: &str, path_match: &str) -> (MockServer, GitHubClient) {
         let server = MockServer::start().await;

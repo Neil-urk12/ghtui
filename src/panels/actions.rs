@@ -161,15 +161,7 @@ impl PanelItem for ActionsPanelItem {
                 self.toggle_expand(selected_index);
                 None
             }
-            'o' => {
-                if let Some(run) = selected {
-                    if let Some((owner, repo)) = data.owner_repo() {
-                        crate::util::open_in_browser(run.id, owner, repo);
-                    }
-                }
-                None
-            }
-            'r' => {
+            'R' => {
                 if let Some(run) = selected {
                     if let Some((owner, repo)) = data.owner_repo() {
                         return Some(Cmd::RerunWorkflow {
@@ -191,7 +183,7 @@ impl PanelItem for ActionsPanelItem {
                 }
                 None
             }
-            'v' => {
+            'v' | 'o' => {
                 if let Some(run) = selected {
                     if let Some((owner, repo)) = data.owner_repo() {
                         crate::util::spawn_background(
@@ -408,12 +400,12 @@ mod tests {
     // --- handle_key ---
 
     #[test]
-    fn handle_key_r_returns_rerun_workflow() {
+    fn handle_key_r_upper_returns_rerun_workflow() {
         let data = make_data();
         let mut item = ActionsPanelItem::default();
 
         let selected = data.items.first();
-        let cmd = item.handle_key('r', selected, &data, &mut DetailPane::new());
+        let cmd = item.handle_key('R', selected, &data, &mut DetailPane::new());
 
         assert!(cmd.is_some());
         assert!(matches!(
@@ -445,7 +437,7 @@ mod tests {
         let mut item = ActionsPanelItem::default();
 
         let selected = data.items.first();
-        let cmd = item.handle_key('r', selected, &data, &mut DetailPane::new());
+        let cmd = item.handle_key('R', selected, &data, &mut DetailPane::new());
 
         assert!(cmd.is_none());
     }
@@ -466,7 +458,7 @@ mod tests {
         let data = make_data();
         let mut item = ActionsPanelItem::default();
 
-        let cmd = item.handle_key('r', None, &data, &mut DetailPane::new());
+        let cmd = item.handle_key('R', None, &data, &mut DetailPane::new());
         assert!(cmd.is_none());
 
         let cmd = item.handle_key('c', None, &data, &mut DetailPane::new());

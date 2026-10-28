@@ -222,6 +222,36 @@ mod tests {
     }
 
     #[test]
+    fn actions_rerun_reaches_confirmation_with_default_bindings() {
+        use crate::{app::PanelKind, cmd::Cmd, domain::WorkflowRun, event::ApiPayload, update::update};
+        let mut app = test_app();
+        app.active_panel = PanelKind::Actions;
+        let panel = app.panels.get_mut(&PanelKind::Actions).unwrap();
+        panel.set_repo_context("o", "r");
+        panel.apply_payload(ApiPayload::Actions(vec![WorkflowRun { id: 42, ..Default::default() }]));
+        let refresh = process_event(Event::Input(key_event(KeyCode::Char('r'))), &app);
+        assert!(matches!(refresh.as_slice(), [Message::Refresh]));
+        for message in process_event(Event::Input(key_event(KeyCode::Char('R'))), &app) {
+            update(&mut app, message);
+        }
+        assert!(matches!(app.confirmation.unwrap().pending_cmd, Cmd::RerunWorkflow { run_id: 42, .. }));
+    }
+
+    #[test]
+    fn enter_fetches_initially_selected_pr_details() {
+        use crate::{app::PanelKind, cmd::Cmd, domain::PullRequest, event::ApiPayload, update::update};
+        let mut app = test_app();
+        app.active_panel = PanelKind::Pulls;
+        let panel = app.panels.get_mut(&PanelKind::Pulls).unwrap();
+        panel.set_repo_context("o", "r");
+        panel.apply_payload(ApiPayload::Pulls(vec![PullRequest { number: 42, ..Default::default() }]));
+        let messages = process_event(Event::Input(key_event(KeyCode::Enter)), &app);
+        assert!(matches!(messages.as_slice(), [Message::PanelKeyInput('\n')]));
+        let cmd = update(&mut app, messages.into_iter().next().unwrap());
+        assert!(matches!(cmd, Cmd::FetchPrComments { pr_number: 42, .. }));
+    }
+
+    #[test]
     fn enter_becomes_panel_input_newline() {
         let app = test_app();
         let msgs = process_event(Event::Input(key_event(KeyCode::Enter)), &app);

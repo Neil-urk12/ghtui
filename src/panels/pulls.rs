@@ -319,6 +319,7 @@ impl PanelItem for PullsPanelItem {
         detail_pane: &mut DetailPane,
     ) -> Option<Cmd> {
         match key {
+            '\n' => self.on_select(selected, data),
             'd' => {
                 if selected.is_some() {
                     detail_pane.toggle_diff();
