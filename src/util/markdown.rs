@@ -54,12 +54,12 @@ pub fn render_markdown(input: &str) -> Vec<Line<'static>> {
 fn parse_inline(text: &str) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
     let mut current = String::new();
-    let chars: Vec<char> = text.chars().collect();
+    let bytes = text.as_bytes();
     let mut i = 0;
 
-    while i < chars.len() {
+    while i < bytes.len() {
         // Bold: **text**
-        if i + 1 < chars.len() && chars[i] == '*' && chars[i + 1] == '*' {
+        if i + 1 < bytes.len() && bytes[i] == b'*' && bytes[i + 1] == b'*' {
             if !current.is_empty() {
                 spans.push(Span::raw(current.clone()));
                 current.clear();
@@ -76,7 +76,7 @@ fn parse_inline(text: &str) -> Vec<Span<'static>> {
         }
 
         // Italic: *text*
-        if chars[i] == '*' && (i + 1 >= chars.len() || chars[i + 1] != '*') {
+        if bytes[i] == b'*' && (i + 1 >= bytes.len() || bytes[i + 1] != b'*') {
             if !current.is_empty() {
                 spans.push(Span::raw(current.clone()));
                 current.clear();
@@ -92,7 +92,7 @@ fn parse_inline(text: &str) -> Vec<Span<'static>> {
         }
 
         // Inline code: `text`
-        if chars[i] == '`' {
+        if bytes[i] == b'`' {
             if !current.is_empty() {
                 spans.push(Span::raw(current.clone()));
                 current.clear();
@@ -107,8 +107,9 @@ fn parse_inline(text: &str) -> Vec<Span<'static>> {
             }
         }
 
-        current.push(chars[i]);
-        i += 1;
+        let ch = text[i..].chars().next().unwrap();
+        current.push(ch);
+        i += ch.len_utf8();
     }
 
     if !current.is_empty() {
@@ -190,5 +191,28 @@ mod tests {
         assert_eq!(result.len(), 1);
         let text = plain_text(&result);
         assert!(text[0].contains(" foo "));
+    }
+
+    #[test]
+    fn unicode_inline_markdown() {
+        for (input, expected) in [
+            ("🙂*text*", "🙂text"),
+            ("🙂**text**", "🙂text"),
+            ("🙂`text`", "🙂 text "),
+            ("*🙂* tail", "🙂 tail"),
+            ("**你好** tail", "你好 tail"),
+            ("`é` tail", " é  tail"),
+            ("é🙂 plain", "é🙂 plain"),
+            ("🙂*unclosed", "🙂*unclosed"),
+            ("🙂**unclosed", "🙂**unclosed"),
+            ("🙂`unclosed", "🙂`unclosed"),
+            ("*é*🙂**好**!", "é🙂好!"),
+        ] {
+            assert_eq!(
+                plain_text(&render_markdown(input)),
+                vec![expected],
+                "{input}"
+            );
+        }
     }
 }
