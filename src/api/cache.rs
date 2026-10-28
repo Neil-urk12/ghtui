@@ -15,7 +15,7 @@ pub enum CacheKey {
         repo: String,
         state: String,
     },
-    Notifications,
+    Notifications { all: bool },
     Actions {
         owner: String,
         repo: String,

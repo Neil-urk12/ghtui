@@ -390,7 +390,7 @@ impl GitHubClient {
         let models: Vec<Notification> = self
             .get_all(
                 path,
-                Some(CacheKey::Notifications),
+                Some(CacheKey::Notifications { all }),
                 Duration::from_secs(NOTIFICATIONS_CACHE_TTL_SECS),
                 None,
                 |v| v,
@@ -441,13 +441,17 @@ impl GitHubClient {
 
     pub async fn mark_notification_read(&self, id: &str) -> Result<()> {
         self.patch_empty(&format!("/notifications/threads/{id}")).await?;
-        self.invalidate_cache(&CacheKey::Notifications);
+        for all in [false, true] {
+            self.invalidate_cache(&CacheKey::Notifications { all });
+        }
         Ok(())
     }
 
     pub async fn mark_all_notifications_read(&self) -> Result<()> {
-        self.post_empty("/notifications").await?;
-        self.invalidate_cache(&CacheKey::Notifications);
+        self.put_empty("/notifications").await?;
+        for all in [false, true] {
+            self.invalidate_cache(&CacheKey::Notifications { all });
+        }
         Ok(())
     }
 
@@ -846,19 +850,56 @@ mod tests {
     #[tokio::test]
     async fn mark_notification_read_invalidates_notifications() {
         let (_s, client) = mock_and_client("PATCH", "/notifications/threads/abc").await;
-        seed(&client, CacheKey::Notifications, vec!["stale".to_string()]);
+        for all in [false, true] {
+            seed(&client, CacheKey::Notifications { all }, vec!["stale".to_string()]);
+        }
         client.mark_notification_read("abc").await.unwrap();
         let c = client.cache.lock().unwrap();
-        assert!(c.get::<Vec<String>>(&CacheKey::Notifications).is_none());
+        for all in [false, true] {
+            assert!(c.get::<Vec<String>>(&CacheKey::Notifications { all }).is_none());
+        }
     }
 
     #[tokio::test]
     async fn mark_all_notifications_read_invalidates_notifications() {
-        let (_s, client) = mock_and_client("POST", "/notifications").await;
-        seed(&client, CacheKey::Notifications, vec!["stale".to_string()]);
+        let (_s, client) = mock_and_client("PUT", "/notifications").await;
+        for all in [false, true] {
+            seed(&client, CacheKey::Notifications { all }, vec!["stale".to_string()]);
+        }
         client.mark_all_notifications_read().await.unwrap();
         let c = client.cache.lock().unwrap();
-        assert!(c.get::<Vec<String>>(&CacheKey::Notifications).is_none());
+        for all in [false, true] {
+            assert!(c.get::<Vec<String>>(&CacheKey::Notifications { all }).is_none());
+        }
+    }
+
+    #[tokio::test]
+    async fn notification_filters_cache_independently() {
+        let server = MockServer::start().await;
+        let unread = serde_json::json!({
+            "id": "unread", "repository": { "full_name": "o/r" },
+            "subject": { "title": "Unread", "type": "Issue" },
+            "reason": "mention", "unread": true, "updated_at": "2026-01-01T00:00:00Z"
+        });
+        let mut read = unread.clone();
+        read["id"] = serde_json::json!("read");
+        read["unread"] = serde_json::json!(false);
+        Mock::given(method("GET")).and(path("/notifications"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([unread.clone()])))
+            .with_priority(10).expect(1).mount(&server).await;
+        Mock::given(method("GET")).and(path("/notifications")).and(query_param("all", "true"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([unread, read])))
+            .with_priority(1).expect(1).mount(&server).await;
+        let client = GitHubClient::new_for_test("tok".into(), server.uri()).unwrap();
+
+        for _ in 0..2 {
+            let unread = client.get_notifications(false).await.unwrap();
+            assert_eq!(unread.len(), 1);
+            assert!(unread[0].unread);
+            let all = client.get_notifications(true).await.unwrap();
+            assert_eq!(all.len(), 2);
+            assert!(!all[1].unread);
+        }
     }
 
     #[tokio::test]
