@@ -32,6 +32,14 @@ fn auth_file_path_in(base_dir: &std::path::Path) -> PathBuf {
 }
 
 fn config_base() -> PathBuf {
+    #[cfg(test)]
+    {
+        thread_local! {
+            static CONFIG_DIR: tempfile::TempDir = tempfile::tempdir().unwrap();
+        }
+        CONFIG_DIR.with(|dir| dir.path().to_path_buf())
+    }
+    #[cfg(not(test))]
     dirs::config_dir().unwrap_or_else(|| PathBuf::from("."))
 }
 pub fn save_token(token: &str, scopes: &str) -> Result<()> {
@@ -50,13 +58,19 @@ pub(crate) fn save_token_in(token: &str, scopes: &str, base_dir: &std::path::Pat
     let json = serde_json::to_string_pretty(&auth)?;
 
     let mut opts = fs::OpenOptions::new();
-    opts.write(true).create(true).truncate(true);
+    opts.write(true).create(true).truncate(false);
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
         opts.mode(0o600);
     }
     let mut file = opts.open(&path)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(fs::Permissions::from_mode(0o600))?;
+    }
+    file.set_len(0)?;
     use std::io::Write;
     file.write_all(json.as_bytes())?;
 
@@ -422,6 +436,16 @@ mod tests {
     // --- File I/O tests (tempdir-based) ---
 
     #[test]
+    fn config_base_is_temporary_and_thread_local() {
+        let base = config_base();
+        assert!(base.starts_with(std::env::temp_dir()));
+        assert_ne!(Some(base.clone()), dirs::config_dir());
+        assert_eq!(base, config_base());
+        let other = std::thread::spawn(config_base).join().unwrap();
+        assert_ne!(base, other);
+    }
+
+    #[test]
     fn save_and_load_token_roundtrip() {
         let tmp = tempfile::tempdir().unwrap();
         save_token_in("my-token", "repo notifications", tmp.path()).unwrap();
@@ -488,6 +512,21 @@ mod tests {
         save_token_in("second", "repo notifications", tmp.path()).unwrap();
         let loaded = load_stored_token_in(tmp.path());
         assert_eq!(loaded, Some("second".to_string()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn save_token_restricts_existing_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        save_token_in("first", "repo", tmp.path()).unwrap();
+        let path = auth_file_path_in(tmp.path());
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+
+        save_token_in("second", "repo", tmp.path()).unwrap();
+
+        assert_eq!(fs::metadata(path).unwrap().permissions().mode() & 0o777, 0o600);
+        assert_eq!(load_stored_token_in(tmp.path()).as_deref(), Some("second"));
     }
 
     #[test]
