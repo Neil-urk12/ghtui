@@ -218,7 +218,7 @@ fn build_help_text(panel: &str) -> Text<'static> {
             Line::from("  2: closed        Show closed items"),
             Line::from("  3: all           Show all items"),
             Line::from("  o: browse        Open in browser"),
-            Line::from("  c                Checkout branch"),
+            Line::from("  c                Collapse detail"),
             Line::from("  a                Approve"),
             Line::from("  m                Merge"),
         ],
@@ -233,8 +233,6 @@ fn build_help_text(panel: &str) -> Text<'static> {
             Line::from("  2: closed        Show closed items"),
             Line::from("  3: all           Show all items"),
             Line::from("  o: browse        Open in browser"),
-            Line::from("  c                Add comment"),
-            Line::from("  a                Toggle assign"),
         ],
         "Notif" => vec![
             Line::from("Notifications").style(
@@ -254,7 +252,6 @@ fn build_help_text(panel: &str) -> Text<'static> {
                     .add_modifier(Modifier::BOLD),
             ),
             Line::from("  j / k            Navigate list"),
-            Line::from("  Enter            Expand jobs"),
             Line::from("  v                View logs"),
             Line::from("  R                Re-run"),
             Line::from("  c                Cancel"),

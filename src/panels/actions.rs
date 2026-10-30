@@ -11,21 +11,9 @@ use crate::widgets::empty_state::EmptyState;
 use crate::widgets::list_view::LeftContent;
 
 #[derive(Debug, Default)]
-pub struct ActionsPanelItem {
-    pub expanded_run: Option<usize>,
-}
+pub struct ActionsPanelItem;
 
 impl ActionsPanelItem {
-    fn toggle_expand(&mut self, selected_index: Option<usize>) {
-        if let Some(idx) = selected_index {
-            if self.expanded_run == Some(idx) {
-                self.expanded_run = None;
-            } else {
-                self.expanded_run = Some(idx);
-            }
-        }
-    }
-
     fn status_icon(run: &WorkflowRun) -> (Span<'static>, Style) {
         if run.status == "in_progress" {
             return (
@@ -74,7 +62,6 @@ impl PanelItem for ActionsPanelItem {
             .map(|&i| {
                 let run = &data.items[i];
                 let (icon, style) = Self::status_icon(run);
-                let is_expanded = self.expanded_run == Some(i);
 
                 let status_text = if run.status == "in_progress" {
                     "in_progress"
@@ -82,10 +69,7 @@ impl PanelItem for ActionsPanelItem {
                     run.conclusion.as_deref().unwrap_or(&run.status)
                 };
 
-                let expand_marker = if is_expanded { "▾ " } else { "▸ " };
-
                 let line = Line::from(vec![
-                    Span::raw(expand_marker),
                     icon,
                     Span::styled(run.name.clone(), style),
                     Span::raw(format!(" #{}", run.run_number)),
@@ -140,8 +124,6 @@ impl PanelItem for ActionsPanelItem {
             Span::raw(relative_time(&run.created_at)),
         ]));
 
-        // Show expanded job info if this run is expanded
-        // Use pointer comparison to find the index since we have the item ref
         content
     }
 
@@ -152,15 +134,7 @@ impl PanelItem for ActionsPanelItem {
         data: &ListPanelData<Self::Item>,
         _detail_pane: &mut DetailPane,
     ) -> Option<Cmd> {
-        // Compute selected index via pointer comparison into data.items
-        let selected_index =
-            selected.and_then(|sel| data.items.iter().position(|r| std::ptr::eq(r, sel)));
-
         match key {
-            '\n' => {
-                self.toggle_expand(selected_index);
-                None
-            }
             'R' => {
                 if let Some(run) = selected {
                     if let Some((owner, repo)) = data.owner_repo() {
@@ -229,10 +203,6 @@ impl PanelItem for ActionsPanelItem {
 
     extract_items!(Actions);
 
-    fn on_loaded(&mut self, _data: &mut ListPanelData<Self::Item>) {
-        self.expanded_run = None;
-    }
-
     fn highlight_symbol(&self) -> String {
         "  ".to_string()
     }
@@ -244,7 +214,7 @@ impl PanelItem for ActionsPanelItem {
     fn detail_empty_state(&self) -> EmptyState {
         EmptyState::new("Select a run")
             .icon(" ")
-            .hint("j/k to navigate, Enter to expand")
+            .hint("j/k to navigate, v to view logs")
     }
 
     fn apply_filter(
@@ -316,7 +286,7 @@ mod tests {
     #[test]
     fn left_content_builds_correct_list_items() {
         let data = make_data();
-        let item = ActionsPanelItem::default();
+        let item = ActionsPanelItem;
         let theme = Theme::default();
 
         let content = item.left_content(&data, &theme);
@@ -334,48 +304,12 @@ mod tests {
         }
     }
 
-    #[test]
-    fn left_content_with_expanded_run_shows_expand_marker() {
-        let data = make_data();
-        let item = ActionsPanelItem {
-            expanded_run: Some(0),
-        };
-        let theme = Theme::default();
-
-        let content = item.left_content(&data, &theme);
-
-        match content {
-            LeftContent::List { items } => {
-                let debug = format!("{:?}", &items[0]);
-                assert!(debug.contains("▾"));
-            }
-            _ => panic!("expected List variant"),
-        }
-    }
-
-    #[test]
-    fn left_content_without_expanded_run_shows_collapsed_marker() {
-        let data = make_data();
-        let item = ActionsPanelItem::default();
-        let theme = Theme::default();
-
-        let content = item.left_content(&data, &theme);
-
-        match content {
-            LeftContent::List { items } => {
-                let debug = format!("{:?}", &items[0]);
-                assert!(debug.contains("▸"));
-            }
-            _ => panic!("expected List variant"),
-        }
-    }
-
     // --- detail_lines ---
 
     #[test]
-    fn detail_lines_includes_expanded_run_details() {
+    fn detail_lines_includes_run_details() {
         let run = test_workflow_run();
-        let item = ActionsPanelItem::default();
+        let item = ActionsPanelItem;
         let theme = Theme::default();
 
         let lines = item.detail_lines(&run, &theme);
@@ -402,7 +336,7 @@ mod tests {
     #[test]
     fn handle_key_r_upper_returns_rerun_workflow() {
         let data = make_data();
-        let mut item = ActionsPanelItem::default();
+        let mut item = ActionsPanelItem;
 
         let selected = data.items.first();
         let cmd = item.handle_key('R', selected, &data, &mut DetailPane::new());
@@ -418,7 +352,7 @@ mod tests {
     #[test]
     fn handle_key_c_returns_cancel_workflow() {
         let data = make_data();
-        let mut item = ActionsPanelItem::default();
+        let mut item = ActionsPanelItem;
 
         let selected = data.items.first();
         let cmd = item.handle_key('c', selected, &data, &mut DetailPane::new());
@@ -434,7 +368,7 @@ mod tests {
     #[test]
     fn handle_key_r_no_owner_returns_none() {
         let data = make_data_no_repo();
-        let mut item = ActionsPanelItem::default();
+        let mut item = ActionsPanelItem;
 
         let selected = data.items.first();
         let cmd = item.handle_key('R', selected, &data, &mut DetailPane::new());
@@ -445,7 +379,7 @@ mod tests {
     #[test]
     fn handle_key_c_no_owner_returns_none() {
         let data = make_data_no_repo();
-        let mut item = ActionsPanelItem::default();
+        let mut item = ActionsPanelItem;
 
         let selected = data.items.first();
         let cmd = item.handle_key('c', selected, &data, &mut DetailPane::new());
@@ -456,47 +390,13 @@ mod tests {
     #[test]
     fn handle_key_no_selection_returns_none() {
         let data = make_data();
-        let mut item = ActionsPanelItem::default();
+        let mut item = ActionsPanelItem;
 
         let cmd = item.handle_key('R', None, &data, &mut DetailPane::new());
         assert!(cmd.is_none());
 
         let cmd = item.handle_key('c', None, &data, &mut DetailPane::new());
         assert!(cmd.is_none());
-    }
-
-    #[test]
-    fn handle_key_enter_toggles_expand() {
-        let data = make_data();
-        let mut item = ActionsPanelItem::default();
-
-        // Initially not expanded
-        assert!(item.expanded_run.is_none());
-
-        // Press enter on item 0 -> expand
-        let selected = data.items.first();
-        let cmd = item.handle_key('\n', selected, &data, &mut DetailPane::new());
-        assert!(cmd.is_none());
-        assert_eq!(item.expanded_run, Some(0));
-
-        // Press enter again -> collapse
-        let cmd = item.handle_key('\n', selected, &data, &mut DetailPane::new());
-        assert!(cmd.is_none());
-        assert_eq!(item.expanded_run, None);
-    }
-
-    // --- on_loaded ---
-
-    #[test]
-    fn on_loaded_resets_expanded_run() {
-        let mut item = ActionsPanelItem {
-            expanded_run: Some(5),
-        };
-        let mut data = ListPanelData::<WorkflowRun>::new();
-
-        item.on_loaded(&mut data);
-
-        assert_eq!(item.expanded_run, None);
     }
 
     // --- extract_items ---
@@ -533,37 +433,6 @@ mod tests {
         assert_eq!(result.unwrap().len(), 0);
     }
 
-    // --- toggle_expand ---
-
-    #[test]
-    fn toggle_expand_sets_and_clears() {
-        let mut item = ActionsPanelItem::default();
-        assert!(item.expanded_run.is_none());
-
-        // Toggle on
-        item.toggle_expand(Some(0));
-        assert_eq!(item.expanded_run, Some(0));
-
-        // Toggle off (same index)
-        item.toggle_expand(Some(0));
-        assert_eq!(item.expanded_run, None);
-
-        // Toggle on different index switches
-        item.toggle_expand(Some(0));
-        assert_eq!(item.expanded_run, Some(0));
-        item.toggle_expand(Some(1));
-        assert_eq!(item.expanded_run, Some(1));
-    }
-
-    #[test]
-    fn toggle_expand_none_ignored() {
-        let mut item = ActionsPanelItem {
-            expanded_run: Some(0),
-        };
-        item.toggle_expand(None);
-        assert_eq!(item.expanded_run, Some(0));
-    }
-
     #[test]
     fn apply_filter_by_name() {
         let mut data = ListPanelData::<WorkflowRun>::new();
@@ -586,7 +455,7 @@ mod tests {
             },
         ];
         data.set_items(items, &mut selection);
-        let panel = ActionsPanelItem::default();
+        let panel = ActionsPanelItem;
         panel.apply_filter(&mut data, "CI", &mut selection);
         assert_eq!(data.filtered_indices, vec![0, 2]);
     }
@@ -616,7 +485,7 @@ mod tests {
             },
         ];
         data.set_items(items, &mut selection);
-        let panel = ActionsPanelItem::default();
+        let panel = ActionsPanelItem;
         panel.apply_filter(&mut data, "main", &mut selection);
         assert_eq!(data.filtered_indices, vec![0, 2]);
     }

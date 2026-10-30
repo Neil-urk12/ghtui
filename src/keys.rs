@@ -5,7 +5,7 @@ pub const HINT_REPOS: &str = "Enter: PRs | s: sort";
 pub const HINT_PULLS: &str = "1:open 2:closed 3:all | o:browser";
 pub const HINT_ISSUES: &str = "1:open 2:closed 3:all | o:browser";
 pub const HINT_NOTIFICATIONS: &str = "a:all/unread";
-pub const HINT_ACTIONS: &str = "Enter: expand | v: logs";
+pub const HINT_ACTIONS: &str = "v: logs | R: re-run | c: cancel";
 
 // Global hints
 pub const HINT_GLOBAL: &str = "j/k: nav | Tab: switch | /: search | ?: help | q: quit";
