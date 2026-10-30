@@ -14,6 +14,17 @@ pub fn view(frame: &mut Frame, app: &mut App) {
     if matches!(app.state, AppState::Login) {
         if let Some(ref login) = app.login {
             render_login(frame, login);
+        } else if let Some(ref err) = app.login_error {
+            let keys = &app.config.keybindings;
+            let text = vec![
+                Line::from(vec!["Login failed: ".red(), err.as_str().into()]),
+                Line::from(""),
+                Line::from(format!("[{}] Retry  [{}] Quit", keys.refresh, keys.quit).dark_gray()),
+            ];
+            let failed = Paragraph::new(text)
+                .alignment(Alignment::Center)
+                .wrap(Wrap { trim: true });
+            frame.render_widget(failed, area);
         } else {
             let loading = Paragraph::new("Initializing login...").alignment(Alignment::Center);
             frame.render_widget(loading, area);

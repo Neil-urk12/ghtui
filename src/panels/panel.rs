@@ -76,6 +76,8 @@ pub struct ListPanelData<T> {
     pub owner: Option<String>,
     pub repo: Option<String>,
     pub(crate) revision: u64,
+    /// Last submitted search query, reapplied whenever items are replaced.
+    pub(crate) query: String,
 }
 
 impl<T> Default for ListPanelData<T> {
@@ -87,6 +89,7 @@ impl<T> Default for ListPanelData<T> {
             owner: None,
             repo: None,
             revision: 0,
+            query: String::new(),
         }
     }
 }
@@ -387,6 +390,8 @@ impl<T: PanelItem + 'static> ListPanel<T> {
 
     pub fn set_repo_context(&mut self, owner: &str, repo: &str) {
         if self.data.owner_repo() != Some((owner, repo)) {
+            // A filter typed for the previous repo would silently hide the new one's items.
+            self.data.query.clear();
             self.data.set_repo(owner.to_string(), repo.to_string());
             self.data.load_items(Vec::new(), &mut self.selection);
             self.detail_pane.reset_scroll();
@@ -403,8 +408,15 @@ impl<T: PanelItem + 'static> ListPanel<T> {
     }
 
     pub fn apply_payload(&mut self, payload: ApiPayload) {
+        let revision = self.data.revision;
         self.item
             .apply_payload(&mut self.data, &mut self.selection, payload);
+        // Only a replaced list loses its filter; detail payloads keep the selection.
+        if self.data.revision != revision && !self.data.query.is_empty() {
+            let query = self.data.query.clone();
+            self.item
+                .apply_filter(&mut self.data, &query, &mut self.selection);
+        }
     }
 
     pub fn handle_key(&mut self, key: char) -> Option<Cmd> {
@@ -492,6 +504,7 @@ impl<T: PanelItem + 'static> ListPanel<T> {
     }
 
     pub fn apply_filter(&mut self, query: &str) {
+        self.data.query = query.to_string();
         self.item
             .apply_filter(&mut self.data, query, &mut self.selection);
     }

@@ -75,6 +75,8 @@ pub enum AppState {
 pub struct App {
     pub state: AppState,
     pub login: Option<LoginState>,
+    /// Why the first device-code request failed; cleared to retry.
+    pub login_error: Option<String>,
     pub active_panel: PanelKind,
     pub panels: HashMap<PanelKind, Box<dyn Panel>>,
     pub config: Config,
@@ -147,6 +149,7 @@ impl App {
         Ok(Self {
             state,
             login: None,
+            login_error: None,
             active_panel: PanelKind::Repos,
             panels,
             config,

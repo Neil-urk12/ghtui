@@ -87,6 +87,9 @@ fn schedule_login(app: &mut App, tasks: &mut JoinSet<()>, tx: mpsc::Sender<Messa
         } else if login.poll_due() {
             spawn_login(Some(login.clone()), tasks, tx);
         }
+    } else if app.login_error.is_none() {
+        // The first device-code request failed and the user asked to retry.
+        spawn_login(None, tasks, tx);
     }
 }
 
@@ -309,6 +312,73 @@ mod tests {
         schedule_login(&mut app, &mut tasks, tx);
         assert!(tasks.is_empty());
         assert!(matches!(app.login.unwrap().status, LoginStatus::Error(_)));
+    }
+
+    #[tokio::test]
+    async fn failed_first_login_shows_error_and_retries_on_refresh() {
+        let mut app = App::new(Config::default(), None).unwrap();
+        let (tx, _rx) = mpsc::channel(1);
+        let mut tasks = JoinSet::new();
+        update(&mut app, Message::LoginError("offline".into()));
+        assert!(
+            app.error_toast.is_none(),
+            "a hidden toast would swallow keys"
+        );
+
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(60, 10)).unwrap();
+        terminal.draw(|frame| view(frame, &mut app)).unwrap();
+        let screen: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(screen.contains("Login failed: offline"), "{screen}");
+        assert!(screen.contains("[r] Retry"), "{screen}");
+
+        schedule_login(&mut app, &mut tasks, tx.clone());
+        assert!(tasks.is_empty(), "retry waits for the user");
+        for message in event::process_event(
+            Event::Input(crossterm::event::Event::Key(
+                crossterm::event::KeyEvent::new(
+                    crossterm::event::KeyCode::Char('r'),
+                    crossterm::event::KeyModifiers::NONE,
+                ),
+            )),
+            &app,
+        ) {
+            update(&mut app, message);
+        }
+        schedule_login(&mut app, &mut tasks, tx);
+        assert_eq!(tasks.len(), 1);
+        // Cancel before yielding so this test never contacts GitHub.
+        tasks.abort_all();
+    }
+
+    #[tokio::test]
+    async fn manual_refresh_bypasses_cache() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/user/repos"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
+            .expect(2)
+            .mount(&server)
+            .await;
+        let mut app = App::new(Config::default(), Some("tok".into())).unwrap();
+        app.client = Arc::new(GitHubClient::new_for_test("tok".into(), server.uri()).unwrap());
+        let (tx, mut rx) = mpsc::channel(1);
+        let mut cmd = Cmd::FetchRepos;
+        for _ in 0..2 {
+            spawn_cmd(cmd, &mut app, tx.clone());
+            let result = time::timeout(std::time::Duration::from_secs(5), rx.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            update(&mut app, result);
+            cmd = update(&mut app, Message::Refresh);
+        }
     }
 
     #[tokio::test]

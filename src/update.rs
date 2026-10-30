@@ -88,7 +88,18 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
             app.prev_tab();
             fetch_cmd(app)
         }
-        Message::Refresh => fetch_cmd(app),
+        Message::Refresh => {
+            if matches!(app.state, AppState::Login) {
+                // Retry: the run loop requests a new device code once the error is cleared.
+                app.login_error = None;
+                return Cmd::None;
+            }
+            let cmd = fetch_cmd(app);
+            if let Some(key) = cmd.cache_key() {
+                app.client.invalidate_cache(&key);
+            }
+            cmd
+        }
 
         Message::SearchActivate => {
             app.search.active = true;
@@ -214,9 +225,12 @@ pub fn update(app: &mut App, msg: Message) -> Cmd {
         Message::LoginError(msg) => {
             if let Some(login) = &mut app.login {
                 login.status = crate::panels::login::LoginStatus::Error(msg.clone());
+                app.toast_tick = 0;
+                app.error_toast = Some(msg);
+            } else {
+                // No device code yet; toasts are hidden on the login screen and would block keys.
+                app.login_error = Some(msg);
             }
-            app.toast_tick = 0;
-            app.error_toast = Some(msg);
             Cmd::None
         }
         Message::Quit => {
@@ -428,6 +442,47 @@ mod tests {
         let panel: &ReposPanel = app.panel(PanelKind::Repos).expect("Expected Repos panel");
         assert_eq!(panel.data.items.len(), 1);
         assert_eq!(panel.data.items[0].name, "test/repo");
+    }
+
+    #[test]
+    fn reload_keeps_submitted_search_filter() {
+        use crate::domain;
+        use crate::event::ApiPayload;
+
+        let repos = || {
+            ["o/alpha", "o/beta"]
+                .into_iter()
+                .map(|name| domain::Repo {
+                    name: name.into(),
+                    ..Default::default()
+                })
+                .collect::<Vec<_>>()
+        };
+        let mut app = test_app();
+        receive(&mut app, ApiPayload::Repos(repos()));
+        update(&mut app, Message::SearchActivate);
+        for c in "alp".chars() {
+            update(&mut app, Message::SearchInput(c));
+        }
+        update(&mut app, Message::SearchSubmit);
+
+        receive(&mut app, ApiPayload::Repos(repos()));
+        let panel: &ReposPanel = app.panel(PanelKind::Repos).unwrap();
+        assert_eq!(
+            panel.data.filtered_indices.len(),
+            1,
+            "refresh must keep the filter"
+        );
+
+        update(&mut app, Message::SearchActivate);
+        update(&mut app, Message::SearchClear);
+        receive(&mut app, ApiPayload::Repos(repos()));
+        let panel: &ReposPanel = app.panel(PanelKind::Repos).unwrap();
+        assert_eq!(
+            panel.data.filtered_indices.len(),
+            2,
+            "clearing removes the filter"
+        );
     }
 
     #[test]

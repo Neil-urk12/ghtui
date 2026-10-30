@@ -1,5 +1,5 @@
 use ratatui::prelude::*;
-use ratatui::widgets::{Block, Paragraph};
+use ratatui::widgets::{Block, Paragraph, Wrap};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DetailPaneMode {
@@ -69,10 +69,12 @@ impl DetailPane {
         content: Vec<Line>,
         block: Block,
     ) {
-        let paragraph = Paragraph::new(content)
-            .block(block.title(title))
-            .scroll((self.scroll, 0));
-        frame.render_widget(paragraph, area);
+        let mut paragraph = Paragraph::new(content).block(block.title(title));
+        // Diffs stay unwrapped so the line-number gutter keeps its alignment.
+        if !self.showing_diff {
+            paragraph = paragraph.wrap(Wrap { trim: false });
+        }
+        frame.render_widget(paragraph.scroll((self.scroll, 0)), area);
     }
 }
 
@@ -148,5 +150,38 @@ mod tests {
         pane.scroll = 5;
         pane.toggle_collapse();
         assert_eq!(pane.scroll, 0);
+    }
+
+    fn render_rows(pane: &DetailPane, text: &str) -> Vec<String> {
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(10, 3)).unwrap();
+        terminal
+            .draw(|f| {
+                pane.render(
+                    f,
+                    f.area(),
+                    "",
+                    vec![Line::from(text.to_string())],
+                    Block::default(),
+                )
+            })
+            .unwrap();
+        let buf = terminal.backend().buffer();
+        (0..3)
+            .map(|y| (0..10).map(|x| buf[(x, y)].symbol()).collect())
+            .collect()
+    }
+
+    #[test]
+    fn render_wraps_prose_but_not_diff() {
+        let mut pane = DetailPane::new();
+        // Row 0 is the (empty) title row.
+        let rows = render_rows(&pane, "aaaa bbbb cccc");
+        assert_eq!(rows[2].trim_end(), "cccc", "prose wraps onto the next row");
+
+        pane.showing_diff = true;
+        let rows = render_rows(&pane, "aaaa bbbb cccc");
+        assert_eq!(rows[1], "aaaa bbbb ");
+        assert_eq!(rows[2].trim_end(), "", "diff lines are not wrapped");
     }
 }

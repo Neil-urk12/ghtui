@@ -308,7 +308,13 @@ impl PanelItem for PullsPanelItem {
     fn diff_lines(&self, item: &Self::Item, theme: &Theme) -> Vec<Line<'static>> {
         match &item.files {
             Some(files) if !files.is_empty() => pr_to_diff(item, theme),
-            _ => vec![],
+            _ => match &item.file_errors {
+                Some(err) => vec![Line::from(format!(
+                    "[WARN] Files: failed to load ({}) · press Enter to retry",
+                    err
+                ))],
+                None => vec![],
+            },
         }
     }
     fn handle_key(
@@ -1283,6 +1289,15 @@ mod tests {
     }
 
     #[test]
+    fn diff_lines_renders_file_error() {
+        let mut pr = test_pr();
+        pr.file_errors = Some("502".to_string());
+        let lines = PullsPanelItem::default().diff_lines(&pr, &Theme::default());
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].to_string().contains("Files: failed to load (502)"));
+    }
+
+    #[test]
     fn detail_lines_no_errors_when_all_succeed() {
         let mut pr = test_pr();
         pr.reviews = Some(vec![]);
@@ -1397,6 +1412,21 @@ mod tests {
         let lines = parse_diff_patch(patch, &theme);
         // 1 hunk header + 4 content lines = 5
         assert_eq!(lines.len(), 5);
+    }
+
+    #[test]
+    fn parse_diff_patch_triple_plus_inside_hunk_is_addition() {
+        let theme = Theme::default();
+        let patch = "--- a/f.c\n+++ b/f.c\n@@ -5,2 +5,3 @@\n+++count;\n---flag;\n context";
+        let lines = parse_diff_patch(patch, &theme);
+        assert_eq!(
+            lines[0].to_string(),
+            "--- a/f.c",
+            "header before hunk stays a header"
+        );
+        assert_eq!(lines[3].to_string(), "   5 | +++count;");
+        assert_eq!(lines[4].to_string(), "   5 | ---flag;");
+        assert_eq!(lines[5].to_string(), "   6 |  context");
     }
 
     #[test]

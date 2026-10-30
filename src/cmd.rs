@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::api::cache::CacheKey;
 use crate::app::{App, PanelKind};
 use crate::event::ApiPayload;
 use crate::panels::Panel;
@@ -77,6 +78,29 @@ impl Cmd {
                 label: "Reopen Pull Request",
             },
             _ => CmdBehavior::Benign,
+        }
+    }
+
+    /// The cache entry a list fetch reads, so a manual refresh can bypass it.
+    pub fn cache_key(&self) -> Option<CacheKey> {
+        match self {
+            Cmd::FetchRepos => Some(CacheKey::UserRepos),
+            Cmd::FetchPulls { ctx, state } => Some(CacheKey::Pulls {
+                owner: ctx.owner.clone(),
+                repo: ctx.repo.clone(),
+                state: state.clone(),
+            }),
+            Cmd::FetchIssues { ctx, state } => Some(CacheKey::Issues {
+                owner: ctx.owner.clone(),
+                repo: ctx.repo.clone(),
+                state: state.clone(),
+            }),
+            Cmd::FetchNotifications { all } => Some(CacheKey::Notifications { all: *all }),
+            Cmd::FetchActions { ctx } => Some(CacheKey::Actions {
+                owner: ctx.owner.clone(),
+                repo: ctx.repo.clone(),
+            }),
+            _ => None,
         }
     }
 }

@@ -8,9 +8,11 @@ pub fn parse_diff_patch(patch: &str, theme: &Theme) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
     let mut old_line: u32 = 0;
     let mut new_line: u32 = 0;
+    let mut in_hunk = false;
 
     for raw in patch.lines() {
         if raw.starts_with("@@") {
+            in_hunk = true;
             if let Some((old, new)) = parse_hunk_header(raw) {
                 old_line = old;
                 new_line = new;
@@ -19,8 +21,9 @@ pub fn parse_diff_patch(patch: &str, theme: &Theme) -> Vec<Line<'static>> {
                 raw.to_string(),
                 theme.diff_header,
             )));
-        } else if raw.starts_with("+++") || raw.starts_with("---") {
+        } else if !in_hunk && (raw.starts_with("+++") || raw.starts_with("---")) {
             // File header lines (--- a/file, +++ b/file) — render as muted
+            // Inside a hunk, `+++x` is an added `++x` line, not a header.
             lines.push(Line::from(Span::styled(raw.to_string(), theme.muted)));
         } else if raw.starts_with('+') {
             let prefix = format!("{:>4} | ", new_line);
