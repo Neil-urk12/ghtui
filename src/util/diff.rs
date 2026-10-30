@@ -17,10 +17,7 @@ pub fn parse_diff_patch(patch: &str, theme: &Theme) -> Vec<Line<'static>> {
                 old_line = old;
                 new_line = new;
             }
-            lines.push(Line::from(Span::styled(
-                raw.to_string(),
-                theme.diff_header,
-            )));
+            lines.push(Line::from(Span::styled(raw.to_string(), theme.diff_header)));
         } else if !in_hunk && (raw.starts_with("+++") || raw.starts_with("---")) {
             // File header lines (--- a/file, +++ b/file) — render as muted
             // Inside a hunk, `+++x` is an added `++x` line, not a header.

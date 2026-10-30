@@ -118,7 +118,13 @@ fn render_with_detail_mode(
             if detail_lines.is_empty() {
                 EmptyStateWidget::render(frame, area, &config.detail_empty_state, detail_block);
             } else {
-                detail_pane.render(frame, area, &config.detail_title, detail_lines, detail_block);
+                detail_pane.render(
+                    frame,
+                    area,
+                    &config.detail_title,
+                    detail_lines,
+                    detail_block,
+                );
             }
         }
         DetailPaneMode::Normal => {

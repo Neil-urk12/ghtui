@@ -1,6 +1,6 @@
+pub mod diff;
 pub mod format;
 pub mod markdown;
-pub mod diff;
 
 /// Spawn a background process with stdout/stderr suppressed.
 ///

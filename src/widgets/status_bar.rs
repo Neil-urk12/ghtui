@@ -2,7 +2,9 @@ use ratatui::prelude::*;
 use ratatui::widgets::*;
 
 use crate::app::{App, PanelKind};
-use crate::keys::{HINT_ACTIONS, HINT_GLOBAL, HINT_ISSUES, HINT_NOTIFICATIONS, HINT_PULLS, HINT_REPOS};
+use crate::keys::{
+    HINT_ACTIONS, HINT_GLOBAL, HINT_ISSUES, HINT_NOTIFICATIONS, HINT_PULLS, HINT_REPOS,
+};
 
 pub fn render_status_bar(frame: &mut Frame, area: Rect, app: &App) {
     let panel_hints = match app.active_panel {

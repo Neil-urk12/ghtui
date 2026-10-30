@@ -90,7 +90,11 @@ mod tests {
         let date = now - chrono::Duration::days(45);
         let date_str = date.to_rfc3339();
         let result = relative_time(&date_str);
-        assert!(result.ends_with("mo ago"), "45 days should be months, got: {}", result);
+        assert!(
+            result.ends_with("mo ago"),
+            "45 days should be months, got: {}",
+            result
+        );
     }
 
     #[test]
@@ -108,6 +112,10 @@ mod tests {
         let date = now - chrono::Duration::seconds(60);
         let date_str = date.to_rfc3339();
         let result = relative_time(&date_str);
-        assert!(result.ends_with("m ago"), "60 seconds should be minutes, got: {}", result);
+        assert!(
+            result.ends_with("m ago"),
+            "60 seconds should be minutes, got: {}",
+            result
+        );
     }
 }

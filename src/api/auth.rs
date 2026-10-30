@@ -1,11 +1,11 @@
 use color_eyre::Result;
 use std::fs;
 use std::path::PathBuf;
-use std::time::Duration;
 use std::process::Command;
+use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
 use crate::constants::{GITHUB_ACCESS_TOKEN_URL, GITHUB_DEVICE_CODE_URL};
+use serde::{Deserialize, Serialize};
 
 pub const GHTUI_CLIENT_ID: &str = "Iv1.b507a08c1255a797";
 pub const GHTUI_SCOPES: &str = "repo notifications read:org";
@@ -137,7 +137,10 @@ impl std::fmt::Debug for DeviceCodeResponse {
 impl std::fmt::Debug for TokenResponse {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TokenResponse")
-            .field("access_token", &self.access_token.as_deref().map(|_| "[REDACTED]"))
+            .field(
+                "access_token",
+                &self.access_token.as_deref().map(|_| "[REDACTED]"),
+            )
             .field("token_type", &self.token_type)
             .field("scope", &self.scope)
             .field("error", &self.error)
@@ -173,7 +176,11 @@ async fn check_response(mut resp: reqwest::Response) -> Result<reqwest::Response
                 .find(|&(i, _)| i > MAX_ERROR_BODY)
                 .map(|(i, _)| i)
                 .unwrap_or(body.len());
-            format!("{}... (truncated, {} bytes total)", &body[..end], body_bytes.len())
+            format!(
+                "{}... (truncated, {} bytes total)",
+                &body[..end],
+                body_bytes.len()
+            )
         } else {
             body.into_owned()
         };
@@ -232,7 +239,10 @@ fn try_gh_token() -> Result<String> {
     let output = Command::new("gh").arg("auth").arg("token").output()?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(color_eyre::eyre::eyre!("gh auth token failed: {}", stderr.trim()));
+        return Err(color_eyre::eyre::eyre!(
+            "gh auth token failed: {}",
+            stderr.trim()
+        ));
     }
     let token = String::from_utf8(output.stdout)?.trim().to_string();
     if token.is_empty() {
@@ -525,7 +535,10 @@ mod tests {
 
         save_token_in("second", "repo", tmp.path()).unwrap();
 
-        assert_eq!(fs::metadata(path).unwrap().permissions().mode() & 0o777, 0o600);
+        assert_eq!(
+            fs::metadata(path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
         assert_eq!(load_stored_token_in(tmp.path()).as_deref(), Some("second"));
     }
 
@@ -540,8 +553,16 @@ mod tests {
         };
         let debug = format!("{:?}", resp);
         assert!(debug.contains("[REDACTED]"));
-        assert!(!debug.contains("[REDACTED] "), "Debug should not have trailing space after [REDACTED]: {}", debug);
-        assert!(!debug.contains("abc123"), "Secret value leaked in debug output: {}", debug);
+        assert!(
+            !debug.contains("[REDACTED] "),
+            "Debug should not have trailing space after [REDACTED]: {}",
+            debug
+        );
+        assert!(
+            !debug.contains("abc123"),
+            "Secret value leaked in debug output: {}",
+            debug
+        );
     }
 
     #[test]
@@ -556,8 +577,16 @@ mod tests {
         };
         let debug = format!("{:?}", resp);
         assert!(debug.contains("[REDACTED]"));
-        assert!(!debug.contains("[REDACTED] "), "Debug should not have trailing space after [REDACTED]: {}", debug);
-        assert!(!debug.contains("gho_secret123"), "Token value leaked in debug output: {}", debug);
+        assert!(
+            !debug.contains("[REDACTED] "),
+            "Debug should not have trailing space after [REDACTED]: {}",
+            debug
+        );
+        assert!(
+            !debug.contains("gho_secret123"),
+            "Token value leaked in debug output: {}",
+            debug
+        );
     }
 
     #[test]
@@ -571,13 +600,17 @@ mod tests {
             interval: None,
         };
         let debug = format!("{:?}", resp);
-        assert!(debug.contains("access_token: None"), "Expected 'access_token: None' in debug output: {}", debug);
+        assert!(
+            debug.contains("access_token: None"),
+            "Expected 'access_token: None' in debug output: {}",
+            debug
+        );
     }
 
     #[tokio::test]
     async fn check_response_passes_through_successful_response() {
-        use wiremock::{Mock, MockServer, ResponseTemplate};
         use wiremock::matchers::method;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
 
         let server = MockServer::start().await;
         Mock::given(method("GET"))
@@ -596,17 +629,15 @@ mod tests {
 
     #[tokio::test]
     async fn check_response_includes_body_on_http_error() {
-        use wiremock::{Mock, MockServer, ResponseTemplate};
         use wiremock::matchers::method;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
 
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .respond_with(
-                ResponseTemplate::new(401).set_body_json(serde_json::json!({
-                    "message": "Bad credentials",
-                    "documentation_url": "https://docs.github.com/rest"
-                })),
-            )
+            .respond_with(ResponseTemplate::new(401).set_body_json(serde_json::json!({
+                "message": "Bad credentials",
+                "documentation_url": "https://docs.github.com/rest"
+            })))
             .mount(&server)
             .await;
 
@@ -635,8 +666,8 @@ mod tests {
 
     #[tokio::test]
     async fn check_response_handles_empty_error_body() {
-        use wiremock::{Mock, MockServer, ResponseTemplate};
         use wiremock::matchers::method;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
 
         let server = MockServer::start().await;
         Mock::given(method("POST"))
@@ -683,8 +714,8 @@ mod tests {
 
     #[tokio::test]
     async fn check_response_truncates_large_error_body() {
-        use wiremock::{Mock, MockServer, ResponseTemplate};
         use wiremock::matchers::method;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
 
         let server = MockServer::start().await;
         // 10KB body - should be truncated to ~4KB
@@ -715,8 +746,8 @@ mod tests {
 
     #[tokio::test]
     async fn check_response_truncates_multibyte_utf8_body() {
-        use wiremock::{Mock, MockServer, ResponseTemplate};
         use wiremock::matchers::method;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
 
         let server = MockServer::start().await;
         // 5000 CJK characters = 15000 bytes (3 bytes each) - should truncate
@@ -755,8 +786,8 @@ mod tests {
 
     #[tokio::test]
     async fn check_response_bounded_read_large_body() {
-        use wiremock::{Mock, MockServer, ResponseTemplate};
         use wiremock::matchers::method;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
 
         let server = MockServer::start().await;
         // 20KB body - should be read-bounded, not fully buffered
@@ -784,9 +815,9 @@ mod tests {
 
     #[tokio::test]
     async fn reqwest_client_timeout_works() {
-        use wiremock::{Mock, MockServer, ResponseTemplate};
-        use wiremock::matchers::method;
         use std::time::Duration;
+        use wiremock::matchers::method;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
 
         let server = MockServer::start().await;
         // Delay response by 5 seconds - should timeout with 1s client
@@ -827,18 +858,20 @@ mod tests {
 
     #[tokio::test]
     async fn check_response_reports_actual_byte_count_for_invalid_utf8() {
-        use wiremock::{Mock, MockServer, ResponseTemplate};
         use wiremock::matchers::method;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
 
         let server = MockServer::start().await;
         // 5000 invalid UTF-8 bytes (0xFF) — each becomes 3-byte U+FFFD after from_utf8_lossy
         // So body.len() would be 15000, but body_bytes.len() is 5000
         let invalid_bytes = vec![0xFFu8; 5_000];
-        assert!(invalid_bytes.len() > 4096, "Test body should exceed MAX_ERROR_BODY");
+        assert!(
+            invalid_bytes.len() > 4096,
+            "Test body should exceed MAX_ERROR_BODY"
+        );
         Mock::given(method("POST"))
             .respond_with(
-                ResponseTemplate::new(500)
-                    .set_body_raw(invalid_bytes, "application/octet-stream"),
+                ResponseTemplate::new(500).set_body_raw(invalid_bytes, "application/octet-stream"),
             )
             .mount(&server)
             .await;

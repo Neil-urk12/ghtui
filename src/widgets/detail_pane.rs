@@ -16,10 +16,13 @@ pub struct DetailPane {
     pub mode: DetailPaneMode,
 }
 
-
 impl DetailPane {
     pub fn new() -> Self {
-        Self { scroll: 0, showing_diff: false, mode: DetailPaneMode::Normal }
+        Self {
+            scroll: 0,
+            showing_diff: false,
+            mode: DetailPaneMode::Normal,
+        }
     }
 
     pub fn scroll_up(&mut self) {
@@ -83,7 +86,9 @@ mod tests {
     use super::*;
 
     fn pane_with_mode(mode: DetailPaneMode) -> DetailPane {
-        DetailPane { mode, ..DetailPane::default()
+        DetailPane {
+            mode,
+            ..DetailPane::default()
         }
     }
 
